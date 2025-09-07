@@ -13,74 +13,75 @@
       data-current-playlist-uri="{{ config.get('playlist_uri', '') }}">
   <h2 id="alarm-form-title" class="form-title">{{ t('alarm_configure') }}</h2>
 
-  <!-- Music Selection -->
-  <div class="form-group">
-    <div id="alarm-playlist-selector">
-      <div class="playlist-input">
-        <div class="playlist-preview">
-          <div class="playlist-preview-image" id="preview-image"><i class="fas fa-compact-disc"></i></div>
-          <div class="playlist-preview-info">
-            <div class="playlist-preview-name" id="preview-name">{{ t('playlist_select_text') or 'Select music' }}</div>
-            <div class="playlist-preview-meta" id="preview-meta"></div>
+  <div class="desktop-form-layout">
+    <!-- Music Selection -->
+    <div class="form-group full-width">
+      <div id="alarm-playlist-selector">
+        <div class="playlist-input">
+          <div class="playlist-preview">
+            <div class="playlist-preview-image" id="preview-image"><i class="fas fa-compact-disc"></i></div>
+            <div class="playlist-preview-info">
+              <div class="playlist-preview-name" id="preview-name">{{ t('playlist_select_text') or 'Select music' }}</div>
+              <div class="playlist-preview-meta" id="preview-meta"></div>
+            </div>
           </div>
         </div>
       </div>
+      <small id="playlist-help" class="form-help">{{ t('playlist_help') }}</small>
     </div>
-    <small id="playlist-help" class="form-help">{{ t('playlist_help') }}</small>
-  </div>
 
-  <!-- Alarm Time -->
-  <div class="form-group">
-    <label for="time" class="alarm-time-label">{{ t('alarm_time_label')|safe }}</label>
-    <input 
-      type="time" 
-      id="time" 
-      name="time" 
-      value="{{ config.time }}" 
-      required 
-      class="alarm-time-input"
-      aria-describedby="time-help"
-    >
-    <small id="time-help" class="form-help">{{ t('alarm_time_help') }}</small>
-    
-    <!-- Wochentag-Bubbles (Python Compatible: 0=Monday, 6=Sunday) -->
-    <div class="weekday-bubbles">
-      <div class="weekday-bubble" data-day="0" title="{{ t('monday') }}">{{ t('mon') }}</div>
-      <div class="weekday-bubble" data-day="1" title="{{ t('tuesday') }}">{{ t('tue') }}</div>
-      <div class="weekday-bubble" data-day="2" title="{{ t('wednesday') }}">{{ t('wed') }}</div>
-      <div class="weekday-bubble" data-day="3" title="{{ t('thursday') }}">{{ t('thu') }}</div>
-      <div class="weekday-bubble" data-day="4" title="{{ t('friday') }}">{{ t('fri') }}</div>
-      <div class="weekday-bubble" data-day="5" title="{{ t('saturday') }}">{{ t('sat') }}</div>
-      <div class="weekday-bubble" data-day="6" title="{{ t('sunday') }}">{{ t('sun') }}</div>
+    <!-- Alarm Time -->
+    <div class="form-group">
+      <label for="time" class="alarm-time-label">{{ t('alarm_time_label')|safe }}</label>
+      <input 
+        type="time" 
+        id="time" 
+        name="time" 
+        value="{{ config.time }}" 
+        required 
+        class="alarm-time-input"
+        aria-describedby="time-help"
+      >
+      <small id="time-help" class="form-help">{{ t('alarm_time_help') }}</small>
+    </div>
+
+    <!-- Speaker Device -->
+    <div class="form-group">
+      <label for="device_name">{{ t('device_label')|safe }}</label>
+      <select 
+        name="device_name" 
+        id="device_name" 
+        class="form-input" 
+        required
+        aria-describedby="device-help"
+      >
+        {% for d in devices %}
+          <option value="{{ d.name }}" {% if config.device_name == d.name %}selected{% endif %}>
+            {{ d.name }}
+          </option>
+        {% endfor %}
+      </select>
+      <small id="device-help" class="form-help">{{ t('device_help') }}</small>
+    </div>
+
+    <!-- Weekday Selection -->
+    <div class="form-group full-width">
+      <label>{{ t('alarm_days_label') or 'Select Days' }}</label>
+      <div class="weekday-bubbles">
+        <div class="weekday-bubble" data-day="0" title="{{ t('monday') }}">{{ t('mon') }}</div>
+        <div class="weekday-bubble" data-day="1" title="{{ t('tuesday') }}">{{ t('tue') }}</div>
+        <div class="weekday-bubble" data-day="2" title="{{ t('wednesday') }}">{{ t('wed') }}</div>
+        <div class="weekday-bubble" data-day="3" title="{{ t('thursday') }}">{{ t('thu') }}</div>
+        <div class="weekday-bubble" data-day="4" title="{{ t('friday') }}">{{ t('fri') }}</div>
+        <div class="weekday-bubble" data-day="5" title="{{ t('saturday') }}">{{ t('sat') }}</div>
+        <div class="weekday-bubble" data-day="6" title="{{ t('sunday') }}">{{ t('sun') }}</div>
+      </div>
     </div>
   </div>
 
-  <!-- Speaker Device -->
-  <div class="form-group">
-    <label for="device_name">{{ t('device_label')|safe }}</label>
-    <select 
-      name="device_name" 
-      id="device_name" 
-      class="form-input" 
-      required
-      aria-describedby="device-help"
-    >
-      {% for d in devices %}
-        <option value="{{ d.name }}" {% if config.device_name == d.name %}selected{% endif %}>
-          {{ d.name }}
-        </option>
-      {% endfor %}
-    </select>
-    <small id="device-help" class="form-help">{{ t('device_help') }}</small>
-  </div>
-
-  <!-- Hidden field for volume -->
+  <!-- Hidden fields -->
   <input type="hidden" id="volume" name="volume" value="{{ config.volume or 50 }}">
-  
-  <!-- Hidden field for playlist URI -->
   <input type="hidden" id="playlist_uri" name="playlist_uri" value="{{ config.get('playlist_uri', '') }}">
-  
-  <!-- Hidden field for weekdays -->
   <input type="hidden" id="weekdays" name="weekdays" value="{{ config.get('weekdays', [])|map('string')|join(',') }}">
 
   <!-- Options Section -->

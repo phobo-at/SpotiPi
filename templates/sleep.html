@@ -8,66 +8,66 @@
       class="{% if sleep_status.active %}hidden{% endif %}">
   <h2 id="sleep-form-title" class="form-title">{{ t('sleep_configure') }}</h2>
   
-  <!-- Music Selection -->
-  <div class="form-group">
-    <div id="sleep-playlist-selector">
-      <div class="playlist-input">
-        <div class="playlist-preview">
-          <div class="playlist-preview-image" id="preview-image"><i class="fas fa-compact-disc"></i></div>
-          <div class="playlist-preview-info">
-            <div class="playlist-preview-name" id="preview-name">{{ t('playlist_select_text') or 'Select music' }}</div>
-            <div class="playlist-preview-meta" id="preview-meta"></div>
+  <div class="desktop-form-layout">
+    <!-- Music Selection -->
+    <div class="form-group full-width">
+      <div id="sleep-playlist-selector">
+        <div class="playlist-input">
+          <div class="playlist-preview">
+            <div class="playlist-preview-image" id="preview-image"><i class="fas fa-compact-disc"></i></div>
+            <div class="playlist-preview-info">
+              <div class="playlist-preview-name" id="preview-name">{{ t('playlist_select_text') or 'Select music' }}</div>
+              <div class="playlist-preview-meta" id="preview-meta"></div>
+            </div>
           </div>
         </div>
       </div>
+      <small id="playlist-help" class="form-help">{{ t('sleep_playlist_help') }}</small>
     </div>
-    <small id="playlist-help" class="form-help">{{ t('sleep_playlist_help') }}</small>
-  </div>
 
-  <!-- Device -->
-  <div class="form-group">
-    <label for="device_name">{{ t('device_label')|safe }}</label>
-    <select 
-      name="device_name" 
-      id="device_name" 
-      class="form-input" 
-      required
-      aria-describedby="device-help"
-    >
-      {% for d in devices %}
-        <option value="{{ d.name }}" {% if config.get('device_name') == d.name %}selected{% endif %}>
-          {{ d.name }}
-        </option>
-      {% endfor %}
-    </select>
-    <small id="device-help" class="form-help">{{ t('device_help') }}</small>
-  </div>
-
-  <!-- Duration -->
-  <div class="form-group">
-    <label for="duration">{{ t('duration_label')|safe }}</label>
-    <select 
-      name="duration" 
-      id="duration" 
-      class="form-input"
-      required
-      aria-describedby="duration-help"
-      onchange="handleDurationChange(this.value)"
-    >
-      <option value="15" {% if config.get('sleep_duration') == '15' %}selected{% endif %}>{{ t('duration_15min') }}</option>
-      <option value="30" {% if config.get('sleep_duration') == '30' %}selected{% endif %}>{{ t('duration_30min') }}</option>
-      <option value="45" {% if config.get('sleep_duration') == '45' %}selected{% endif %}>{{ t('duration_45min') }}</option>
-      <option value="60" {% if config.get('sleep_duration') == '60' %}selected{% endif %}>{{ t('duration_1h') }}</option>
-      <option value="90" {% if config.get('sleep_duration') == '90' %}selected{% endif %}>{{ t('duration_15h') }}</option>
-      <option value="120" {% if config.get('sleep_duration') == '120' %}selected{% endif %}>{{ t('duration_2h') }}</option>
-      <option value="custom" {% if config.get('sleep_duration') == 'custom' %}selected{% endif %}>{{ t('duration_custom') }}</option>
-    </select>
-    <small id="duration-help" class="form-help">{{ t('duration_help') }}</small>
-  </div>
-
-  <!-- Custom Duration (hidden when not needed) -->
-  <div id="custom-duration-container" class="custom-duration-container {% if config.get('sleep_duration') == 'custom' %}active{% endif %}">
+    <!-- Device -->
     <div class="form-group">
+      <label for="device_name">{{ t('device_label')|safe }}</label>
+      <select 
+        name="device_name" 
+        id="device_name" 
+        class="form-input" 
+        required
+        aria-describedby="device-help"
+      >
+        {% for d in devices %}
+          <option value="{{ d.name }}" {% if config.get('device_name') == d.name %}selected{% endif %}>
+            {{ d.name }}
+          </option>
+        {% endfor %}
+      </select>
+      <small id="device-help" class="form-help">{{ t('device_help') }}</small>
+    </div>
+
+    <!-- Duration -->
+    <div class="form-group">
+      <label for="duration">{{ t('duration_label')|safe }}</label>
+      <select 
+        name="duration" 
+        id="duration" 
+        class="form-input"
+        required
+        aria-describedby="duration-help"
+        onchange="handleDurationChange(this.value)"
+      >
+        <option value="15" {% if config.get('sleep_duration') == '15' %}selected{% endif %}>{{ t('duration_15min') }}</option>
+        <option value="30" {% if config.get('sleep_duration') == '30' %}selected{% endif %}>{{ t('duration_30min') }}</option>
+        <option value="45" {% if config.get('sleep_duration') == '45' %}selected{% endif %}>{{ t('duration_45min') }}</option>
+        <option value="60" {% if config.get('sleep_duration') == '60' %}selected{% endif %}>{{ t('duration_1h') }}</option>
+        <option value="90" {% if config.get('sleep_duration') == '90' %}selected{% endif %}>{{ t('duration_15h') }}</option>
+        <option value="120" {% if config.get('sleep_duration') == '120' %}selected{% endif %}>{{ t('duration_2h') }}</option>
+        <option value="custom" {% if config.get('sleep_duration') == 'custom' %}selected{% endif %}>{{ t('duration_custom') }}</option>
+      </select>
+      <small id="duration-help" class="form-help">{{ t('duration_help') }}</small>
+    </div>
+
+    <!-- Custom Duration (hidden when not needed) -->
+    <div id="custom-duration-container" class="custom-duration-container form-group {% if config.get('sleep_duration') == 'custom' %}active{% endif %}">
       <label for="custom_duration">{{ t('custom_duration_label')|safe }}</label>
       <input 
         type="number" 
