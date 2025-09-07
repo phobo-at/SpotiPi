@@ -6,7 +6,7 @@ const CONFIG = {
   SYNC_COOLDOWN: 2000,          // 2 seconds cooldown after user interaction
   UPDATE_INTERVALS: {
     SLEEP_TIMER: 1000,          // Update sleep timer (1 second)
-    PLAYBACK: 1000,             // Update play/pause (1 second)
+    PLAYBACK: 5000,             // Update play/pause (5 seconds) - weniger aggressiv
     VOLUME: 10000               // Sync volume (10 seconds)
   }
 };

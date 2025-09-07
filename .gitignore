@@ -103,3 +103,4 @@ yarn-error.log*
 docs/_build/
 docs/build/
 .gitignore-github
+deploy_to_pi.sh
