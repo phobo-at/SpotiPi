@@ -1,0 +1,149 @@
+<div id="sleep-timer" role="status" aria-live="polite" class="timer-display">
+  <!-- ✅ Filled by JavaScript - no static text needed -->
+</div>
+
+<!-- Sleep Configuration Form (shown when timer is inactive) -->
+<form method="POST" id="sleep-form" aria-labelledby="sleep-form-title"
+      data-current-sleep-playlist-uri="{{ config.get('sleep_playlist_uri', '') }}"
+      class="{% if sleep_status.active %}hidden{% endif %}">
+  <h2 id="sleep-form-title" class="form-title">{{ t('sleep_configure') }}</h2>
+  
+  <!-- Music Selection -->
+  <div class="form-group">
+    <div id="sleep-playlist-selector">
+      <div class="playlist-input">
+        <div class="playlist-preview">
+          <div class="playlist-preview-image" id="preview-image"><i class="fas fa-compact-disc"></i></div>
+          <div class="playlist-preview-info">
+            <div class="playlist-preview-name" id="preview-name">{{ t('playlist_select_text') or 'Select music' }}</div>
+            <div class="playlist-preview-meta" id="preview-meta"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <small id="playlist-help" class="form-help">{{ t('sleep_playlist_help') }}</small>
+  </div>
+
+  <!-- Device -->
+  <div class="form-group">
+    <label for="device_name">{{ t('device_label')|safe }}</label>
+    <select 
+      name="device_name" 
+      id="device_name" 
+      class="form-input" 
+      required
+      aria-describedby="device-help"
+    >
+      {% for d in devices %}
+        <option value="{{ d.name }}" {% if config.get('device_name') == d.name %}selected{% endif %}>
+          {{ d.name }}
+        </option>
+      {% endfor %}
+    </select>
+    <small id="device-help" class="form-help">{{ t('device_help') }}</small>
+  </div>
+
+  <!-- Duration -->
+  <div class="form-group">
+    <label for="duration">{{ t('duration_label')|safe }}</label>
+    <select 
+      name="duration" 
+      id="duration" 
+      class="form-input"
+      required
+      aria-describedby="duration-help"
+      onchange="handleDurationChange(this.value)"
+    >
+      <option value="15" {% if config.get('sleep_duration') == '15' %}selected{% endif %}>{{ t('duration_15min') }}</option>
+      <option value="30" {% if config.get('sleep_duration') == '30' %}selected{% endif %}>{{ t('duration_30min') }}</option>
+      <option value="45" {% if config.get('sleep_duration') == '45' %}selected{% endif %}>{{ t('duration_45min') }}</option>
+      <option value="60" {% if config.get('sleep_duration') == '60' %}selected{% endif %}>{{ t('duration_1h') }}</option>
+      <option value="90" {% if config.get('sleep_duration') == '90' %}selected{% endif %}>{{ t('duration_15h') }}</option>
+      <option value="120" {% if config.get('sleep_duration') == '120' %}selected{% endif %}>{{ t('duration_2h') }}</option>
+      <option value="custom" {% if config.get('sleep_duration') == 'custom' %}selected{% endif %}>{{ t('duration_custom') }}</option>
+    </select>
+    <small id="duration-help" class="form-help">{{ t('duration_help') }}</small>
+  </div>
+
+  <!-- Custom Duration (hidden when not needed) -->
+  <div id="custom-duration-container" class="custom-duration-container {% if config.get('sleep_duration') == 'custom' %}active{% endif %}">
+    <div class="form-group">
+      <label for="custom_duration">{{ t('custom_duration_label')|safe }}</label>
+      <input 
+        type="number" 
+        id="custom_duration" 
+        name="custom_duration" 
+        class="form-input" 
+        min="1" 
+        max="240" 
+        value="{{ config.get('sleep_custom_duration', '45') }}" 
+        required
+      >
+    </div>
+  </div>
+  
+  <!-- Hidden fields -->
+  <input type="hidden" id="sleep-volume" name="volume" value="{{ config.get('volume', 50) }}">
+  <input type="hidden" name="playlist_uri" value="{{ config.get('sleep_playlist_uri', '') }}">
+
+  <!-- Options -->
+  <fieldset class="options-group">
+    <legend>{{ t('further_options') }}</legend>
+    <div class="options-group-content">
+      <!-- Option: Only stop running music -->
+      <div class="toggle-switch">
+        <label for="stop_if_playing">{{ t('stop_if_playing') }}</label>
+        <input
+          type="checkbox"
+          id="stop_if_playing"
+          name="stop_if_playing"
+          {% if config.get('stop_if_playing') %}checked{% endif %}
+        >
+        <label for="stop_if_playing" class="switch"></label>
+      </div>
+
+      <!-- Shuffle -->
+      <div class="toggle-switch">
+        <label for="sleep_shuffle">{{ t('shuffle') }}</label>
+        <input
+          type="checkbox"
+          id="sleep_shuffle"
+          name="shuffle"
+          {% if config.get('shuffle') %}checked{% endif %}
+        >
+        <label for="sleep_shuffle" class="switch"></label>
+      </div>
+    </div>
+  </fieldset>
+
+  <!-- Sleep Toggle Container in style of "Enable Container" -->
+  <div class="enable-container">
+    <span class="enable-label">{{ t('enable_sleep') }}</span>
+    <input
+      type="checkbox"
+      id="sleep_enabled"
+      name="sleep_enabled"
+      class="enable-checkbox"
+      {% if sleep_status.active %}checked{% endif %}
+    >
+    <label for="sleep_enabled" class="switch"></label>
+  </div>
+</form>
+
+<!-- Active Sleep Timer Mode (shown when timer is active) -->
+<div id="active-sleep-mode" class="{% if not sleep_status.active %}hidden{% endif %}">>
+  <h2 class="form-title">{{ t('sleep_active_title') }}</h2>
+  <p class="muted-text">{{ t('sleep_active_info') }}</p>
+  
+  <div class="enable-container">
+    <span class="enable-label">{{ t('enable_sleep') }}</span>
+    <input
+      type="checkbox"
+      id="sleep_enabled_active"
+      name="sleep_enabled"
+      class="enable-checkbox"
+      checked
+    >
+    <label for="sleep_enabled_active" class="switch"></label>
+  </div>
+</div>

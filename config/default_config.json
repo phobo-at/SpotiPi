@@ -1,0 +1,18 @@
+{
+  "enabled": false,
+  "time": "06:30",
+  "playlist_uri": "spotify:playlist:6zhbybQCqL2iqpiMmwkM0X",
+  "device_name": "Forte",
+  "volume": 20,
+  "alarm_volume": 20,
+  "fade_in": false,
+  "shuffle": false,
+  "weekdays": [],
+  "sleep_volume": 30,
+  "sleep_default_duration": 30,
+  "sleep_playlist_uri": "",
+  "sleep_device_name": "",
+  "environment": "default",
+  "debug": false,
+  "log_level": "INFO"
+}

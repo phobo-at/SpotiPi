@@ -1,0 +1,34 @@
+<!-- Music Library Interface Template -->
+<div>
+  <h2 class="form-title">{{ t('library_title') }}</h2>
+  
+  <!-- Music Library Browser -->
+  <div class="music-library-browser">
+    <!-- Speaker Selector -->
+    <div class="form-group">
+      <label for="speaker-selector">{{ t('device_label')|safe }}</label>
+      <select id="speaker-selector" class="form-input" aria-describedby="speaker-help">
+        <option value="">{{ t('loading_devices') }}</option>
+      </select>
+      <small id="speaker-help" class="form-help">{{ t('device_help') }}</small>
+    </div>
+    
+    <div class="music-library-tabs tab-container" id="music-library-tabs">
+      <!-- Tabs are dynamically generated -->
+    </div>
+    
+    <div class="music-library-search">
+      <input type="text" 
+             id="music-library-search" 
+             placeholder="{{ t('search_music') }}"
+             class="form-input">
+    </div>
+    
+    <div class="music-library-grid" id="music-library-grid">
+      <div class="music-library-loader">
+        <div class="music-library-spinner"></div>
+        <div class="music-library-loader-text">{{ t('loading_music') }}</div>
+      </div>
+    </div>
+  </div>
+</div>

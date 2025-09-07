@@ -1,0 +1,105 @@
+# ===== CREDENTIALS & SENSITIVE DATA =====
+.env
+config.json
+spotify_credentials.json
+*.token
+*_credentials.json
+.spotify_cache*
+*.cache
+
+# User configuration directories
+/home/pi/.spotify_wakeup/
+.spotify_wakeup/
+
+# Runtime status files
+sleep_status.json
+
+# Development Server
+dev_server.pid
+*.pid
+
+# Logs
+*.log
+logs/
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.pytest_cache/
+
+# Package build
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.sublime-project
+.sublime-workspace
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup & Temporary files
+*.bak
+*.backup
+*.old
+*.tmp
+*.temp
+*.zip
+
+# Test files
+test_*
+*_test.py
+pytest.ini
+.pytest_cache/
+
+# Development artifacts & notes
+ideen/
+notes.txt
+todo.md
+debug.*
+ROADMAP.md
+
+# Node.js (if any frontend tools are added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Documentation builds
+docs/_build/
+docs/build/
+.gitignore-github

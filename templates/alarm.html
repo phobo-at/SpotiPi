@@ -1,0 +1,129 @@
+<div id="alarm-timer" role="status" aria-live="polite" class="timer-display">
+  {% if config.get('enabled', False) %}
+    {{ t('alarm_set', time=config.time) }}
+    {% if config.get('alarm_volume') %}
+      <span class="volume-info">{{ t('alarm_volume_info', volume=config.alarm_volume) }}</span>
+    {% endif %}
+  {% else %}
+    {{ t('no_alarm') }}
+  {% endif %}
+</div>
+
+<form method="POST" aria-labelledby="alarm-form-title" id="alarm-form" 
+      data-current-playlist-uri="{{ config.get('playlist_uri', '') }}">
+  <h2 id="alarm-form-title" class="form-title">{{ t('alarm_configure') }}</h2>
+
+  <!-- Music Selection -->
+  <div class="form-group">
+    <div id="alarm-playlist-selector">
+      <div class="playlist-input">
+        <div class="playlist-preview">
+          <div class="playlist-preview-image" id="preview-image"><i class="fas fa-compact-disc"></i></div>
+          <div class="playlist-preview-info">
+            <div class="playlist-preview-name" id="preview-name">{{ t('playlist_select_text') or 'Select music' }}</div>
+            <div class="playlist-preview-meta" id="preview-meta"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <small id="playlist-help" class="form-help">{{ t('playlist_help') }}</small>
+  </div>
+
+  <!-- Alarm Time -->
+  <div class="form-group">
+    <label for="time" class="alarm-time-label">{{ t('alarm_time_label')|safe }}</label>
+    <input 
+      type="time" 
+      id="time" 
+      name="time" 
+      value="{{ config.time }}" 
+      required 
+      class="alarm-time-input"
+      aria-describedby="time-help"
+    >
+    <small id="time-help" class="form-help">{{ t('alarm_time_help') }}</small>
+    
+    <!-- Wochentag-Bubbles (Python Compatible: 0=Monday, 6=Sunday) -->
+    <div class="weekday-bubbles">
+      <div class="weekday-bubble" data-day="0" title="{{ t('monday') }}">{{ t('mon') }}</div>
+      <div class="weekday-bubble" data-day="1" title="{{ t('tuesday') }}">{{ t('tue') }}</div>
+      <div class="weekday-bubble" data-day="2" title="{{ t('wednesday') }}">{{ t('wed') }}</div>
+      <div class="weekday-bubble" data-day="3" title="{{ t('thursday') }}">{{ t('thu') }}</div>
+      <div class="weekday-bubble" data-day="4" title="{{ t('friday') }}">{{ t('fri') }}</div>
+      <div class="weekday-bubble" data-day="5" title="{{ t('saturday') }}">{{ t('sat') }}</div>
+      <div class="weekday-bubble" data-day="6" title="{{ t('sunday') }}">{{ t('sun') }}</div>
+    </div>
+  </div>
+
+  <!-- Speaker Device -->
+  <div class="form-group">
+    <label for="device_name">{{ t('device_label')|safe }}</label>
+    <select 
+      name="device_name" 
+      id="device_name" 
+      class="form-input" 
+      required
+      aria-describedby="device-help"
+    >
+      {% for d in devices %}
+        <option value="{{ d.name }}" {% if config.device_name == d.name %}selected{% endif %}>
+          {{ d.name }}
+        </option>
+      {% endfor %}
+    </select>
+    <small id="device-help" class="form-help">{{ t('device_help') }}</small>
+  </div>
+
+  <!-- Hidden field for volume -->
+  <input type="hidden" id="volume" name="volume" value="{{ config.volume or 50 }}">
+  
+  <!-- Hidden field for playlist URI -->
+  <input type="hidden" id="playlist_uri" name="playlist_uri" value="{{ config.get('playlist_uri', '') }}">
+  
+  <!-- Hidden field for weekdays -->
+  <input type="hidden" id="weekdays" name="weekdays" value="{{ config.get('weekdays', [])|map('string')|join(',') }}">
+
+  <!-- Options Section -->
+  <fieldset class="options-group">
+    <legend>{{ t('further_options') }}</legend>
+    
+    <div class="options-group-content">
+      <!-- Fade-In Toggle -->
+      <div class="toggle-switch">
+        <label for="fade_in">{{ t('fade_in') }}</label>
+        <input
+          type="checkbox"
+          id="fade_in"
+          name="fade_in"
+          {% if config.get('fade_in', False) %}checked{% endif %}
+        >
+        <label for="fade_in" class="switch"></label>
+      </div>
+
+      <!-- Shuffle Toggle -->
+      <div class="toggle-switch">
+        <label for="shuffle">{{ t('shuffle') }}</label>
+        <input
+          type="checkbox"
+          id="shuffle"
+          name="shuffle"
+          {% if config.get('shuffle', False) %}checked{% endif %}
+        >
+        <label for="shuffle" class="switch"></label>
+      </div>
+    </div>
+  </fieldset>
+
+  <!-- Enable Checkbox - consistent with other toggles -->
+  <div class="enable-container">
+    <span class="enable-label">{{ t('enable_alarm') }}</span>
+    <input
+      type="checkbox"
+      id="enabled"
+      name="enabled"
+      class="enable-checkbox"
+      {% if config.get('enabled', False) %}checked{% endif %}
+    >
+    <label for="enabled" class="switch"></label>
+  </div>
+</form>

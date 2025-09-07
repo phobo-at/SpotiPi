@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="UTF-8">
+  <title>SpotiPi</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+  <!-- Preload critical CSS and fonts -->
+  <link rel="preload" href="{{ url_for('static', filename='css/style.css') }}" as="style">
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" as="style" crossorigin="anonymous">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" crossorigin="anonymous">
+
+  <!-- PWA Icons & Manifest -->
+  <link rel="icon" href="{{ url_for('static', filename='icons/icon-pwa-dark-180.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-pwa-dark-180.png') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+
+  <!-- iOS / Android Web App Meta -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="SpotiPi">
+  <meta name="theme-color" content="#1db954">
+
+  <meta name="description" content="Wake up to your favorite music and fall asleep with Spotify sleep timer">
+</head>
+<body>
+  <header>
+    <h1>
+      <span class="logo-icon">
+        <img src="{{ url_for('static', filename='icons/icon-round.png') }}" alt="SpotiPi Logo" class="logo-image">
+      </span>
+      <span class="logo-text">SpotiPi</span>
+    </h1>
+    
+    <!-- Status display: time and date -->
+    <div class="status-bar">
+      <time id="current-time" class="current-time">{{ now.strftime('%H:%M') }}</time>
+      <span class="current-date">
+        {% if lang == 'de' %}
+          {{ now.strftime('%d.%m.%Y') }}
+        {% else %}
+          {{ now.strftime('%m/%d/%Y') }}
+        {% endif %}
+      </span>
+    </div>
+  </header>
+
+  <main class="app-content">
+    <!-- Current track with album cover -->
+    <div class="current-track" role="status" id="currently-playing" {% if not current_track %}style="display: none;"{% endif %}>
+      {% if current_track %}
+        {% if current_track.album_image %}
+          <div class="album-cover">
+            <img src="{{ current_track.album_image }}" alt="Album Cover" class="album-image" loading="lazy">
+          </div>
+        {% endif %}
+        <div class="track-info">
+          <span class="title">{{ current_track.name }}</span>
+          <span class="artist">{{ current_track.artist }}</span>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="container">
+      <!-- Flash messages -->
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-container" aria-live="polite">
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <!-- Global volume control -->
+      <div class="global-volume-container">
+                <label for="volume" class="volume-label">
+          {{ t('volume_label')|safe }}
+          (<span id="volume-display">{{ config.volume or 50 }}</span>%)
+        <input
+          type="range"
+          id="global-volume"
+          class="form-input"
+          min="0"
+          max="100"
+          value="{{ config.volume or 50 }}"
+          oninput="handleSliderChange(this.value)"
+          onmousedown="handleSliderStart()"
+          onmouseup="handleSliderEnd(this.value)"
+          ontouchstart="handleSliderStart()"
+          ontouchend="handleSliderEnd(this.value)"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="{{ config.volume or 50 }}"
+          aria-valuetext="{{ config.volume or 50 }}%"
+        >
+      </div>
+
+      <!-- Main navigation -->
+      <nav class="toggle-buttons" role="tablist">
+        <button 
+          type="button" 
+          role="tab" 
+          id="alarm-tab"
+          aria-controls="alarm-interface"
+          aria-selected="true"
+          onclick="showInterface('alarm')"
+        >
+          {{ t('alarm_tab')|safe }}
+        </button>
+        <button 
+          type="button" 
+          role="tab" 
+          id="sleep-tab"
+          aria-controls="sleep-interface"
+          aria-selected="false"
+          onclick="showInterface('sleep')"
+        >
+          {{ t('sleep_tab')|safe }}
+        </button>
+        <button 
+          type="button" 
+          role="tab" 
+          id="library-tab"
+          aria-controls="library-interface"
+          aria-selected="false"
+          onclick="showInterface('library')"
+        >
+          {{ t('library_tab')|safe }}
+        </button>
+        <button 
+          id="playPauseBtn" 
+          type="button" 
+          class="control-btn" 
+          onclick="togglePlayPause()"
+          aria-label="{{ t('play_pause') }}"
+        >
+          <i class="fas fa-pause"></i>
+        </button>
+      </nav>
+
+      <!-- Main content area -->
+      <section class="tab-content">
+        <!-- Alarm interface -->
+        <div 
+          id="alarm-interface" 
+          role="tabpanel"
+          aria-labelledby="alarm-tab"
+        >
+          {% include 'alarm.html' %}
+        </div>
+
+        <!-- Sleep interface -->
+        <div 
+          id="sleep-interface" 
+          role="tabpanel"
+          aria-labelledby="sleep-tab"
+          style="display: none;"
+        >
+          {% include 'sleep.html' %}
+        </div>
+
+        <!-- Music Library interface -->
+        <div 
+          id="library-interface" 
+          role="tabpanel"
+          aria-labelledby="library-tab"
+          style="display: none;"
+        >
+          {% include 'music_library.html' %}
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <p class="version-info">{{ app_info }}</p>
+  </footer>
+
+  <!-- Make translations and Spotify data available to JavaScript -->
+<script id="translations-data" type="application/json">
+{
+  "language": {{ lang | tojson }},
+  "translations": {{ translations | tojson }},
+  "devices": {{ devices | tojson }}
+}
+</script>
+
+<script>
+  // Parse translations from JSON script tag
+  const translationsData = JSON.parse(document.getElementById('translations-data').textContent);
+  window.LANGUAGE = translationsData.language;
+  window.TRANSLATIONS = translationsData.translations;
+  window.SPOTIFY_DEVICES = translationsData.devices;
+</script>
+  
+  <!-- Main JavaScript with showInterface, togglePlayPause etc. -->
+  <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

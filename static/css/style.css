@@ -1,0 +1,1438 @@
+/* ===============================================
+   📱 PWA iOS Status-Bar
+   =============================================== */
+@supports(display-mode: standalone) {
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top);
+    background-color: var(--color-primary);
+    z-index: 9999;
+  }
+}
+
+/* ===============================================
+   🔧 Utility Classes
+   =============================================== */
+.hidden {
+  display: none !important;
+}
+
+/* ===============================================
+   🎨 Color Scheme & Core Variables
+   =============================================== */
+:root {
+  /* Color palette */
+  --color-bg: #1e1e1e;
+  --color-text: #f1f1f1;
+  --color-text-muted: #999;
+  --color-primary: #1db954;
+  --color-surface: #2c2c2c;
+  --color-surface-hover: #383838;
+  --color-border: #404040;
+  --color-primary-hover: #17a44b;
+  --color-disabled: #555;
+  --color-inverse-text: #ffffff;
+  --color-error: #e74c3c;
+  --color-primary-dark: #145e32;
+  
+  /* Sizes */
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 0.75rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-xxl: 3rem;
+  
+  /* Shadows */
+  --shadow-sm: 0 2px 4px rgba(0,0,0,0.1);
+  --shadow-md: 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-lg: 0 4px 8px rgba(0,0,0,0.3);
+  
+  /* Animations & Transitions */
+  --transition-fast: 0.2s;
+  --transition-normal: 0.3s;
+  --transition-slow: 0.4s;
+  --transition-easing: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===============================================
+   📄 Base Layout
+   =============================================== */
+body {
+  padding-top: env(safe-area-inset-top);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Inter', sans-serif;
+  padding: var(--spacing-xl);
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.8rem;
+  margin-bottom: var(--spacing-xxl);
+  text-align: center;
+  color: var(--color-primary);
+}
+
+.container {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+/* ===============================================
+   🔔 Notifications
+   =============================================== */
+.flash {
+  background-color: var(--color-surface);
+  border-left: 6px solid var(--color-primary);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  border-radius: var(--border-radius-md);
+  font-size: 1rem;
+  animation: fadeOut 0.5s ease-in-out forwards;
+  animation-delay: 2s;
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+    height: 0;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+}
+
+/* ===============================================
+   📝 Form Elements
+   =============================================== */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+label {
+  font-weight: 600;
+  margin-bottom: var(--spacing-sm); /* Increased from xs to sm for better spacing */
+  display: block; /* Ensure consistent block display */
+}
+
+.form-group {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-input {
+  width: 100%;
+  font-size: 18px; /* Mobile-optimized font size */
+  padding: var(--spacing-md) var(--spacing-sm); /* Mobile-optimized padding */
+  min-height: 48px; /* Touch target size */
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast);
+}
+
+/* iOS Safari dropdown fixes */
+select.form-input {
+  min-height: 56px; /* Increased height for dropdowns */
+  padding: var(--spacing-md) var(--spacing-lg); /* More horizontal padding for text */
+  font-size: 18px; /* Ensure consistent font size */
+  line-height: 1.4; /* Better line height for text display */
+  -webkit-appearance: none; /* Remove iOS default styling */
+  appearance: none; /* Remove default styling */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--spacing-sm) center;
+  background-size: 16px;
+  padding-right: calc(var(--spacing-lg) + 24px); /* Space for custom arrow */
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.form-title {
+  font-size: 1.3rem;
+  color: var(--color-primary);
+  margin-top: 0;
+  margin-bottom: var(--spacing-md);
+  text-align: center;
+}
+
+.form-help {
+  display: block;
+  font-size: 0.85rem;
+  margin-top: var(--spacing-xs);
+  color: var(--color-disabled);
+}
+
+.muted-text {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+input[type="time"] {
+  appearance: none;
+  font-size: 1rem;
+  padding: var(--spacing-sm);
+  border: none;
+  border-radius: var(--border-radius-md);
+  background-color: var(--color-surface);
+  color: var(--color-inverse-text);
+  width: 100%;
+  height: 48px;
+  box-sizing: border-box;
+}
+
+select {
+  height: 48px;
+  width: 100%;
+}
+
+/* Options group with exactly uniform spacing */
+.options-group {
+  border: 1px solid var(--color-surface);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-md);
+  padding-top: calc(var(--spacing-md) + 8px);
+  padding-bottom: var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
+  position: relative;
+}
+
+.options-group legend {
+  padding: 0 var(--spacing-xs);
+  font-weight: 600;
+  color: var(--color-primary);
+  position: absolute;
+  top: 0;
+  transform: translateY(-50%);
+  background-color: var(--color-bg);
+}
+
+.options-group-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+/* ===============================================
+   🔘 Toggle Switches (uniform for all checkboxes)
+   =============================================== */
+.toggle-switch, .enable-container {
+  display: grid;
+  grid-template-columns: 1fr 60px; /* Fixed width for toggle area */
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+/* Only enable-container uses flexbox for better alignment */
+.enable-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.toggle-switch {
+  margin: var(--spacing-md) 0;
+}
+
+/* Label on left, takes available space */
+.toggle-switch label, .enable-container .enable-label {
+  margin: 0;
+  padding: 0;
+  font-weight: 500;
+  line-height: 1.4;
+  order: 0;
+  display: flex;
+  align-items: center;
+  grid-column: 1;
+}
+
+/* Only enable-container labels use flex: 1 */
+.enable-container .enable-label {
+  flex: 1;
+  order: unset;
+  grid-column: unset;
+}
+
+/* Subtle highlight for the alarm enable text */
+.enable-container .enable-label {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+/* Hide all checkboxes */
+.toggle-switch input[type="checkbox"], .enable-container .enable-checkbox {
+  height: 0;
+  width: 0;
+  visibility: hidden;
+  position: absolute;
+}
+
+/* Uniform switch for ALL toggles */
+.toggle-switch .switch, .enable-container .switch {
+  width: 48px; /* Uniform size */
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  background: var(--color-disabled);
+  border-radius: 24px;
+  position: relative;
+  transition: background-color var(--transition-fast);
+  grid-column: 2;
+  justify-self: end;
+  order: 1;
+}
+
+/* Only enable-container switches use flexbox properties */
+.enable-container .switch {
+  flex-shrink: 0;
+  grid-column: unset;
+  justify-self: unset;
+  order: unset;
+}
+
+/* Uniform slider for ALL toggles */
+.toggle-switch .switch::after, .enable-container .switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px; /* UNIFORM size */
+  height: 20px; /* UNIFORM size */
+  background: var(--color-inverse-text);
+  border-radius: 20px;
+  transition: var(--transition-normal);
+}
+
+/* Common rules for active state */
+.toggle-switch input:checked + .switch, .enable-container input:checked + .switch {
+  background: var(--color-primary);
+}
+
+.toggle-switch input:checked + .switch::after, .enable-container input:checked + .switch::after {
+  left: calc(100% - 2px);
+  transform: translateX(-100%);
+}
+
+.toggle-switch .switch:active:after, .enable-container .switch:active:after {
+  width: 28px;
+}
+
+/* Only the Enable container gets visual highlighting */
+.enable-container {
+  background-color: rgba(29, 185, 84, 0.08);
+  border: 1px solid rgba(29, 185, 84, 0.2);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: var(--spacing-md) 0;
+}
+
+/* ===============================================
+   🔘 Buttons
+   =============================================== */
+
+/* Base style for all buttons */
+.control-btn, .toggle-buttons button {
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Tab buttons should stack icon over text */
+.toggle-buttons button[role="tab"] {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toggle-buttons button[role="tab"] i {
+  font-size: 1.1em;
+}
+
+.toggle-buttons button[role="tab"] span {
+  font-size: 0.9em;
+  margin-top: 2px;
+}
+
+/* For all buttons */
+.toggle-buttons button {
+  flex: 1;
+  background-color: var(--color-primary);
+  color: var(--color-inverse-text);
+  padding: var(--spacing-sm);
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* Specific styles for tab buttons */
+.toggle-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  flex-wrap: nowrap;
+}
+
+.toggle-buttons button:hover {
+  background-color: var(--color-primary-hover);
+}
+
+/* For the selected button */
+.toggle-buttons[role="tablist"] button[aria-selected="true"] {
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary);
+  box-shadow: none;
+}
+
+/* Disabled state */
+.control-btn:disabled {
+  background-color: var(--color-disabled);
+  cursor: not-allowed;
+}
+
+/* ===============================================
+   🎚️ Slider
+   =============================================== */
+input[type="range"] {
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  background: transparent;
+  margin: var(--spacing-md) 0;
+  cursor: pointer;
+}
+
+/* Track */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 12px;
+  background: var(--color-surface);
+  border-radius: 6px;
+}
+
+input[type="range"]::-moz-range-track {
+  height: 12px;
+  background: var(--color-surface);
+  border-radius: 6px;
+}
+
+/* Thumb */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  transform: translateY(-6px);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  background: var(--color-primary);
+  border: none;
+  border-radius: 50%;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+/* Hover */
+input[type="range"]::-webkit-slider-thumb:hover,
+input[type="range"]::-moz-range-thumb:hover {
+  transform: translateY(-6px) scale(1.1);
+  background: var(--color-primary-hover);
+}
+
+/* ===============================================
+   🎵 Current Track
+   =============================================== */
+.current-track {
+  display: flex;
+  align-items: center;
+  background-color: var(--color-surface);
+  border-left: 4px solid var(--color-primary);
+  padding: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--shadow-md);
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.album-cover {
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.album-image {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--border-radius-sm);
+  object-fit: cover;
+  box-shadow: var(--shadow-md);
+}
+
+.track-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.current-track .title {
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text);
+}
+
+.current-track .artist {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-disabled);
+}
+
+/* ===============================================
+   ⏰ Alarm-specific Styles
+   =============================================== */
+.alarm-time-label {
+  display: block;
+  margin-bottom: var(--spacing-sm); /* Match global label spacing */
+  font-weight: bold;
+}
+
+.alarm-time-input {
+  width: 100%;
+  padding: var(--spacing-xs);
+  font-size: 1rem;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background-color: var(--color-surface);
+  color: var(--color-inverse-text);
+  box-sizing: border-box;
+}
+
+/* Weekday Bubbles */
+.weekday-bubbles {
+  display: flex;
+  gap: var(--spacing-xs);
+  justify-content: center;
+  margin: var(--spacing-md) 0;
+  flex-wrap: wrap;
+}
+
+.weekday-bubble {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast) var(--transition-easing);
+  user-select: none;
+
+  /* Inactive (dark gray) */
+  background-color: #4a4a4a;
+  color: var(--color-text-muted);
+  border: 2px solid #666;
+}
+
+.weekday-bubble:hover {
+  background-color: #5a5a5a;
+  border-color: #777;
+  transform: scale(1.05);
+}
+
+.weekday-bubble.active {
+  background-color: var(--color-primary);
+  color: var(--color-inverse-text);
+  border-color: var(--color-primary-hover);
+  box-shadow: 0 0 10px rgba(29, 185, 84, 0.3);
+}
+
+.weekday-bubble.active:hover {
+  background-color: var(--color-primary-hover);
+  box-shadow: 0 0 15px rgba(29, 185, 84, 0.4);
+  transform: scale(1.05);
+}
+
+/* ===============================================
+   😴 Sleep-specific Styles
+   =============================================== */
+.timer-display {
+  font-weight: bold;
+  margin-bottom: var(--spacing-xl);
+  font-size: 1.1rem;
+  text-align: center;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-xs);
+}
+
+.custom-duration-container {
+  margin-top: var(--spacing-xs);
+  display: none;
+}
+
+.custom-duration-container.active {
+  display: block;
+}
+
+/* ===============================================
+   🔊 Global Volume Control
+   =============================================== */
+.global-volume-container {
+  background-color: var(--color-surface);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-md);
+  margin-bottom: var(--spacing-md);
+  box-shadow: var(--shadow-sm);
+  width: 100%;
+  box-sizing: border-box;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.volume-label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  font-weight: 600;
+}
+
+/* Special styling for global slider */
+#global-volume::-webkit-slider-runnable-track {
+  background: var(--color-bg);
+}
+
+#global-volume::-moz-range-track {
+  background: var(--color-bg);
+}
+
+/* ===============================================
+   🏗️ Main Layout Components
+   =============================================== */
+header {
+  text-align: center;
+  margin-bottom: var(--spacing-lg);
+}
+
+.app-content {
+  flex: 1;
+}
+
+.app-footer {
+  margin-top: var(--spacing-xl);
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--color-disabled);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-surface);
+}
+
+/* Logo styling */
+.logo-icon {
+  margin-right: var(--spacing-xs);
+}
+
+.logo-image {
+  width: 36px;
+  height: 36px;
+  vertical-align: text-top;
+  border-radius: 50%;
+}
+
+.logo-text {
+  background: linear-gradient(90deg, var(--color-primary), #4ae68a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Status bar with time and date */
+.status-bar {
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-xs);
+  font-size: 0.9rem;
+  color: var(--color-disabled);
+}
+
+.current-time {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+/* Flash messages container */
+.flash-container {
+  margin-bottom: var(--spacing-md);
+}
+
+/* Timer display volume info */
+.timer-display .volume-info {
+  font-size: 0.85rem;
+  font-weight: normal;
+  opacity: 0.8;
+  margin-left: 0.5rem;
+}
+
+/* ===============================================
+   📱 Responsive Adjustments
+   =============================================== */
+@media (max-width: 480px) {
+  body {
+    padding: var(--spacing-md);
+  }
+  
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  .album-image {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .current-track .title {
+    font-size: 0.9rem;
+  }
+  
+  .current-track .artist {
+    font-size: 0.8rem;
+  }
+  
+  .toggle-buttons button {
+    flex-grow: 1;
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+  
+  .device-selection-modal {
+    width: 95%;
+    padding: var(--spacing-lg);
+  }
+  
+  .device-selection-modal h3 {
+    font-size: 1.1rem;
+  }
+}
+
+@media (max-width: 350px) {
+  .album-image {
+    width: 40px;
+    height: 40px;
+  }
+  
+  body {
+    padding: var(--spacing-sm);
+  }
+}
+
+/* Save feedback animation */
+@keyframes saveFeedback {
+  0% { border-color: var(--color-primary); background-color: rgba(29, 185, 84, 0.1); }
+  50% { border-color: var(--color-primary); background-color: rgba(29, 185, 84, 0.2); }
+  100% { border-color: var(--color-primary); background-color: rgba(29, 185, 84, 0.1); }
+}
+
+.timer-display.saved {
+  animation: saveFeedback 1s ease;
+}
+
+/* ===============================================
+  🔗 Shared Tab Components
+   =============================================== */
+
+/* Container for tab groups */
+.tab-container {
+  display: flex;
+  background: var(--color-bg);
+}
+
+/* Base style for all tab buttons */
+.tab-button {
+  flex: 1;
+  padding: var(--spacing-md) var(--spacing-sm); /* Increased vertical padding */
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 16px; /* Increased from 14px */
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  min-width: fit-content;
+  min-height: 48px; /* Minimum touch target size */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Special adjustment for playlist tabs (Alarm/Sleep) */
+.playlist-tabs .tab-button {
+  flex: 0 0 auto; /* Tabs only as wide as their content */
+  padding: var(--spacing-md) var(--spacing-md); /* Match music library padding */
+  font-size: 16px; /* Match music library font size */
+  min-width: 80px; /* Match music library minimum width */
+}
+
+/* Music library tabs need extra touch space */
+.music-library-tabs .tab-button {
+  padding: var(--spacing-md) var(--spacing-md); /* Better touch targets */
+  font-size: 16px; /* Consistent larger font */
+  min-width: 80px; /* Minimum width for easy tapping */
+}
+
+.tab-button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.tab-button.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+/* ===============================================
+   🎵 Playlist Modal Tabs (specific adjustments)
+   =============================================== */
+
+.playlist-tabs {
+  display: flex;
+  background: var(--color-bg);
+}
+
+/* ===============================================
+   🔊 Device Selection Modal
+   =============================================== */
+
+.device-selection-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+
+.device-selection-modal {
+  background: var(--color-surface);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-xl);
+  max-width: 400px;
+  width: 90%;
+  box-shadow: var(--shadow-lg);
+  color: var(--color-text);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.device-selection-modal h3 {
+  margin: 0 0 var(--spacing-md) 0;
+  color: var(--color-primary);
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.device-selection-modal p {
+  margin: 0 0 var(--spacing-lg) 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.device-list {
+  margin-bottom: var(--spacing-lg);
+}
+
+.device-option {
+  display: block;
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: var(--spacing-xs) 0;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition-fast);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.device-option:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.device-option:active {
+  transform: translateY(0);
+}
+
+.device-selection-modal .modal-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+  margin-top: var(--spacing-md);
+}
+
+.device-selection-modal .cancel-btn {
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 14px;
+}
+
+.device-selection-modal .cancel-btn:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-text-muted);
+}
+
+/* ===============================================
+   🎵 Playlist Modal Content
+   =============================================== */
+
+.playlist-selector,
+#alarm-playlist-selector,
+#sleep-playlist-selector {
+  position: relative;
+  width: 100%;
+  min-height: 60px;
+}
+
+.playlist-input {
+  display: flex;
+  align-items: center;
+  padding: var(--spacing-sm);
+  border: 2px solid var(--color-border);
+  border-radius: var(--border-radius);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: all var(--transition-normal) var(--transition-easing);
+  min-height: 60px;
+}
+
+.playlist-input:hover {
+  border-color: var(--color-primary);
+  background: var(--color-surface-hover);
+}
+
+/* Removed green border for playlist input active state */
+
+.playlist-preview {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: var(--spacing-sm);
+}
+
+.playlist-preview-image {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: var(--color-border);
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: 18px;
+}
+
+.playlist-preview-info {
+  flex: 1;
+  text-align: left;
+}
+
+.playlist-preview-name {
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+  transition: opacity var(--transition-normal) var(--transition-easing);
+}
+
+.playlist-preview-meta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 2px 0 0 0;
+}
+
+.playlist-dropdown-icon {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  transition: transform var(--transition-normal) var(--transition-easing);
+  font-size: 16px;
+}
+
+.playlist-input.active .playlist-dropdown-icon {
+  transform: rotate(180deg);
+}
+
+.playlist-modal {
+  position: relative; /* Changed from absolute */
+  width: calc(100% - 4px); /* Slightly narrower to match exactly */
+  background: var(--color-surface);
+  border: 1px solid var(--color-border); /* Changed from primary color */
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  height: 0; /* Start with no height */
+  max-height: 0; /* Start collapsed */
+  overflow: hidden;
+  display: flex; /* Always flex, use max-height for visibility */
+  flex-direction: column;
+  transition: height var(--transition-slow) var(--transition-easing), 
+              max-height var(--transition-slow) var(--transition-easing), 
+              margin var(--transition-slow) var(--transition-easing), 
+              border-width var(--transition-slow) var(--transition-easing),
+              opacity var(--transition-slow) var(--transition-easing);
+  margin-top: 0;
+  margin-bottom: 0; /* No bottom margin when closed */
+  border-width: 0; /* Hide border when collapsed */
+  opacity: 0; /* Start invisible for Safari */
+  transform: translateZ(0); /* Force hardware acceleration */
+  -webkit-transform: translateZ(0); /* Safari specific */
+  will-change: height, max-height, opacity, margin; /* Optimize for animations */
+}
+
+/* iOS Safari scroll fixes */
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+body {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Force scroll when modal opens */
+.playlist-input.modal-open {
+  scroll-margin-top: 20px;
+}
+
+.playlist-modal.show {
+  height: 60vh; /* Use 60% of viewport height for better space usage */
+  max-height: 60vh; /* Expand to viewport-based height */
+  margin-top: var(--spacing-sm); /* Add some spacing when expanded */
+  margin-bottom: var(--spacing-sm); /* Add bottom spacing when expanded */
+  border-width: 1px; /* Show subtle border when expanded */
+  opacity: 1; /* Make visible */
+  scroll-margin-top: 20px; /* iOS Safari scroll hint */
+}
+
+/* Mobile optimization - use even more space on smaller screens */
+@media (max-width: 768px) {
+  .playlist-modal.show {
+    height: 70vh; /* Use 70% of viewport height on mobile */
+    max-height: 70vh;
+  }
+}
+
+/* Safari iOS specific fixes */
+@supports (-webkit-touch-callout: none) {
+  .playlist-modal {
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    -webkit-perspective: 1000;
+    perspective: 1000;
+  }
+  
+  .playlist-modal.show {
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+}
+
+.playlist-modal-header {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.playlist-search {
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.playlist-search input {
+  flex: 1;
+}
+
+.playlist-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: var(--spacing-xs);
+  border-radius: var(--border-radius-sm);
+  transition: all var(--transition-fast);
+  font-size: 16px;
+  line-height: 1;
+  min-height: 48px; /* Touch target */
+  min-width: 48px; /* Touch target */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.playlist-close-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.playlist-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  padding: var(--spacing-xs);
+  overflow-y: auto;
+  overflow-x: hidden; /* No horizontal scrolling */
+  flex: 1;
+  min-height: 200px; /* Minimum height */
+  scrollbar-width: none; /* Firefox - hide scrollbar */
+  -ms-overflow-style: none; /* IE and Edge - hide scrollbar */
+}
+
+/* Webkit Scrollbar (Chrome, Safari, Edge) - hide completely */
+.playlist-grid::-webkit-scrollbar {
+  display: none; /* Hide scrollbar completely */
+}
+
+.playlist-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast) var(--transition-easing);
+  background: transparent;
+  min-height: 60px;
+}
+
+.playlist-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.playlist-item.selected {
+  background: rgba(29, 185, 84, 0.1);
+  border: 1px solid var(--color-primary);
+}
+
+.playlist-item-image {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  background: var(--color-border);
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: 20px;
+}
+
+.playlist-item-info {
+  flex: 1;
+  text-align: left;
+}
+
+.playlist-item-name {
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0 0 2px 0;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.playlist-item-meta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.playlist-no-results {
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .playlist-modal {
+    max-height: 300px;
+  }
+  
+  .playlist-item {
+    min-height: 56px;
+  }
+  
+  .playlist-item-image {
+    width: 44px;
+    height: 44px;
+  }
+  
+  .playlist-preview-image {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* Music Library Loader/Spinner */
+.music-library-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--color-text-muted);
+  margin: var(--spacing-lg) 0;
+  background: transparent;
+  border: none;
+  width: 100%;
+  grid-column: 1 / -1; /* Spans all grid columns */
+  place-self: center; /* Centers within grid */
+}
+
+.music-library-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-border);
+  border-top: 3px solid var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: var(--spacing-md);
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.music-library-loader-text {
+  font-size: 16px;
+  font-weight: 500;
+  margin-top: var(--spacing-xs);
+  color: var(--color-text);
+  padding: 0 var(--spacing-sm);
+  position: relative;
+  z-index: 1;
+}
+
+/* ===============================================
+   🎵 Music Library Browser
+   =============================================== */
+
+.music-library-browser {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* ===============================================
+   🎵 Music Library Browser Tabs (extends tab-container)
+   =============================================== */
+
+.music-library-tabs {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--spacing-sm);
+  flex-wrap: nowrap; /* All tabs in one line */
+  overflow-x: auto; /* Horizontal scroll if needed */
+  background: var(--color-bg);
+}
+
+.music-library-search {
+  margin-bottom: var(--spacing-md);
+}
+
+.music-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--spacing-sm);
+  width: 100%;
+  min-height: 400px;
+  place-items: start;
+  position: relative;
+  max-width: 100%;
+}
+
+.music-item {
+  background: var(--color-surface);
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  transition: all var(--transition-normal) var(--transition-easing);
+  cursor: pointer;
+  width: 100%;
+  max-width: 180px;
+  margin: 0 auto;
+}
+
+.music-item:hover {
+  background: var(--color-surface-hover);
+  transform: translateY(-2px);
+}
+
+.music-item-image {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+
+.music-item-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.music-play-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(29, 185, 84, 0.9);
+  border: none;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: all var(--transition-normal) var(--transition-easing);
+  color: white;
+  font-size: 16px;
+}
+
+.music-item:hover .music-play-btn {
+  opacity: 1;
+}
+
+.music-play-btn:hover {
+  background: var(--color-primary);
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.music-item-info {
+  padding: var(--spacing-sm);
+}
+
+.music-item-name {
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.music-item-artist {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.no-results {
+  text-align: center;
+  color: var(--color-text-muted);
+  padding: var(--spacing-xl);
+  font-size: 16px;
+  grid-column: 1 / -1; /* Takes the entire grid width */
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0 auto;
+}
+
+/* Mobile responsive for Music Library */
+@media (max-width: 768px) {
+  .music-library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: var(--spacing-sm);
+  }
+  
+  .music-library-tabs {
+    flex-wrap: nowrap; /* All tabs in one line on mobile too */
+    gap: var(--spacing-xs);
+  }
+  
+  .tab-button {
+    font-size: 12px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+  
+  .music-item-name {
+    font-size: 12px;
+  }
+  
+  .music-item-artist {
+    font-size: 11px;
+  }
+  
+  .music-play-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 14px;
+  }
+}

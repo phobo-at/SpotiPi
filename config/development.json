@@ -1,0 +1,23 @@
+{
+  "enabled": false,
+  "time": "23:59",
+  "playlist_uri": "spotify:artist:3kjuyTCjPG1WMFCiyc5IuB",
+  "device_name": "Forte",
+  "volume": 20,
+  "alarm_volume": 20,
+  "fade_in": false,
+  "shuffle": false,
+  "weekdays": [
+    3
+  ],
+  "sleep_volume": 25,
+  "sleep_default_duration": 15,
+  "sleep_playlist_uri": "",
+  "sleep_device_name": "phobo",
+  "environment": "development",
+  "debug": true,
+  "log_level": "INFO",
+  "port": 5001,
+  "host": "127.0.0.1",
+  "test_volume": 44
+}

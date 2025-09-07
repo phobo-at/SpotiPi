@@ -1,0 +1,92 @@
+#!/bin/bash
+# 🎵 SpotiPi Quick Server Manager
+# Simple wrapper for common server operations
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MANAGER="$PROJECT_DIR/server_manager.py"
+
+# Colors for output
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+case "$1" in
+    "start"|"s")
+        echo -e "${BLUE}🚀 Starting SpotiPi server...${NC}"
+        python3 "$MANAGER" start
+        ;;
+    "stop"|"k")
+        echo -e "${RED}🛑 Stopping SpotiPi server...${NC}"
+        python3 "$MANAGER" stop
+        ;;
+    "restart"|"r")
+        echo -e "${YELLOW}🔄 Restarting SpotiPi server...${NC}"
+        python3 "$MANAGER" restart
+        ;;
+    "status"|"st")
+        python3 "$MANAGER" status
+        ;;
+    "logs"|"l")
+        if [ "$2" = "-f" ]; then
+            echo -e "${BLUE}📋 Following logs (Ctrl+C to stop)...${NC}"
+            python3 "$MANAGER" logs -f
+        else
+            python3 "$MANAGER" logs
+        fi
+        ;;
+    "errors"|"e")
+        echo -e "${RED}🔴 Error logs:${NC}"
+        python3 "$MANAGER" errors
+        ;;
+    "test"|"t")
+        echo -e "${BLUE}🧪 Testing server...${NC}"
+        if curl -s http://localhost:5001/ > /dev/null; then
+            echo -e "${GREEN}✅ Server is responding${NC}"
+            echo -e "${BLUE}🎟️ Checking token cache...${NC}"
+            curl -s http://localhost:5001/api/token-cache/status | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    metrics = data['cache_info']['cache_metrics']
+    print(f'   Cache hits: {metrics[\"cache_hits\"]}/{metrics[\"total_requests\"]}')
+except:
+    print('   Cache status unavailable')
+"
+        else
+            echo -e "${RED}❌ Server not responding${NC}"
+        fi
+        ;;
+    "open"|"o")
+        echo -e "${BLUE}🌐 Opening SpotiPi in browser...${NC}"
+        if command -v open > /dev/null; then
+            open http://localhost:5001
+        elif command -v xdg-open > /dev/null; then
+            xdg-open http://localhost:5001
+        else
+            echo "Please open http://localhost:5001 in your browser"
+        fi
+        ;;
+    *)
+        echo -e "${BLUE}🎵 SpotiPi Quick Commands${NC}"
+        echo ""
+        echo "Usage: $0 <command>"
+        echo ""
+        echo "Commands:"
+        echo -e "  ${GREEN}start${NC}, ${GREEN}s${NC}       Start server"
+        echo -e "  ${RED}stop${NC}, ${RED}k${NC}        Stop server"  
+        echo -e "  ${YELLOW}restart${NC}, ${YELLOW}r${NC}     Restart server"
+        echo -e "  ${BLUE}status${NC}, ${BLUE}st${NC}     Show status"
+        echo -e "  ${BLUE}logs${NC}, ${BLUE}l${NC}       Show logs"
+        echo -e "  ${BLUE}logs -f${NC}       Follow logs"
+        echo -e "  ${RED}errors${NC}, ${RED}e${NC}      Show errors"
+        echo -e "  ${GREEN}test${NC}, ${GREEN}t${NC}       Test server"
+        echo -e "  ${BLUE}open${NC}, ${BLUE}o${NC}       Open in browser"
+        echo ""
+        echo "Examples:"
+        echo "  $0 start     # Start server in background"
+        echo "  $0 test      # Quick health check"
+        echo "  $0 logs -f   # Follow logs in real-time"
+        ;;
+esac

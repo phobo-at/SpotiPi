@@ -1,0 +1,36 @@
+{
+  "name": "SpotiPi - Alarm Clock & Sleep Timer",
+  "short_name": "SpotiPi",
+  "description": "Spotify Alarm Clock & Sleep Timer for Raspberry Pi",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e1e1e",
+  "theme_color": "#1db954",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/static/icon-pwa-dark-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icon-pwa-dark-192.png",
+      "sizes": "192x192", 
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icon-pwa-dark-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["music", "utilities", "productivity"],
+  "screenshots": [],
+  "prefer_related_applications": false,
+  "related_applications": []
+}
