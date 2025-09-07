@@ -12,7 +12,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Import the configured app from src structure
-from src.app import app
+from src.app import app, start_alarm_scheduler
 from src.config import load_config
 
 if __name__ == "__main__":
@@ -32,6 +32,12 @@ if __name__ == "__main__":
     print(f"🌍 Environment: {config.get('environment', 'unknown')}")
     print(f"🔧 Debug mode: {debug_mode}")
     
+    # Ensure background scheduler is started for run.py based runs
+    try:
+        start_alarm_scheduler()
+    except Exception:
+        pass
+
     app.run(
         host="0.0.0.0", 
         port=port, 

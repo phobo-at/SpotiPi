@@ -16,6 +16,9 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 import logging
 from typing import Dict, List, Optional, Any, Union
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
+import socket
 
 # Use the new centralized config system
 from ..config import load_config, save_config
@@ -30,7 +33,7 @@ __all__ = [
     "get_current_playback", "get_current_track", "get_current_spotify_volume", 
     "get_saved_albums", "get_user_saved_tracks", "get_followed_artists",
     "set_volume", "get_playback_status", "get_user_library",
-    "load_music_library_parallel"
+    "load_music_library_parallel", "spotify_network_health"
 ]
 
 # 🔧 File paths
@@ -50,6 +53,9 @@ def refresh_access_token() -> Optional[str]:
     Returns:
         Optional[str]: New access token if successful, None otherwise
     """
+    # Optional offline short-circuit for tests or restricted environments
+    if os.getenv("SPOTIPI_OFFLINE") == "1":
+        return None
     try:
         r = requests.post(
             "https://accounts.spotify.com/api/token",
@@ -86,6 +92,58 @@ def force_refresh_token() -> Optional[str]:
 # Initialize token cache when module is imported
 initialize_token_cache(refresh_access_token)
 
+# =============================
+# 🌐 HTTP Session + Circuit Breaker
+# =============================
+
+def _build_session() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(
+        total=int(os.getenv('SPOTIPI_HTTP_RETRY_TOTAL', '3')),
+        backoff_factor=float(os.getenv('SPOTIPI_HTTP_BACKOFF', '0.5')),
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=(
+            'GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'
+        ),
+        respect_retry_after_header=True,
+    )
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=10)
+    session.mount('https://', adapter)
+    session.mount('http://', adapter)
+    return session
+
+SESSION = _build_session()
+
+_BREAKER = {
+    'consecutive_failures': 0,
+    'open_until': 0.0,
+    'threshold': int(os.getenv('SPOTIPI_BREAKER_THRESHOLD', '3')),
+    'cooldown': int(os.getenv('SPOTIPI_BREAKER_COOLDOWN', '30')),
+}
+
+def _breaker_open() -> bool:
+    return time.time() < _BREAKER['open_until']
+
+def _breaker_on_success() -> None:
+    _BREAKER['consecutive_failures'] = 0
+    _BREAKER['open_until'] = 0.0
+
+def _breaker_on_failure() -> None:
+    _BREAKER['consecutive_failures'] += 1
+    if _BREAKER['consecutive_failures'] >= _BREAKER['threshold']:
+        _BREAKER['open_until'] = time.time() + _BREAKER['cooldown']
+
+def _spotify_request(method: str, url: str, *, headers: Dict[str, str], params: Optional[Dict[str, Any]] = None, json: Optional[Dict[str, Any]] = None, timeout: int = 10) -> requests.Response:
+    if _breaker_open():
+        raise RuntimeError("Spotify API temporarily unavailable (circuit breaker open)")
+    try:
+        resp = SESSION.request(method=method, url=url, headers=headers, params=params, json=json, timeout=timeout)
+        _breaker_on_success()
+        return resp
+    except requests.exceptions.RequestException:
+        _breaker_on_failure()
+        raise
+
 # 🎵 Spotify API
 def get_playlists(token: str) -> List[Dict[str, Any]]:
     """Fetch user's playlists from Spotify API.
@@ -103,7 +161,7 @@ def get_playlists(token: str) -> List[Dict[str, Any]]:
     
     while url:
         try:
-            r = requests.get(url, headers=headers, timeout=10)
+            r = _spotify_request('GET', url, headers=headers, timeout=10)
             if r.status_code == 200:
                 for item in r.json().get("items", []):
                     # Filter out playlists whose name starts with [Felix] (optional, personal setting)
@@ -178,7 +236,7 @@ def get_saved_albums(token: str) -> List[Dict[str, Any]]:
     
     while url:
         try:
-            r = requests.get(url, headers=headers, timeout=10)
+            r = _spotify_request('GET', url, headers=headers, timeout=10)
             if r.status_code == 200:
                 data = r.json()
                 for item in data.get("items", []):
@@ -243,7 +301,7 @@ def get_user_saved_tracks(token: str) -> List[Dict[str, Any]]:
         headers = {"Authorization": f"Bearer {token}"}
         
         while url:
-            r = requests.get(url, headers=headers, timeout=10)
+            r = _spotify_request('GET', url, headers=headers, timeout=10)
             
             if r.status_code == 200:
                 data = r.json()
@@ -311,7 +369,7 @@ def get_followed_artists(token: str) -> List[Dict[str, Any]]:
     
     try:
         while url:
-            r = requests.get(url, headers=headers, timeout=10)
+            r = _spotify_request('GET', url, headers=headers, timeout=10)
             if r.status_code == 200:
                 data = r.json()
                 artists_data = data.get("artists", {})
@@ -370,7 +428,8 @@ def get_devices(token: str) -> List[Dict[str, Any]]:
         List[Dict[str, Any]]: List of available devices
     """
     try:
-        r = requests.get(
+        r = _spotify_request(
+            'GET',
             "https://api.spotify.com/v1/me/player/devices",
             headers={"Authorization": f"Bearer {token}"},
             timeout=10
@@ -420,7 +479,8 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
     logger.info(f"🔀 Shuffle mode: {'enabled' if shuffle_state else 'disabled'}")
     
     try:
-        shuffle_resp = requests.put(
+        shuffle_resp = _spotify_request(
+            'PUT',
             "https://api.spotify.com/v1/me/player/shuffle",
             params={"state": shuffle_state, "device_id": device_id},
             headers={"Authorization": f"Bearer {token}"},
@@ -443,7 +503,8 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
 
     # 3. Set volume
     try:
-        vol_resp = requests.put(
+        vol_resp = _spotify_request(
+            'PUT',
             "https://api.spotify.com/v1/me/player/volume",
             params={"volume_percent": volume_percent, "device_id": device_id},
             headers={"Authorization": f"Bearer {token}"},
@@ -464,7 +525,8 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
         logger.info("▶️ Playback started directly with alarm volume")
     
     try:
-        play_resp = requests.put(
+        play_resp = _spotify_request(
+            'PUT',
             f"https://api.spotify.com/v1/me/player/play?device_id={device_id}",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
@@ -567,7 +629,8 @@ def get_current_spotify_volume(token: str) -> int:
         int: Current volume percentage (0-100), defaults to 50
     """
     try:
-        r = requests.get(
+        r = _spotify_request(
+            'GET',
             "https://api.spotify.com/v1/me/player",
             headers={"Authorization": f"Bearer {token}"},
             timeout=10
@@ -597,7 +660,8 @@ def get_current_playback(token: str, device_id: Optional[str] = None) -> Optiona
         params["device_id"] = device_id
         
     try:
-        r = requests.get(
+        r = _spotify_request(
+            'GET',
             "https://api.spotify.com/v1/me/player",
             params=params,
             headers={"Authorization": f"Bearer {token}"},
@@ -611,6 +675,7 @@ def get_current_playback(token: str, device_id: Optional[str] = None) -> Optiona
         else:
             raise RuntimeError(f"Error retrieving playback status: {r.status_code} - {r.text}")
     except requests.exceptions.RequestException as e:
+        # Let callers turn this into a 503 so UI can degrade gracefully
         raise RuntimeError(f"Network error retrieving playback status: {e}")
 
 def get_current_track(token: str) -> Optional[Dict[str, Any]]:
@@ -751,3 +816,43 @@ def get_user_library(token: str) -> Dict[str, Any]:
         Dict[str, Any]: Complete user library data
     """
     return load_music_library_parallel(token)
+
+def spotify_network_health() -> Dict[str, Any]:
+    """Basic connectivity diagnostics to Spotify API.
+
+    Returns:
+        Dict with ok flag, DNS/IPs, TLS reachability, and error info.
+    """
+    info: Dict[str, Any] = {
+        "ok": False,
+        "dns": {},
+        "tls": {},
+    }
+
+    host = "api.spotify.com"
+
+    # DNS resolution
+    try:
+        addrs = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+        ips = sorted({ai[4][0] for ai in addrs})
+        info["dns"] = {"resolved": True, "ips": ips}
+    except Exception as e:
+        info["dns"] = {"resolved": False, "error": str(e)}
+
+    # TLS reachability (HEAD to a harmless endpoint)
+    try:
+        r = requests.head(
+            "https://api.spotify.com/v1",
+            timeout=5,
+        )
+        info["tls"] = {
+            "reachable": True,
+            "status": r.status_code,
+        }
+        info["ok"] = True
+    except requests.exceptions.SSLError as e:
+        info["tls"] = {"reachable": False, "type": "SSLError", "error": str(e)}
+    except requests.exceptions.RequestException as e:
+        info["tls"] = {"reachable": False, "type": "RequestException", "error": str(e)}
+
+    return info

@@ -3,32 +3,7 @@
 🚦 Rate Limiting System for SpotiPi
 Provides comprehensive rate limiting to protect against:
 - API abuse and DoS attacks
-- Spot        # Very strict for config changes
-        self.add_rule(RateLimitRule(
-            name="config_changes",
-            requests_per_window=10,
-            window_seconds=60,
-            limit_type=RateLimitType.FIXED_WINDOW,
-            block_duration_seconds=300  # 5 minutes block
-        ))
-        
-        # Frequent status checks allowed
-        self.add_rule(RateLimitRule(
-            name="status_check",
-            requests_per_window=200,
-            window_seconds=60,
-            limit_type=RateLimitType.SLIDING_WINDOW,
-            block_duration_seconds=30
-        ))
-        
-        # Spotify API calls - respect their limits
-        self.add_rule(RateLimitRule(
-            name="spotify_api",
-            requests_per_window=50,
-            window_seconds=60,
-            limit_type=RateLimitType.SLIDING_WINDOW,
-            block_duration_seconds=120
-        ))rate limit violations
+- Rate limit violations
 - Resource exhaustion from excessive requests
 - Brute force attempts on sensitive endpoints
 """
@@ -232,6 +207,17 @@ class RateLimiter:
             self._logger.info(f"🗑️ Removed rate limit rule: {rule_name}")
             return True
         return False
+
+    def get_rules_summary(self) -> Dict[str, Any]:
+        """Public accessor for rule definitions without exposing internals."""
+        return {
+            name: {
+                "requests_per_window": rule.requests_per_window,
+                "window_seconds": rule.window_seconds,
+                "limit_type": rule.limit_type.value,
+                "block_duration": rule.block_duration_seconds,
+            } for name, rule in self._rules.items()
+        }
     
     def _get_client_id(self, request_obj=None) -> str:
         """Generate client identifier for rate limiting."""

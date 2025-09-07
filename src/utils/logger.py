@@ -43,9 +43,19 @@ else:
     MAX_LOG_SIZE = 10 * 1024 * 1024  # 10MB max
     BACKUP_COUNT = 5
     ENABLE_SYSTEM_INFO = True
-    LOG_DIR = Path.home() / ".spotify_wakeup" / "logs"
-
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+    # Allow override via env
+    _env_log_dir = os.getenv('SPOTIPI_LOG_DIR')
+    if _env_log_dir:
+        LOG_DIR = Path(_env_log_dir)
+    else:
+        LOG_DIR = Path.home() / ".spotify_wakeup" / "logs"
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    # Fallback to console-only logging if directory is not writable
+    ENABLE_FILE_LOGGING = False
+    ENABLE_DAILY_LOGS = False
+    ENABLE_ERROR_LOGS = False
 
 class ColoredFormatter(logging.Formatter):
     """Custom formatter with colors for console output."""
@@ -123,51 +133,60 @@ def setup_logger(name: str) -> logging.Logger:
     if ENABLE_FILE_LOGGING:
         # Main rotating log file
         main_log_file = LOG_DIR / "spotipi.log"
-        file_handler = logging.handlers.RotatingFileHandler(
-            main_log_file,
-            maxBytes=MAX_LOG_SIZE,
-            backupCount=BACKUP_COUNT,
-            encoding='utf-8'
-        )
-        file_handler.setLevel(LOG_LEVEL)
-        file_formatter = logging.Formatter(
-            '%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s'
-        )
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
+        try:
+            file_handler = logging.handlers.RotatingFileHandler(
+                main_log_file,
+                maxBytes=MAX_LOG_SIZE,
+                backupCount=BACKUP_COUNT,
+                encoding='utf-8'
+            )
+            file_handler.setLevel(LOG_LEVEL)
+            file_formatter = logging.Formatter(
+                '%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s'
+            )
+            file_handler.setFormatter(file_formatter)
+            logger.addHandler(file_handler)
+        except Exception:
+            pass
     
     # Error-only log file (minimal even on Raspberry Pi)
     if ENABLE_ERROR_LOGS:
         error_log_file = LOG_DIR / "spotipi_errors.log"
-        error_handler = logging.handlers.RotatingFileHandler(
-            error_log_file,
-            maxBytes=MAX_LOG_SIZE,
-            backupCount=BACKUP_COUNT,
-            encoding='utf-8'
-        )
-        error_handler.setLevel(logging.ERROR)
-        error_formatter = logging.Formatter(
-            '%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s'
-        )
-        error_handler.setFormatter(error_formatter)
-        logger.addHandler(error_handler)
+        try:
+            error_handler = logging.handlers.RotatingFileHandler(
+                error_log_file,
+                maxBytes=MAX_LOG_SIZE,
+                backupCount=BACKUP_COUNT,
+                encoding='utf-8'
+            )
+            error_handler.setLevel(logging.ERROR)
+            error_formatter = logging.Formatter(
+                '%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s'
+            )
+            error_handler.setFormatter(error_formatter)
+            logger.addHandler(error_handler)
+        except Exception:
+            pass
     
     # Daily log files (disabled on Raspberry Pi)
     if ENABLE_DAILY_LOGS:
         daily_log_file = LOG_DIR / f"spotipi_{datetime.now().strftime('%Y-%m-%d')}.log"
-        daily_handler = logging.handlers.TimedRotatingFileHandler(
-            daily_log_file,
-            when='midnight',
-            interval=1,
-            backupCount=7,  # Keep 7 days
-            encoding='utf-8'
-        )
-        daily_handler.setLevel(LOG_LEVEL)
-        daily_formatter = logging.Formatter(
-            '%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s'
-        )
-        daily_handler.setFormatter(daily_formatter)
-        logger.addHandler(daily_handler)
+        try:
+            daily_handler = logging.handlers.TimedRotatingFileHandler(
+                daily_log_file,
+                when='midnight',
+                interval=1,
+                backupCount=7,  # Keep 7 days
+                encoding='utf-8'
+            )
+            daily_handler.setLevel(LOG_LEVEL)
+            daily_formatter = logging.Formatter(
+                '%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s'
+            )
+            daily_handler.setFormatter(daily_formatter)
+            logger.addHandler(daily_handler)
+        except Exception:
+            pass
     
     return logger
 

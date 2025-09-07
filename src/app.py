@@ -61,10 +61,19 @@ service_manager = get_service_manager()
 
 @app.after_request
 def after_request(response):
-    """Add CORS headers to all responses"""
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    """Add CORS headers to all responses with environment-aware policy"""
+    # Allow broad CORS in development; restrict via env in production
+    allowed_origins = os.getenv('SPOTIPI_CORS_ORIGINS')
+    if allowed_origins:
+        origin = request.headers.get('Origin', '')
+        allowed = [o.strip() for o in allowed_origins.split(',') if o.strip()]
+        if origin in allowed:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Vary'] = 'Origin'
+    else:
+        response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
     return response
 
 def api_error_handler(func):
@@ -308,6 +317,12 @@ def alarm_status():
 @rate_limit("spotify_api")
 def api_music_library():
     """API endpoint for music library data"""
+    # Simple in-memory TTL cache to reduce load
+    if not hasattr(api_music_library, '_cache'):
+        api_music_library._cache = { 'data': None, 'ts': 0 }
+    cache_ttl = int(os.getenv('SPOTIPI_MUSIC_CACHE_TTL', '600'))
+    force_refresh = request.args.get('refresh') in ('1', 'true', 'yes')
+
     token = get_access_token()
     if not token:
         return jsonify({
@@ -316,9 +331,32 @@ def api_music_library():
         }), 401
     
     try:
+        # Serve from in-memory cache when fresh
+        now = time.time()
+        if not force_refresh and api_music_library._cache['data'] and (now - api_music_library._cache['ts'] < cache_ttl):
+            cached = api_music_library._cache['data']
+            return jsonify({
+                "success": True,
+                "cached": True,
+                "total": cached.get("total", 0),
+                "playlists": cached.get("playlists", []),
+                "albums": cached.get("albums", []),
+                "tracks": cached.get("tracks", []),
+                "artists": cached.get("artists", [])
+            })
+
         # Get comprehensive music library
         library_data = get_user_library(token)
-        
+        api_music_library._cache = { 'data': library_data, 'ts': now }
+
+        # Persist a lightweight cache to serve when Spotify is unreachable
+        try:
+            from .utils.simple_cache import write_json_cache
+            cache_path = str(project_root / "logs" / "music_library_cache.json")
+            write_json_cache(cache_path, library_data)
+        except Exception as cache_err:
+            logging.debug(f"Could not write music library cache: {cache_err}")
+
         return jsonify({
             "success": True,
             "total": library_data.get("total", 0),
@@ -330,10 +368,42 @@ def api_music_library():
         
     except Exception as e:
         logging.exception("Error loading music library")
+        # Try to serve last known good cache as a graceful fallback
+        if api_music_library._cache['data']:
+            cached = api_music_library._cache['data']
+            return jsonify({
+                "success": True,
+                "cached": True,
+                "total": cached.get("total", 0),
+                "playlists": cached.get("playlists", []),
+                "albums": cached.get("albums", []),
+                "tracks": cached.get("tracks", []),
+                "artists": cached.get("artists", []),
+                "message": "Served in-memory cached library due to Spotify connectivity issue"
+            })
+
+        try:
+            from .utils.simple_cache import read_json_cache
+            cache_path = str(project_root / "logs" / "music_library_cache.json")
+            cached = read_json_cache(cache_path)
+            if cached:
+                return jsonify({
+                    "success": True,
+                    "cached": True,
+                    "total": cached.get("total", 0),
+                    "playlists": cached.get("playlists", []),
+                    "albums": cached.get("albums", []),
+                    "tracks": cached.get("tracks", []),
+                    "artists": cached.get("artists", []),
+                    "message": "Served cached music library due to Spotify connectivity issue"
+                })
+        except Exception as cache_err:
+            logging.debug(f"Could not read music library cache: {cache_err}")
+
         return jsonify({
-            "error": "500",
-            "message": "Failed to load music library"
-        }), 500
+            "error": "503",
+            "message": "Spotify unavailable: failed to load music library"
+        }), 503
 
 @app.route("/api/token-cache/status")
 @rate_limit("status_check")
@@ -421,7 +491,68 @@ def playback_status():
             return jsonify({"error": "No active playback"})
     except Exception as e:
         logging.exception("Error getting playback status")
-        return jsonify({"error": "500", "message": str(e)})
+        # Return a proper service-unavailable status so the UI can degrade gracefully
+        return jsonify({"error": "503", "message": str(e)}), 503
+
+@app.route("/api/spotify/health")
+@rate_limit("status_check")
+def api_spotify_health():
+    """Quick health check for Spotify connectivity (DNS, TLS reachability)."""
+    try:
+        from .api.spotify import spotify_network_health
+        health = spotify_network_health()
+        http_code = 200 if health.get("ok") else 503
+        return jsonify(health), http_code
+    except Exception as e:
+        logging.exception("Error running Spotify health check")
+        return jsonify({
+            "ok": False,
+            "error": "HEALTH_CHECK_FAILED",
+            "message": str(e)
+        }), 500
+
+# =====================================
+# 🩺 Health/Readiness & Metrics
+# =====================================
+
+@app.route("/healthz")
+def healthz():
+    return jsonify({"ok": True, "version": str(VERSION)})
+
+@app.route("/readyz")
+def readyz():
+    try:
+        # Basic checks: config loaded, rate limiter running
+        _ = load_config()
+        stats = rate_limiter.get_statistics()
+        return jsonify({
+            "ok": True,
+            "rate_limiter": {"total_requests": stats.get('global_stats', {}).get('total_requests', 0)}
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
+
+@app.route("/metrics")
+def metrics():
+    # Minimal Prometheus-style exposition
+    try:
+        stats = rate_limiter.get_statistics()
+        cache_info = get_token_cache_info()
+        lines = []
+        lines.append("# HELP spotipi_requests_total Total requests seen by rate limiter")
+        lines.append("# TYPE spotipi_requests_total counter")
+        lines.append(f"spotipi_requests_total {stats.get('global_stats', {}).get('total_requests', 0)}")
+        lines.append("# HELP spotipi_cache_hits Token cache hits")
+        lines.append("# TYPE spotipi_cache_hits counter")
+        hits = cache_info.get('cache_metrics', {}).get('cache_hits', 0) if isinstance(cache_info, dict) else 0
+        lines.append(f"spotipi_cache_hits {hits}")
+        lines.append("# HELP spotipi_cache_misses Token cache misses")
+        lines.append("# TYPE spotipi_cache_misses counter")
+        misses = cache_info.get('cache_metrics', {}).get('cache_misses', 0) if isinstance(cache_info, dict) else 0
+        lines.append(f"spotipi_cache_misses {misses}")
+        return ("\n".join(lines) + "\n", 200, {"Content-Type": "text/plain; version=0.0.4"})
+    except Exception:
+        return ("spotipi_up 0\n", 200, {"Content-Type": "text/plain; version=0.0.4"})
 
 @app.route("/toggle_play_pause", methods=["POST"])
 @api_error_handler
@@ -664,9 +795,13 @@ def internal_error(error):
 
 def start_alarm_scheduler():
     """Start the background alarm scheduler thread."""
+    # Ensure single-flight startup
+    if getattr(start_alarm_scheduler, '_started', False):
+        return
     print("🚨 Starting alarm scheduler thread...")
     alarm_thread = threading.Thread(target=alarm_scheduler, daemon=True)
     alarm_thread.start()
+    start_alarm_scheduler._started = True
     print("⏰ Background alarm scheduler started")
 
 # =====================================
@@ -685,14 +820,7 @@ def get_rate_limiting_status():
             "rate_limiting": {
                 "enabled": True,
                 "statistics": stats,
-                "rules": {
-                    rule_name: {
-                        "requests_per_window": rule.requests_per_window,
-                        "window_seconds": rule.window_seconds,
-                        "limit_type": rule.limit_type.value,
-                        "block_duration": rule.block_duration_seconds
-                    } for rule_name, rule in rate_limiter._rules.items()
-                }
+                "rules": rate_limiter.get_rules_summary()
             }
         })
     except Exception as e:
@@ -905,8 +1033,7 @@ def run_app(host="0.0.0.0", port=5001, debug=False):
     start_alarm_scheduler()
     app.run(host=host, port=port, debug=debug, threaded=True)
 
-# Start alarm scheduler when app is imported
-start_alarm_scheduler()
+# Do not start scheduler at import time to avoid duplicate threads in WSGI
 
 if __name__ == "__main__":
     print(f"🎵 Starting {get_app_info()}")

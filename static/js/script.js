@@ -54,6 +54,10 @@ const DOM = {
  */
 async function fetchAPI(url, options = {}) {
   try {
+    // Backoff handling for polling endpoints
+    if (typeof window.__API_BACKOFF_UNTIL === 'number' && Date.now() < window.__API_BACKOFF_UNTIL) {
+      return { error: "Backoff", success: false, offline: true };
+    }
     const response = await fetch(url, options);
 
     // If it's a POST request, return the response directly
@@ -66,6 +70,11 @@ async function fetchAPI(url, options = {}) {
       // Only log to console in debug mode
       if (window.location.href.includes('debug=true')) {
         console.warn(`API Status (${url}): ${response.status}`);
+      }
+      // Increase backoff on service unavailable
+      if (response.status === 503) {
+        window.__API_BACKOFF_MS = Math.min((window.__API_BACKOFF_MS || 2000) * 2, 30000);
+        window.__API_BACKOFF_UNTIL = Date.now() + window.__API_BACKOFF_MS;
       }
       // Return structured error response
       return { 
@@ -92,6 +101,9 @@ async function fetchAPI(url, options = {}) {
     if (window.location.href.includes('debug=true')) {
       console.warn(`Network error (${url}):`, networkError);
     }
+    // Exponential backoff on network errors
+    window.__API_BACKOFF_MS = Math.min((window.__API_BACKOFF_MS || 2000) * 2, 30000);
+    window.__API_BACKOFF_UNTIL = Date.now() + window.__API_BACKOFF_MS;
     return { 
       error: "Network error", 
       success: false,
@@ -218,6 +230,7 @@ function handleSliderChange(value) {
  * Synchronizes the volume slider with the actual Spotify volume
  */
 async function syncVolumeFromSpotify() {
+  if (document.visibilityState !== 'visible') return;
   if (userIsDragging || (Date.now() - lastUserInteraction < CONFIG.SYNC_COOLDOWN)) {
     return;
   }
@@ -298,6 +311,7 @@ async function togglePlayPause() {
  * @param {boolean} updateVolume - Whether to update the volume as well
  */
 async function updatePlaybackInfo(updateVolume = true) {
+  if (document.visibilityState !== 'visible') return;
   try {
     const data = await getPlaybackStatus();
 
@@ -401,6 +415,7 @@ function updateCurrentTrack(trackData) {
  * Updates the sleep timer display
  */
 async function updateSleepTimer() {
+  if (document.visibilityState !== 'visible') return;
   try {
     const data = await getSleepStatus();
     const elements = DOM.getElements({
