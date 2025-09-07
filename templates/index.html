@@ -79,9 +79,10 @@
 
       <!-- Global volume control -->
       <div class="global-volume-container">
-                <label for="volume" class="volume-label">
+        <label for="volume" class="volume-label">
           {{ t('volume_label')|safe }}
           (<span id="volume-display">{{ config.volume or 50 }}</span>%)
+        </label>
         <input
           type="range"
           id="global-volume"
@@ -144,37 +145,64 @@
         </button>
       </nav>
 
-      <!-- Main content area -->
-      <section class="tab-content">
-        <!-- Alarm interface -->
-        <div 
-          id="alarm-interface" 
-          role="tabpanel"
-          aria-labelledby="alarm-tab"
-        >
-          {% include 'alarm.html' %}
-        </div>
+      <!-- Desktop layout wrapper -->
+      <div class="desktop-main-layout">
+        <!-- Main content area -->
+        <section class="tab-content">
+          <!-- Alarm interface -->
+          <div 
+            id="alarm-interface" 
+            role="tabpanel"
+            aria-labelledby="alarm-tab"
+          >
+            {% include 'alarm.html' %}
+          </div>
 
-        <!-- Sleep interface -->
-        <div 
-          id="sleep-interface" 
-          role="tabpanel"
-          aria-labelledby="sleep-tab"
-          style="display: none;"
-        >
-          {% include 'sleep.html' %}
-        </div>
+          <!-- Sleep interface -->
+          <div 
+            id="sleep-interface" 
+            role="tabpanel"
+            aria-labelledby="sleep-tab"
+            style="display: none;"
+          >
+            {% include 'sleep.html' %}
+          </div>
 
-        <!-- Music Library interface -->
-        <div 
-          id="library-interface" 
-          role="tabpanel"
-          aria-labelledby="library-tab"
-          style="display: none;"
-        >
-          {% include 'music_library.html' %}
-        </div>
-      </section>
+          <!-- Music Library interface -->
+          <div 
+            id="library-interface" 
+            role="tabpanel"
+            aria-labelledby="library-tab"
+            style="display: none;"
+          >
+            {% include 'music_library.html' %}
+          </div>
+        </section>
+
+        <!-- Desktop sidebar -->
+        <aside class="desktop-sidebar">
+          <div class="status-section {% if alarm_status and alarm_status.enabled %}alarm-active{% endif %}">
+            <h3>Status</h3>
+            {% if alarm_status and alarm_status.enabled %}
+              <p><strong>{{ t('alarm_active') }}</strong></p>
+              <p>{{ alarm_status.wake_time }}</p>
+              {% if alarm_status.days %}
+                <p><small>{{ alarm_status.days|join(', ') }}</small></p>
+              {% endif %}
+            {% else %}
+              <p>{{ t('no_alarm_set') }}</p>
+            {% endif %}
+          </div>
+
+          <div class="quick-actions">
+            <h4>Quick Actions</h4>
+            <button onclick="showInterface('alarm')" type="button">⏰ Set Alarm</button>
+            <button onclick="showInterface('sleep')" type="button">😴 Sleep Timer</button>
+            <button onclick="showInterface('library')" type="button">🎵 Music Library</button>
+            <button onclick="togglePlayPause()" type="button">⏯️ Play/Pause</button>
+          </div>
+        </aside>
+      </div>
     </div>
   </main>
 
