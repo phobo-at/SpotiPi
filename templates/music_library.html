@@ -2,16 +2,6 @@
 <form id="library-form" aria-labelledby="library-form-title">
   <h2 id="library-form-title" class="form-title">{{ t('library_title') }}</h2>
 
-  <!-- Speaker Selector -->
-  <div class="form-group">
-    <label for="library-speaker-selector">{{ t('device_label')|safe }}</label>
-    <select id="library-speaker-selector" name="device_name" class="form-input" aria-describedby="speaker-help">
-      <!-- Options will be populated by JavaScript -->
-      <option value="">{{ t('loading_devices') }}</option>
-    </select>
-    <small id="speaker-help" class="form-help">{{ t('device_help') }}</small>
-  </div>
-
   <!-- Music Selection -->
   <div class="form-group">
     <label class="form-label">{{ t('playlist_select_text') }}</label>
@@ -27,5 +17,15 @@
       </div>
     </div>
     <small class="form-help">{{ t('library_play_help') }}</small>
+  </div>
+
+  <!-- Speaker Selector -->
+  <div class="form-group">
+    <label for="library-speaker-selector">{{ t('device_label')|safe }}</label>
+    <select id="library-speaker-selector" name="device_name" class="form-input" aria-describedby="speaker-help">
+      <!-- Options will be populated by JavaScript -->
+      <option value="">{{ t('loading_devices') }}</option>
+    </select>
+    <small id="speaker-help" class="form-help">{{ t('device_help') }}</small>
   </div>
 </form>
