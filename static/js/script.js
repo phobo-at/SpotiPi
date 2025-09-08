@@ -853,23 +853,31 @@ async function loadInitialData() {
       fetchAPI('/api/spotify/devices')
     ]);
 
-    // Update UI with fetched data
-    if (devices) {
+    // Check for errors in API responses
+    if (devices?.error) {
+      console.error('❌ Failed to load Spotify devices:', devices.error);
+      updateDevices([]); // Update with empty list to show "No devices found"
+    } else if (devices) {
       updateDevices(devices);
     }
-    
-    if (playback?.current_track) {
-      updateCurrentTrack(playback.current_track);
-    } else {
-      hideCurrentTrack();
-    }
-    
-    if (playback?.is_playing !== undefined) {
-      updatePlayPauseButtonText(playback.is_playing);
-    }
-    
-    if (playback?.device?.volume_percent !== undefined) {
-      updateVolumeSlider(playback.device.volume_percent);
+
+    if (playback?.error) {
+        console.warn('⚠️ Could not get playback status:', playback.error);
+        handleNoActivePlayback(); // Set UI to default state
+    } else if (playback) {
+        if (playback.current_track) {
+            updateCurrentTrack(playback.current_track);
+        } else {
+            hideCurrentTrack();
+        }
+
+        if (playback.is_playing !== undefined) {
+            updatePlayPauseButtonText(playback.is_playing);
+        }
+
+        if (playback.device?.volume_percent !== undefined) {
+            updateVolumeSlider(playback.device.volume_percent);
+        }
     }
 
     // This function already exists and fetches the music library for the selectors
@@ -1223,6 +1231,19 @@ class PlaylistSelector {
     if (!this.container) {
       console.warn('⚠️ PlaylistSelector: Cannot set music library, container not found');
       return;
+    }
+    if (data?.error) {
+        this.playlists = [];
+        this.albums = [];
+        this.tracks = [];
+        this.artists = [];
+        this.createTabs(); // Will show nothing
+        this.updateCurrentTab(); // Will show "no results"
+        const grid = this.container.querySelector('#playlist-grid');
+        if (grid) {
+            grid.innerHTML = `<div class="playlist-no-results">${t('error_loading_music') || 'Fehler beim Laden der Musik'}</div>`;
+        }
+        return;
     }
     this.playlists = data.playlists || [];
     this.albums = data.albums || [];
@@ -1746,6 +1767,19 @@ async function loadPlaylistsForSelectors() {
   
   try {
     const data = await fetchAPI('/api/music-library');
+
+    if (data?.error) {
+      console.error('❌ Failed to load music library:', data.error);
+      // Update selectors to show an error state
+      if (window.playlistSelectors?.alarm) {
+        window.playlistSelectors.alarm.setMusicLibrary({ error: true });
+      }
+      if (window.playlistSelectors?.sleep) {
+        window.playlistSelectors.sleep.setMusicLibrary({ error: true });
+      }
+      return; // Stop execution
+    }
+
     console.log('📋 Music library loaded:', data?.total || 0, 'items');
     
     if (data && (data.playlists || data.albums)) {
