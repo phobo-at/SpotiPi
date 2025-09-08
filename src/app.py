@@ -160,24 +160,11 @@ def index():
     """Main page with alarm and sleep interface"""
     config = load_config()
     
-    # Get Spotify data
-    token = get_access_token()
-    devices = get_devices(token) if token else []
-    playlists_data = get_playlists(token) if token else []
-    current_track = get_current_track(token) if token else None
-    
-    # Process playlists for display
+    # Data is now loaded asynchronously via JavaScript to improve initial page load time.
+    # We pass empty placeholders to the template.
+    devices = []
     playlists = []
-    if playlists_data and 'items' in playlists_data:
-        for item in playlists_data['items']:
-            playlist = {
-                'name': item['name'],
-                'uri': item['uri'],
-                'image_url': item['images'][0]['url'] if item['images'] else None,
-                'track_count': item['tracks']['total'],
-                'artist': item['owner']['display_name']
-            }
-            playlists.append(playlist)
+    current_track = None
     
     # Format weekdays for display
     weekdays_display = WeekdayScheduler.format_weekdays_display(config.get('weekdays', []))
@@ -1023,6 +1010,18 @@ def api_sleep_advanced_status():
             "error": "Failed to get sleep status",
             "message": str(e)
         }), 500
+
+@app.route("/api/spotify/devices")
+@api_error_handler
+@rate_limit("spotify_api")
+def api_spotify_devices():
+    """API endpoint for getting available Spotify devices."""
+    token = get_access_token()
+    if not token:
+        return jsonify({"error": "401", "message": "Authentication required"}), 401
+    
+    devices = get_devices(token)
+    return jsonify(devices if devices else [])
 
 # =====================================
 # 🚀 Application Runner

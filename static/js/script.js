@@ -114,7 +114,7 @@ async function fetchAPI(url, options = {}) {
 
 /**
  * Gets the current playback status
- * @returns {Promise<Object>} Playback status
+ * @returns {Promise<Object} Playback status
  */
 async function getPlaybackStatus() {
   return await fetchAPI("/playback_status");
@@ -133,14 +133,10 @@ async function getSleepStatus() {
  * @param {number} value - Volume value (0-100)
  */
 async function setVolumeAndSave(value) {
-  // Update user interaction timestamp
   lastUserInteraction = Date.now();
-
-  // Update local display immediately for better feedback
   updateLocalVolumeDisplay(value);
   
   try {
-    // API-Aufrufe im Hintergrund durchführen
     await Promise.all([
       fetchAPI("/volume", {
         method: "POST",
@@ -153,8 +149,8 @@ async function setVolumeAndSave(value) {
         body: `volume=${value}`
       })
     ]);
-  } catch (err) {
-    // Errors already logged in fetchAPI
+  } catch (error) {
+    console.error('Failed to set and save volume:', error);
   }
 }
 
@@ -237,10 +233,10 @@ async function syncVolumeFromSpotify() {
   
   try {
     const data = await getPlaybackStatus();
-    if (data && data.device && data.device.volume_percent !== undefined) {
+    if (data?.device?.volume_percent !== undefined) {
       updateVolumeSlider(data.device.volume_percent);
     }
-  } catch (err) {
+  } catch {
     // Errors already logged in fetchAPI
   }
 }
@@ -300,9 +296,10 @@ function updatePlayPauseButtonText(isPlaying) {
 async function togglePlayPause() {
   try {
     await fetchAPI("/toggle_play_pause", { method: "POST" });
-    updatePlaybackInfo();
-  } catch (err) {
-    // Errors already logged in fetchAPI
+    // Optimistically update the UI, then fetch the true state
+    setTimeout(() => updatePlaybackInfo(false), 150);
+  } catch (error) {
+    console.error('Failed to toggle play/pause:', error);
   }
 }
 
@@ -316,7 +313,7 @@ async function updatePlaybackInfo(updateVolume = true) {
     const data = await getPlaybackStatus();
 
     // Check if data contains an error field or no active playback
-    if (data && data.error) {
+    if (data?.error) {
       if (window.location.href.includes('debug=true')) {
         console.log('No active playback or API error:', data.error);
       }
@@ -324,21 +321,21 @@ async function updatePlaybackInfo(updateVolume = true) {
       return;
     }
     
-    if (data && data.is_playing !== undefined) {
+    if (data?.is_playing !== undefined) {
       updatePlayPauseButtonText(data.is_playing);
     }
     
-    if (updateVolume && data && data.device && data.device.volume_percent !== undefined) {
+    if (updateVolume && data?.device?.volume_percent !== undefined) {
       updateVolumeSlider(data.device.volume_percent);
     }
     
-    if (data && data.current_track) {
+    if (data?.current_track) {
       updateCurrentTrack(data.current_track);
     } else {
       // No track info available
       hideCurrentTrack();
     }
-  } catch (err) {
+  } catch {
     // Errors already handled in fetchAPI
     handleNoActivePlayback();
   }
@@ -386,6 +383,15 @@ function updateCurrentTrack(trackData) {
   
   trackContainer.style.display = 'flex';
 
+  // Remove placeholder styles
+  trackContainer.querySelectorAll('.placeholder-glow').forEach(el => {
+    el.classList.remove('placeholder-glow');
+  });
+  const titleEl = trackContainer.querySelector('.title');
+  const artistEl = trackContainer.querySelector('.artist');
+  if (titleEl) titleEl.classList.remove('placeholder-glow');
+  if (artistEl) artistEl.classList.remove('placeholder-glow');
+
   // HTML structure
   let html = '';
   
@@ -395,12 +401,17 @@ function updateCurrentTrack(trackData) {
         <img src="${trackData.album_image}" alt="Album Cover" class="album-image">
       </div>
     `;
+  } else {
+    html += `
+      <div class="album-cover">
+      </div>
+    `;
   }
   
   html += `
     <div class="track-info">
       <span class="title">${trackData.name}</span>
-      <span class="artist">– ${trackData.artist}</span>
+      <span class="artist">${trackData.artist}</span>
     </div>
   `;
   
@@ -463,43 +474,8 @@ async function updateSleepTimer() {
         elements.activeSleepMode.style.display = 'none';
       }
     }
-  } catch (err) {
-    // Fehler bereits in fetchAPI protokolliert
-  }
-}
-
-/**
- * Starts or stops the Sleep Timer
- * @param {Event} event - The triggered event
- */
-async function handleSleepToggle(event) {
-  if (event) event.preventDefault();
-
-  try {
-    const data = await getSleepStatus();
-
-    if (data.active) {
-      const response = await fetchAPI("/stop_sleep", { 
-        method: "POST",
-        headers: {
-          'X-Requested-With': 'XMLHttpRequest',
-          'Accept': 'application/json'
-        }
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          const sleepBtn = DOM.getElement('sleep-toggle-btn');
-          if (sleepBtn) sleepBtn.innerText = "Sleep starten";
-        }
-      }
-    } else {
-      const form = document.querySelector("#sleep-interface form");
-      if (form) form.submit();
-    }
-  } catch (err) {
-    // Fehler bereits in fetchAPI protokolliert
+  } catch (error) {
+    console.error("Failed to update sleep timer:", error);
   }
 }
 
@@ -530,62 +506,6 @@ function handleDurationChange(value) {
     }
   } catch (err) {
     console.error("Error updating duration display:", err);
-  }
-}
-
-// =====================
-// ⏰ UI & Tab-Steuerung
-// =====================
-
-/**
- * Wechselt zwischen Wecker- und Sleep-Ansicht
- * @param {string} mode - 'alarm' oder 'sleep'
- */
-function showInterface(mode) {
-  const elements = DOM.getElements({
-    alarmInterface: '#alarm-interface',
-    sleepInterface: '#sleep-interface',
-    libraryInterface: '#library-interface',
-    alarmTab: '#alarm-tab',
-    sleepTab: '#sleep-tab',
-    libraryTab: '#library-tab'
-  });
-  
-  if (elements.alarmInterface) {
-    elements.alarmInterface.style.display = (mode === 'alarm') ? 'block' : 'none';
-  }
-  
-  if (elements.sleepInterface) {
-    elements.sleepInterface.style.display = (mode === 'sleep') ? 'block' : 'none';
-  }
-  
-  if (elements.libraryInterface) {
-    elements.libraryInterface.style.display = (mode === 'library') ? 'block' : 'none';
-  }
-  
-  // Auch Tab-Zustände aktualisieren
-  if (elements.alarmTab) {
-    elements.alarmTab.setAttribute('aria-selected', mode === 'alarm');
-  }
-  
-  if (elements.sleepTab) {
-    elements.sleepTab.setAttribute('aria-selected', mode === 'sleep');
-  }
-  
-  if (elements.libraryTab) {
-    elements.libraryTab.setAttribute('aria-selected', mode === 'library');
-  }
-  
-  localStorage.setItem("activeTab", mode);
-  
-  // Status aktualisieren wenn zum Alarm-Tab gewechselt wird
-  if (mode === 'alarm') {
-    setTimeout(updateAlarmStatus, 100); // Kurze Verzögerung für DOM-Update
-  }
-  
-  // Music Library laden wenn zum Library-Tab gewechselt wird
-  if (mode === 'library') {
-    setTimeout(initializeMusicLibrary, 100);
   }
 }
 
@@ -916,12 +836,100 @@ function loadSavedWeekdays() {
   }
 }
 
+// ===============================================
+// 🚀 Asynchronous Data Loading
+// ===============================================
+
+/**
+ * Loads all initial data needed for the UI asynchronously.
+ */
+async function loadInitialData() {
+  console.log('🚀 Kicking off asynchronous data loading...');
+  
+  try {
+    // Fetch data in parallel
+    const [playback, devices] = await Promise.all([
+      getPlaybackStatus(),
+      fetchAPI('/api/spotify/devices')
+    ]);
+
+    // Update UI with fetched data
+    if (devices) {
+      updateDevices(devices);
+    }
+    
+    if (playback?.current_track) {
+      updateCurrentTrack(playback.current_track);
+    } else {
+      hideCurrentTrack();
+    }
+    
+    if (playback?.is_playing !== undefined) {
+      updatePlayPauseButtonText(playback.is_playing);
+    }
+    
+    if (playback?.device?.volume_percent !== undefined) {
+      updateVolumeSlider(playback.device.volume_percent);
+    }
+
+    // This function already exists and fetches the music library for the selectors
+    loadPlaylistsForSelectors();
+    
+    console.log('✅ Initial data loading complete.');
+  } catch (error) {
+    console.error('❌ Failed during initial data load:', error);
+    // Optionally, show an error message to the user
+  }
+}
+
+/**
+ * Populates the device selectors with a list of devices.
+ * @param {Array} devices - Array of device objects from the Spotify API.
+ */
+function updateDevices(devices) {
+  const selectors = document.querySelectorAll('select[name="device_name"]');
+  if (!selectors.length) {
+    console.warn('No device selectors found to update.');
+    return;
+  }
+
+  selectors.forEach(selector => {
+    const currentValue = selector.value;
+    selector.innerHTML = ''; // Clear existing options
+
+    if (!devices || devices.length === 0) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = t('no_devices_found') || 'Keine Geräte gefunden';
+      selector.appendChild(option);
+      return;
+    }
+
+    devices.forEach(device => {
+      const option = document.createElement('option');
+      option.value = device.name;
+      option.textContent = `${device.name} (${device.type})`;
+      if (device.is_active) {
+        option.selected = true;
+      }
+      selector.appendChild(option);
+    });
+
+    // Restore previous selection if it still exists
+    if (Array.from(selector.options).some(opt => opt.value === currentValue)) {
+      selector.value = currentValue;
+    }
+  });
+  console.log('✅ Device selectors updated.');
+}
+
+
 // ===============================
 // 🧩 Initialisierung & Intervalle
 // ===============================
 
 // Initialisierung nach DOM-Laden
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 Initializing Spotipi application...');
   
   // DOM-Cache zurücksetzen beim Page-Load
@@ -931,10 +939,12 @@ document.addEventListener('DOMContentLoaded', function() {
   const saved = localStorage.getItem("activeTab") || "alarm";
   showInterface(saved);
   
-  // Initiale Daten laden
-  updatePlaybackInfo();
+  // Load all dynamic data from Spotify
+  loadInitialData();
+
+  // Update static timers and UI elements
   updateSleepTimer();
-  updateAlarmStatus(); // ✅ Nur einmal beim Laden
+  updateAlarmStatus();
   
   // Initialize playlist selectors
   console.log('🎵 Initializing playlist selectors...');
@@ -976,7 +986,6 @@ document.addEventListener('DOMContentLoaded', function() {
           console.log('🔄 Updated sleep playlist URI:', playlist.uri);
         }
       }
-      // Note: Don't auto-save sleep settings - let user configure other options first
     }
   });
   
@@ -987,9 +996,6 @@ document.addEventListener('DOMContentLoaded', function() {
   };
   
   console.log('✅ Playlist selectors initialized');
-  
-  // Load music library when selectors are ready
-  loadPlaylistsForSelectors();
   
   // Make functions globally available for onclick handlers
   window.showInterface = showInterface;
@@ -1002,20 +1008,18 @@ document.addEventListener('DOMContentLoaded', function() {
   // Automatisches Speichern für Wecker-Einstellungen
   const alarmForm = document.getElementById('alarm-form');
   if (alarmForm) {
-    // Alle Input-Elemente finden und onChange-Handler hinzufügen (außer Hidden Playlist Inputs)
     const formElements = alarmForm.querySelectorAll('input, select');
     formElements.forEach(element => {
-      // Playlist Hidden Inputs von automatischem Speichern ausschließen
       if (element.id !== 'playlist_uri' && element.id !== 'sleep_playlist_uri') {
         element.addEventListener('change', saveAlarmSettings);
       }
     });
   }
   
-  // Sleep-Toggle-Handler (function to handle both sleep toggles)
+  // Sleep-Toggle-Handler
   function handleSleepToggleChange(toggleElement) {
-    // Spezieller Ablauf, wenn der Sleep-Timer bereits aktiv ist
-    if (document.querySelector('#active-sleep-mode') && document.querySelector('#active-sleep-mode').style.display !== 'none') {
+    const activeSleepMode = document.querySelector('#active-sleep-mode');
+    if (activeSleepMode?.style.display !== 'none') {
       fetch('/stop_sleep', {
         method: 'POST',
         headers: {
@@ -1029,17 +1033,14 @@ document.addEventListener('DOMContentLoaded', function() {
         return response.json();
       })
       .then(() => {
-        // Don't reload - let JavaScript handle the UI switch
         updateSleepTimer();
       })
       .catch(error => {
         console.error('Fehler beim Deaktivieren:', error);
         alert('Fehler beim Deaktivieren des Sleep-Timers');
-        // Toggle zurücksetzen auf "checked", da die Aktion fehlgeschlagen ist
         toggleElement.checked = true;
       });
     } else {
-      // Normaler Aktivierungsprozess für inaktiven Sleep-Timer
       saveSleepSettings(true);
     }
   }
@@ -1063,16 +1064,16 @@ document.addEventListener('DOMContentLoaded', function() {
   const durationSelect = DOM.getElement("duration");
   if (durationSelect) {
     handleDurationChange(durationSelect.value);
-    
-  // Event-Handler direkt hier hinzufügen
-  durationSelect.addEventListener("change", function() {
-    handleDurationChange(this.value);
-  });
-}
+    durationSelect.addEventListener("change", function() {
+      handleDurationChange(this.value);
+    });
+  }
 
-// Wochentag-Bubbles Funktionalität initialisieren
-initializeWeekdayBubbles();
-});// Regelmäßige Updates mit konfigurierbaren Intervallen
+  // Wochentag-Bubbles Funktionalität initialisieren
+  initializeWeekdayBubbles();
+});
+
+// Regelmäßige Updates mit konfigurierbaren Intervallen
 setInterval(updateSleepTimer, CONFIG.UPDATE_INTERVALS.SLEEP_TIMER);
 setInterval(() => updatePlaybackInfo(false), CONFIG.UPDATE_INTERVALS.PLAYBACK);
 setInterval(syncVolumeFromSpotify, CONFIG.UPDATE_INTERVALS.VOLUME);
@@ -1086,18 +1087,21 @@ async function updateAlarmStatus() {
   try {
     const data = await fetchAPI("/alarm_status");
     
-    if (data && !data.error) {
+    if (data?.error) {
+      console.warn('Could not get alarm status:', data.error);
+      return;
+    }
+    
+    if (data) {
       const elements = DOM.getElements({
         alarmTimer: '#alarm-timer',
         enabledToggle: '#enabled'
       });
       
-      // Toggle-Status aktualisieren (falls sich der Status geändert hat)
       if (elements.enabledToggle && elements.enabledToggle.checked !== data.enabled) {
         elements.enabledToggle.checked = data.enabled;
       }
       
-      // Status-Anzeige aktualisieren
       if (elements.alarmTimer) {
         const statusMessage = data.enabled 
           ? `${t('alarm_set', {time: data.time})}<br><span class="volume-info">${t('alarm_volume_info', {volume: data.alarm_volume})}</span>`
@@ -1105,8 +1109,8 @@ async function updateAlarmStatus() {
         elements.alarmTimer.innerHTML = statusMessage;
       }
     }
-  } catch (err) {
-    // Fehler bereits in fetchAPI protokolliert
+  } catch (error) {
+    console.error('Failed to update alarm status:', error);
   }
 }
 
@@ -1257,8 +1261,8 @@ class PlaylistSelector {
     }
     
     // Tabs HTML generieren
-    tabsContainer.innerHTML = tabs.map((tab, index) => `
-      <button class="playlist-tab tab-button ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">
+    tabsContainer.innerHTML = tabs.map(tab => `
+      <button class="playlist-tab tab-button ${this.currentTab === tab.id ? 'active' : ''}" data-tab="${tab.id}">
         ${tab.label}
       </button>
     `).join('');
@@ -1276,12 +1280,9 @@ class PlaylistSelector {
   
   attachEvents() {
     const input = this.container.querySelector('.playlist-input');
-    const modal = this.container.querySelector('#playlist-modal');
-    const search = this.container.querySelector('#playlist-search');
     
     console.log('🔧 Attaching events for:', this.container.id);
     console.log('📋 Input found:', !!input);
-    console.log('📋 Modal found:', !!modal);
     
     // Toggle Modal
     input?.addEventListener('click', (e) => {
@@ -1308,16 +1309,8 @@ class PlaylistSelector {
       }
     });
     
-    // Search functionality
-    search?.addEventListener('input', (e) => {
+    this.container.querySelector('#playlist-search')?.addEventListener('input', (e) => {
       this.filterItems(e.target.value);
-    });
-    
-    // Close modal when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!this.container.contains(e.target) && this.isOpen) {
-        this.close();
-      }
     });
     
     // ESC key to close
@@ -1339,7 +1332,6 @@ class PlaylistSelector {
   open() {
     const input = this.container.querySelector('.playlist-input');
     const modal = this.container.querySelector('#playlist-modal');
-    const search = this.container.querySelector('#playlist-search');
     
     console.log('🎵 Opening modal...');
     console.log('📋 Input for toggle:', !!input);
@@ -1701,7 +1693,7 @@ class PlaylistSelector {
       const term = searchTerm.toLowerCase();
       this.filteredItems = currentItems.filter(item =>
         item.name.toLowerCase().includes(term) ||
-        (item.artist && item.artist.toLowerCase().includes(term))
+        (item.artist?.toLowerCase().includes(term))
       );
     }
     this.updateModal();
@@ -1777,9 +1769,6 @@ async function loadPlaylistsForSelectors() {
 class MusicLibraryBrowser {
   constructor() {
     this.currentTab = 'playlists';
-    this.musicData = null;
-    this.filteredItems = [];
-    this.isInitialized = false;
     this.devices = [];
     this.selectedDevice = null;
   }
@@ -1802,8 +1791,12 @@ class MusicLibraryBrowser {
 
   async loadDevices() {
     try {
-      // Use the same device loading as alarm/sleep tabs
-      this.devices = window.SPOTIFY_DEVICES || [];
+      const devices = await fetchAPI('/api/spotify/devices');
+      if (devices && !devices.error) {
+        this.devices = devices;
+      } else {
+        this.devices = [];
+      }
       this.populateDeviceSelector();
     } catch (error) {
       console.error('Error loading devices:', error);
@@ -1818,358 +1811,92 @@ class MusicLibraryBrowser {
     // Clear existing options
     selector.innerHTML = '';
     
-    if (this.devices.length === 0) {
-      selector.innerHTML = `<option value="">${t('no_devices_found') || 'Keine Lautsprecher gefunden'}</option>`;
+    if (!this.devices || this.devices.length === 0) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = t('no_devices_found') || 'Keine Geräte gefunden';
+      selector.appendChild(option);
       return;
     }
 
-    // Add device options directly (same format as alarm/sleep tabs)
     this.devices.forEach(device => {
       const option = document.createElement('option');
-      option.value = device.name; // Use device.name like alarm/sleep
-      option.textContent = `${device.name}${device.is_active ? ' (aktiv)' : ''}`;
+      option.value = device.name;
+      option.textContent = `${device.name} (${device.type})`;
       if (device.is_active) {
         option.selected = true;
-        this.selectedDevice = device.name; // Store device name, not ID
+        this.selectedDevice = device.name; // Set default selected device
       }
       selector.appendChild(option);
     });
   }
 
-  showDeviceError() {
-    const selector = document.getElementById('speaker-selector');
-    if (selector) {
-      selector.innerHTML = `<option value="">${t('speaker_error') || 'Fehler beim Laden der Lautsprecher'}</option>`;
-    }
-  }
-
   async loadMusicData() {
-    this.showLoading();
-    
-    const response = await fetch('/api/music-library');
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    try {
+      const data = await fetchAPI('/api/music-library');
+      if (data && !data.error) {
+        this.musicData = data;
+        this.updateMusicDisplay();
+      } else {
+        console.error('Invalid music data received:', data);
+      }
+    } catch (error) {
+      console.error('Error loading music data:', error);
     }
-    
-    this.musicData = await response.json();
-    this.createTabs();
-    this.showCurrentTab();
   }
 
-  createTabs() {
-    const tabsContainer = document.getElementById('music-library-tabs');
-    if (!tabsContainer) return;
-    
-    const tabs = [];
-    
-    if (this.musicData.playlists && this.musicData.playlists.length > 0) {
-      tabs.push({
-        id: 'playlists',
-        icon: '',
-        label: 'Playlists',
-        count: this.musicData.playlists.length
-      });
-    }
-    
-    if (this.musicData.albums && this.musicData.albums.length > 0) {
-      tabs.push({
-        id: 'albums',
-        icon: '',
-        label: 'Alben',
-        count: this.musicData.albums.length
-      });
-    }
-    
-    if (this.musicData.tracks && this.musicData.tracks.length > 0) {
-      tabs.push({
-        id: 'tracks',
-        icon: '',
-        label: 'Songs',
-        count: this.musicData.tracks.length
-      });
-    }
-    
-    if (this.musicData.artists && this.musicData.artists.length > 0) {
-      tabs.push({
-        id: 'artists',
-        icon: '',
-        label: 'Künstler',
-        count: this.musicData.artists.length
-      });
-    }
-    
-    // Falls der aktuelle Tab nicht verfügbar ist, wechsle zum ersten
-    const availableTabIds = tabs.map(tab => tab.id);
-    if (!availableTabIds.includes(this.currentTab) && availableTabIds.length > 0) {
-      this.currentTab = availableTabIds[0];
-    }
-    
-    tabsContainer.innerHTML = tabs.map((tab, index) => `
-      <button class="music-library-tab tab-button ${tab.id === this.currentTab ? 'active' : ''}" 
-              data-tab="${tab.id}">
-        ${tab.label}
-      </button>
-    `).join('');
+  updateMusicDisplay() {
+    // Implement display logic for music data
   }
 
   setupEventListeners() {
-    // Tab switching
-    document.addEventListener('click', (e) => {
-      if (e.target.classList.contains('tab-button')) {
-        const newTab = e.target.dataset.tab;
-        this.switchTab(newTab);
-      }
-    });
-    
-    // Search functionality
-    const searchInput = document.getElementById('music-library-search');
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        this.filterItems(e.target.value);
-      });
-    }
-    
-    // Speaker selection
-    const speakerSelector = document.getElementById('speaker-selector');
-    if (speakerSelector) {
-      speakerSelector.addEventListener('change', (e) => {
+    const selector = document.getElementById('speaker-selector');
+    if (selector) {
+      selector.addEventListener('change', (e) => {
         this.selectedDevice = e.target.value;
-        console.log('🔊 Selected device:', this.selectedDevice);
+        console.log('Selected device:', this.selectedDevice);
       });
     }
-    
-    // Play buttons
-    document.addEventListener('click', (e) => {
-      if (e.target.classList.contains('music-play-btn')) {
-        const uri = e.target.dataset.uri;
-        this.playMusic(uri);
-      }
-    });
-  }
-
-  switchTab(tabId) {
-    this.currentTab = tabId;
-    
-    // Update tab buttons
-    document.querySelectorAll('.tab-button').forEach(tab => {
-      tab.classList.toggle('active', tab.dataset.tab === tabId);
-    });
-    
-    this.showCurrentTab();
-  }
-
-  showCurrentTab() {
-    const items = this.getCurrentItems();
-    this.filteredItems = [...items];
-    this.renderGrid();
-  }
-
-  getCurrentItems() {
-    switch (this.currentTab) {
-      case 'playlists':
-        return this.musicData.playlists || [];
-      case 'albums':
-        return this.musicData.albums || [];
-      case 'tracks':
-        return this.musicData.tracks || [];
-      case 'artists':
-        return this.musicData.artists || [];
-      default:
-        return [];
-    }
-  }
-
-  filterItems(searchTerm) {
-    const items = this.getCurrentItems();
-    
-    if (!searchTerm) {
-      this.filteredItems = [...items];
-    } else {
-      const term = searchTerm.toLowerCase();
-      this.filteredItems = items.filter(item =>
-        item.name.toLowerCase().includes(term) ||
-        (item.artist && item.artist.toLowerCase().includes(term))
-      );
-    }
-    
-    this.renderGrid();
-  }
-
-  renderGrid() {
-    const grid = document.getElementById('music-library-grid');
-    if (!grid) return;
-    
-    if (this.filteredItems.length === 0) {
-      grid.innerHTML = '<div class="no-results">Keine Musik gefunden</div>';
-      return;
-    }
-    
-    const itemsHTML = this.filteredItems.map(item => this.renderItem(item)).join('');
-    grid.innerHTML = itemsHTML;
-  }
-
-  renderItem(item) {
-    const imageUrl = item.image_url || '/static/icon-round.png';
-    const artist = item.artist || 'Unbekannter Künstler';
-    
-    return `
-      <div class="music-item" data-uri="${item.uri}">
-        <div class="music-item-image">
-          <img src="${imageUrl}" alt="${item.name}" loading="lazy">
-          <button class="music-play-btn" data-uri="${item.uri}" title="Abspielen">
-            <i class="fas fa-play"></i>
-          </button>
-        </div>
-        <div class="music-item-info">
-          <div class="music-item-name">${item.name}</div>
-          <div class="music-item-artist">${artist}</div>
-        </div>
-      </div>
-    `;
   }
 
   async playMusic(uri) {
-    // Check if device is selected when required
-    if (!this.selectedDevice && this.devices.length > 0) {
-      const selectedDevice = await this.showDeviceSelectionDialog();
-      if (!selectedDevice) {
-        return; // User cancelled device selection
-      }
-      this.selectedDevice = selectedDevice;
-      
-      // Update the device selector to reflect the choice
-      const selector = document.getElementById('speaker-selector');
-      if (selector) {
-        selector.value = selectedDevice;
-      }
+    if (!this.selectedDevice) {
+      alert(t('select_speaker_first') || 'Bitte wähle zuerst einen Lautsprecher aus.');
+      return;
     }
     
     try {
-      const payload = { context_uri: uri };
-      
-      // Convert device name to device ID if needed (same as alarm/sleep logic)
-      if (this.selectedDevice) {
-        const device = this.devices.find(d => d.name === this.selectedDevice);
-        if (device) {
-          payload.device_id = device.id;
-        }
-      }
-      
-      const response = await fetch('/start_playback', {
+      await fetchAPI('/play', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `device_name=${encodeURIComponent(this.selectedDevice)}&uri=${encodeURIComponent(uri)}`
       });
-      
-      if (response.ok) {
-        console.log(`🎵 Playing: ${uri} on device: ${this.selectedDevice || 'default'}`);
-        showTemporaryMessage('Wiedergabe gestartet!', 'success');
-      } else {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to start playback');
-      }
+      // Optional: show feedback
+      showToast(t('playback_started') || 'Wiedergabe gestartet!');
     } catch (error) {
-      console.error('❌ Failed to play music:', error);
-      showTemporaryMessage('Fehler beim Starten der Wiedergabe', 'error');
+      console.error('Failed to start playback:', error);
+      alert(t('playback_failed') || 'Wiedergabe fehlgeschlagen.');
     }
-  }
-
-  showLoading() {
-    const grid = document.getElementById('music-library-grid');
-    if (grid) {
-      grid.innerHTML = `
-        <div class="music-library-loader">
-          <div class="music-library-spinner"></div>
-          <div class="music-library-loader-text">Musik wird geladen...</div>
-        </div>
-      `;
-    }
-  }
-
-  showError(message) {
-    const grid = document.getElementById('music-library-grid');
-    if (grid) {
-      grid.innerHTML = `<div class="error-message">${message}</div>`;
-    }
-  }
-
-  showDeviceSelectionDialog() {
-    return new Promise((resolve) => {
-      // Create modal overlay
-      const overlay = document.createElement('div');
-      overlay.className = 'device-selection-overlay';
-
-      // Create modal dialog
-      const modal = document.createElement('div');
-      modal.className = 'device-selection-modal';
-
-      // Create modal content
-      modal.innerHTML = `
-        <h3>
-          ${t('select_speaker') || 'Lautsprecher auswählen'}
-        </h3>
-        <p>
-          ${t('select_speaker_message') || 'Auf welchem Lautsprecher möchten Sie die Musik abspielen?'}
-        </p>
-        <div class="device-list">
-          ${this.devices.map(device => `
-            <button class="device-option" data-device="${device.name}">
-              ${device.name}${device.is_active ? ' (aktiv)' : ''}
-            </button>
-          `).join('')}
-        </div>
-        <div class="modal-actions">
-          <button class="cancel-btn">
-            ${t('cancel') || 'Abbrechen'}
-          </button>
-        </div>
-      `;
-
-      // Add event listeners
-      modal.querySelectorAll('.device-option').forEach(button => {
-        button.addEventListener('click', () => {
-          const deviceName = button.dataset.device;
-          document.body.removeChild(overlay);
-          resolve(deviceName);
-        });
-      });
-
-      modal.querySelector('.cancel-btn').addEventListener('click', () => {
-        document.body.removeChild(overlay);
-        resolve(null);
-      });
-
-      // Close on overlay click
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) {
-          document.body.removeChild(overlay);
-          resolve(null);
-        }
-      });
-
-      // Add to DOM
-      overlay.appendChild(modal);
-      document.body.appendChild(overlay);
-      
-      // Focus first device option
-      const firstDevice = modal.querySelector('.device-option');
-      if (firstDevice) {
-        firstDevice.focus();
-      }
-    });
   }
 }
 
-// Global instance
-let musicLibraryBrowser = null;
+// Initialize the browser instance
+window.musicLibraryBrowser = new MusicLibraryBrowser();
 
-// Function to initialize music library (called when switching to library tab)
-async function initializeMusicLibrary() {
-  if (!musicLibraryBrowser) {
-    musicLibraryBrowser = new MusicLibraryBrowser();
-  }
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'toast-notification';
+  toast.textContent = message;
+  document.body.appendChild(toast);
   
-  await musicLibraryBrowser.initialize();
+  setTimeout(() => {
+    toast.classList.add('show');
+  }, 10);
+  
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => {
+      document.body.removeChild(toast);
+    }, 300);
+  }, 3000);
 }

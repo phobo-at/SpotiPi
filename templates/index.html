@@ -51,18 +51,14 @@
 
   <main class="app-content">
     <!-- Current track with album cover -->
-    <div class="current-track" role="status" id="currently-playing" {% if not current_track %}style="display: none;"{% endif %}>
-      {% if current_track %}
-        {% if current_track.album_image %}
-          <div class="album-cover">
-            <img src="{{ current_track.album_image }}" alt="Album Cover" class="album-image" loading="lazy">
-          </div>
-        {% endif %}
-        <div class="track-info">
-          <span class="title">{{ current_track.name }}</span>
-          <span class="artist">{{ current_track.artist }}</span>
-        </div>
-      {% endif %}
+    <div class="current-track" role="status" id="currently-playing" style="display: none;">
+      <div class="album-cover">
+        <div class="placeholder-glow"></div>
+      </div>
+      <div class="track-info">
+        <span class="title placeholder-glow"></span>
+        <span class="artist placeholder-glow"></span>
+      </div>
     </div>
 
     <div class="container">
@@ -186,8 +182,7 @@
 <script id="translations-data" type="application/json">
 {
   "language": {{ lang | tojson }},
-  "translations": {{ translations | tojson }},
-  "devices": {{ devices | tojson }}
+  "translations": {{ translations | tojson }}
 }
 </script>
 
@@ -196,7 +191,6 @@
   const translationsData = JSON.parse(document.getElementById('translations-data').textContent);
   window.LANGUAGE = translationsData.language;
   window.TRANSLATIONS = translationsData.translations;
-  window.SPOTIFY_DEVICES = translationsData.devices;
 </script>
   
   <!-- Main JavaScript with showInterface, togglePlayPause etc. -->
