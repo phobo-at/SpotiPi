@@ -1,34 +1,31 @@
 <!-- Music Library Interface Template -->
-<div>
-  <h2 class="form-title">{{ t('library_title') }}</h2>
-  
-  <!-- Music Library Browser -->
-  <div class="music-library-browser">
-    <!-- Speaker Selector -->
-    <div class="form-group">
-      <label for="speaker-selector">{{ t('device_label')|safe }}</label>
-      <select id="speaker-selector" class="form-input" aria-describedby="speaker-help">
-        <option value="">{{ t('loading_devices') }}</option>
-      </select>
-      <small id="speaker-help" class="form-help">{{ t('device_help') }}</small>
-    </div>
-    
-    <div class="music-library-tabs tab-container" id="music-library-tabs">
-      <!-- Tabs are dynamically generated -->
-    </div>
-    
-    <div class="music-library-search">
-      <input type="text" 
-             id="music-library-search" 
-             placeholder="{{ t('search_music') }}"
-             class="form-input">
-    </div>
-    
-    <div class="music-library-grid" id="music-library-grid">
-      <div class="music-library-loader">
-        <div class="music-library-spinner"></div>
-        <div class="music-library-loader-text">{{ t('loading_music') }}</div>
+<form id="library-form" aria-labelledby="library-form-title">
+  <h2 id="library-form-title" class="form-title">{{ t('library_title') }}</h2>
+
+  <!-- Speaker Selector -->
+  <div class="form-group">
+    <label for="library-speaker-selector">{{ t('device_label')|safe }}</label>
+    <select id="library-speaker-selector" name="device_name" class="form-input" aria-describedby="speaker-help">
+      <!-- Options will be populated by JavaScript -->
+      <option value="">{{ t('loading_devices') }}</option>
+    </select>
+    <small id="speaker-help" class="form-help">{{ t('device_help') }}</small>
+  </div>
+
+  <!-- Music Selection -->
+  <div class="form-group">
+    <label class="form-label">{{ t('playlist_select_text') }}</label>
+    <div id="library-playlist-selector">
+      <div class="playlist-input">
+        <div class="playlist-preview">
+          <div class="playlist-preview-image" id="preview-image"><i class="fas fa-music"></i></div>
+          <div class="playlist-preview-info">
+            <div class="playlist-preview-name" id="preview-name">{{ t('playlist_select_text') or 'Select music' }}</div>
+            <div class="playlist-preview-meta" id="preview-meta"></div>
+          </div>
+        </div>
       </div>
     </div>
+    <small class="form-help">{{ t('library_play_help') }}</small>
   </div>
-</div>
+</form>

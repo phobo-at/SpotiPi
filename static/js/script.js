@@ -959,12 +959,6 @@ function showInterface(mode) {
   if (mode === 'alarm') {
     setTimeout(updateAlarmStatus, 100);
   }
-  
-  if (mode === 'library') {
-    if (window.musicLibraryBrowser && !window.musicLibraryBrowser.isInitialized) {
-      window.musicLibraryBrowser.initialize();
-    }
-  }
 }
 
 // Initialisierung nach DOM-Laden
@@ -1028,10 +1022,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   
+  // Initialize for library tab
+  const libraryPlaylistSelector = new PlaylistSelector('library-playlist-selector', {
+    searchPlaceholder: t('playlist_search_placeholder') || 'Playlist suchen...',
+    noResultsText: t('playlist_no_results') || 'Keine Playlists gefunden',
+    onSelect: (item) => {
+      console.log('🎵 Library item selected:', item.name);
+      const deviceSelector = DOM.getElement('library-speaker-selector');
+      if (deviceSelector && deviceSelector.value) {
+        playMusic(item.uri, deviceSelector.value);
+      } else {
+        // Fallback to the first available device if none is selected
+        const firstDevice = document.querySelector('#library-speaker-selector option[value]');
+        if (firstDevice && firstDevice.value) {
+          playMusic(item.uri, firstDevice.value);
+        } else {
+          alert(t('select_speaker_first') || 'Bitte wähle zuerst einen Lautsprecher aus.');
+        }
+      }
+    }
+  });
+
   // Store selectors globally for access from other functions
   window.playlistSelectors = {
     alarm: alarmPlaylistSelector,
-    sleep: sleepPlaylistSelector
+    sleep: sleepPlaylistSelector,
+    library: libraryPlaylistSelector
   };
   
   console.log('✅ Playlist selectors initialized');
@@ -1808,6 +1824,11 @@ async function loadPlaylistsForSelectors() {
           console.log('🔄 Loading previously selected sleep playlist:', currentUri);
           window.playlistSelectors.sleep.setSelected(currentUri);
         }
+      }
+
+      if (window.playlistSelectors?.library) {
+        console.log('🔧 Setting music library for library selector...');
+        window.playlistSelectors.library.setMusicLibrary(data);
       }
       
       console.log('✅ Music library selectors updated successfully');
