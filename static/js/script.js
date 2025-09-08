@@ -928,6 +928,37 @@ function updateDevices(devices) {
 // 🧩 Initialisierung & Intervalle
 // ===============================
 
+function showInterface(mode) {
+  const elements = DOM.getElements({
+    alarmInterface: '#alarm-interface',
+    sleepInterface: '#sleep-interface',
+    libraryInterface: '#library-interface',
+    alarmTab: '#alarm-tab',
+    sleepTab: '#sleep-tab',
+    libraryTab: '#library-tab'
+  });
+  
+  elements.alarmInterface.style.display = (mode === 'alarm') ? 'block' : 'none';
+  elements.sleepInterface.style.display = (mode === 'sleep') ? 'block' : 'none';
+  elements.libraryInterface.style.display = (mode === 'library') ? 'block' : 'none';
+  
+  elements.alarmTab.setAttribute('aria-selected', String(mode === 'alarm'));
+  elements.sleepTab.setAttribute('aria-selected', String(mode === 'sleep'));
+  elements.libraryTab.setAttribute('aria-selected', String(mode === 'library'));
+  
+  localStorage.setItem("activeTab", mode);
+  
+  if (mode === 'alarm') {
+    setTimeout(updateAlarmStatus, 100);
+  }
+  
+  if (mode === 'library') {
+    if (window.musicLibraryBrowser && !window.musicLibraryBrowser.isInitialized) {
+      window.musicLibraryBrowser.initialize();
+    }
+  }
+}
+
 // Initialisierung nach DOM-Laden
 document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 Initializing Spotipi application...');
@@ -996,14 +1027,6 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   
   console.log('✅ Playlist selectors initialized');
-  
-  // Make functions globally available for onclick handlers
-  window.showInterface = showInterface;
-  window.togglePlayPause = togglePlayPause;
-  window.handleSliderChange = handleSliderChange;
-  window.handleSliderStart = handleSliderStart;
-  window.handleSliderEnd = handleSliderEnd;
-  window.handleDurationChange = handleDurationChange;
   
   // Automatisches Speichern für Wecker-Einstellungen
   const alarmForm = document.getElementById('alarm-form');
