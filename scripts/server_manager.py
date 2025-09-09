@@ -16,8 +16,8 @@ class SpotiPiServerManager:
     """Manages SpotiPi server as a background process."""
     
     def __init__(self):
-        self.project_root = Path(__file__).parent
-        self.pid_file = self.project_root / "server.pid"
+        self.project_root = Path(__file__).parent.parent  # Go up one level from scripts/
+        self.pid_file = self.project_root / "scripts" / "server.pid"
         self.log_file = self.project_root / "logs" / "server.log"
         self.error_log = self.project_root / "logs" / "server_error.log"
         

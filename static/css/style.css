@@ -126,7 +126,8 @@ h1 {
 form {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  /* Use explicit margins on children for consistent spacing */
+  gap: 0;
 }
 
 label {
@@ -176,7 +177,8 @@ select.form-input {
   font-size: 1.3rem;
   color: var(--color-primary);
   margin-top: 0;
-  margin-bottom: 0; /* Removed to rely on form gap for consistent spacing */
+  /* Provide explicit spacing below the form title for consistency */
+  margin-bottom: var(--spacing-md);
   text-align: center;
 }
 

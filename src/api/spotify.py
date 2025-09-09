@@ -39,6 +39,10 @@ __all__ = [
 # 🔧 File paths
 ENV_PATH = os.path.expanduser("~/.spotify_wakeup/.env")
 
+# ⏱️ Network timeout configuration
+# Increased timeout for better reliability with unstable connections
+SPOTIFY_API_TIMEOUT = 30  # seconds
+
 # 🌍 Load environment variables
 load_dotenv(dotenv_path=ENV_PATH)
 CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
@@ -61,7 +65,7 @@ def refresh_access_token() -> Optional[str]:
             "https://accounts.spotify.com/api/token",
             data={"grant_type": "refresh_token", "refresh_token": REFRESH_TOKEN},
             auth=(CLIENT_ID, CLIENT_SECRET),
-            timeout=10
+            timeout=SPOTIFY_API_TIMEOUT
         )
         if r.status_code == 200:
             return r.json().get("access_token")

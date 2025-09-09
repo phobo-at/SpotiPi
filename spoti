@@ -3,7 +3,7 @@
 # Simple wrapper for common server operations
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MANAGER="$PROJECT_DIR/server_manager.py"
+MANAGER="$PROJECT_DIR/scripts/server_manager.py"
 
 # Colors for output
 GREEN='\033[0;32m'
