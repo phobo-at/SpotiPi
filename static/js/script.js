@@ -590,9 +590,32 @@ function saveAlarmSettings() {
   const form = document.getElementById('alarm-form');
   if (!form) return;
   
+  // FormData aus dem Formular erstellen
   const formData = new FormData(form);
+  
+  // Sicherstellen, dass alle versteckten Felder aktuell sind
   const currentVolume = DOM.getElement('global-volume')?.value || 50;
-  formData.append('alarm_volume', currentVolume);
+  formData.set('alarm_volume', currentVolume);
+  
+  // Playlist URI aus dem versteckten Feld
+  const playlistUri = DOM.getElement('playlist_uri')?.value || '';
+  formData.set('playlist_uri', playlistUri);
+  
+  // Wochentage aus dem versteckten Feld
+  const weekdaysValue = DOM.getElement('weekdays')?.value || '';
+  formData.set('weekdays', weekdaysValue);
+  
+  // Debug-Ausgabe
+  console.log('💾 Saving alarm settings:', {
+    enabled: formData.get('enabled'),
+    time: formData.get('time'),
+    device_name: formData.get('device_name'),
+    playlist_uri: formData.get('playlist_uri'),
+    weekdays: formData.get('weekdays'),
+    fade_in: formData.get('fade_in'),
+    shuffle: formData.get('shuffle'),
+    alarm_volume: formData.get('alarm_volume')
+  });
   
   fetch('/save_alarm', {
     method: 'POST',
@@ -609,6 +632,7 @@ function saveAlarmSettings() {
         : t('no_alarm');
         
       updateStatus('alarm-timer', statusMessage, true);
+      console.log('✅ Alarm settings saved successfully');
     } else {
       console.error('Fehler beim Speichern:', data.message);
       statusElement.innerHTML = originalStatus;
@@ -790,6 +814,9 @@ function toggleWeekday(bubble) {
   
   // Speichere Auswahl
   saveWeekdaySelection();
+  
+  // Automatisches Speichern nach Wochentag-Änderung
+  saveAlarmSettings();
   
   console.log(`📅 Wochentag ${bubble.getAttribute('data-day')} ${bubble.classList.contains('active') ? 'aktiviert' : 'deaktiviert'}`);
 }
@@ -997,9 +1024,7 @@ document.addEventListener('DOMContentLoaded', () => {
           console.log('🔄 Updated alarm playlist URI:', playlist.uri);
         }
         // Trigger auto-save for alarm settings
-        if (typeof saveAlarmSettings === 'function') {
-          saveAlarmSettings();
-        }
+        saveAlarmSettings();
       }
     }
   });
@@ -1029,12 +1054,12 @@ document.addEventListener('DOMContentLoaded', () => {
     onSelect: (item) => {
       console.log('🎵 Library item selected:', item.name);
       const deviceSelector = DOM.getElement('library-speaker-selector');
-      if (deviceSelector && deviceSelector.value) {
+      if (deviceSelector?.value) {
         playMusic(item.uri, deviceSelector.value);
       } else {
         // Fallback to the first available device if none is selected
         const firstDevice = document.querySelector('#library-speaker-selector option[value]');
-        if (firstDevice && firstDevice.value) {
+        if (firstDevice?.value) {
           playMusic(item.uri, firstDevice.value);
         } else {
           alert(t('select_speaker_first') || 'Bitte wähle zuerst einen Lautsprecher aus.');
@@ -1057,7 +1082,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (alarmForm) {
     const formElements = alarmForm.querySelectorAll('input, select');
     formElements.forEach(element => {
-      if (element.id !== 'playlist_uri' && element.id !== 'sleep_playlist_uri') {
+      // Ausschluss von versteckten Feldern, die von JavaScript-Komponenten verwaltet werden
+      if (element.id !== 'playlist_uri' && element.id !== 'weekdays') {
         element.addEventListener('change', saveAlarmSettings);
       }
     });
@@ -1771,9 +1797,7 @@ class PlaylistSelector {
     }
     
     // Jetzt MANUELL speichern, da wir das automatische Change-Event deaktiviert haben
-    if (typeof saveAlarmSettings === 'function') {
-      saveAlarmSettings();
-    }
+    saveAlarmSettings();
   }
 }
 

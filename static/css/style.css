@@ -1,7 +1,7 @@
 /* ===============================================
    📱 PWA iOS Status-Bar
    =============================================== */
-@supports(display-mode: standalone) {
+@media (display-mode: standalone) {
   body::before {
     content: "";
     position: fixed;
@@ -18,7 +18,7 @@
    🔧 Utility Classes
    =============================================== */
 .hidden {
-  display: none !important;
+  display: none;
 }
 
 /* ===============================================
@@ -66,16 +66,21 @@
    =============================================== */
 body {
   padding-top: env(safe-area-inset-top);
+  padding-left: var(--spacing-xl);
+  padding-right: var(--spacing-xl);
+  padding-bottom: var(--spacing-xl);
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: 'Inter', sans-serif;
-  padding: var(--spacing-xl);
   margin: 0;
 }
 
 h1 {
   font-size: 1.8rem;
+  margin-top: 0;
   margin-bottom: var(--spacing-xxl);
+  margin-left: 0;
+  margin-right: 0;
   text-align: center;
   color: var(--color-primary);
 }
@@ -103,8 +108,14 @@ h1 {
   to {
     opacity: 0;
     height: 0;
-    padding: 0;
-    margin: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    padding-right: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: 0;
+    margin-right: 0;
     overflow: hidden;
   }
 }
@@ -165,7 +176,7 @@ select.form-input {
   font-size: 1.3rem;
   color: var(--color-primary);
   margin-top: 0;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 0; /* Removed to rely on form gap for consistent spacing */
   text-align: center;
 }
 
