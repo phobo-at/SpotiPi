@@ -242,47 +242,43 @@ select {
 /* ===============================================
    🔘 Toggle Switches (uniform for all checkboxes)
    =============================================== */
-.toggle-switch, .enable-container {
+.toggle-switch {
   display: grid;
   grid-template-columns: 1fr 60px; /* Fixed width for toggle area */
   align-items: center;
   gap: var(--spacing-xs);
+  margin: var(--spacing-md) 0;
 }
 
-/* Only enable-container uses flexbox for better alignment */
+/* Enable-container uses flexbox for better alignment */
 .enable-container {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--spacing-xs);
 }
 
-.toggle-switch {
-  margin: var(--spacing-md) 0;
-}
-
-/* Label on left, takes available space */
-.toggle-switch label, .enable-container .enable-label {
+/* Toggle-switch labels (for grid layout) */
+.toggle-switch label {
   margin: 0;
   padding: 0;
   font-weight: 500;
   line-height: 1.4;
-  order: 0;
   display: flex;
   align-items: center;
   grid-column: 1;
 }
 
-/* Only enable-container labels use flex: 1 */
+/* Enable-container labels (for flexbox layout) */
 .enable-container .enable-label {
-  flex: 1;
-  order: unset;
-  grid-column: unset;
-}
-
-/* Subtle highlight for the alarm enable text */
-.enable-container .enable-label {
+  margin: 0;
+  padding: 0;
   font-weight: 600;
   font-size: 1rem;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  flex: 1;
 }
 
 /* Hide all checkboxes */
@@ -293,13 +289,12 @@ select {
   position: absolute;
 }
 
-/* Uniform switch for ALL toggles */
-.toggle-switch .switch, .enable-container .switch {
-  width: 48px; /* Uniform size */
+/* Switch for toggle-switch (grid layout) */
+.toggle-switch .switch {
+  width: 48px;
   height: 24px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   cursor: pointer;
   background: var(--color-disabled);
   border-radius: 24px;
@@ -307,15 +302,20 @@ select {
   transition: background-color var(--transition-fast);
   grid-column: 2;
   justify-self: end;
-  order: 1;
 }
 
-/* Only enable-container switches use flexbox properties */
+/* Switch for enable-container (flexbox layout) */
 .enable-container .switch {
+  width: 48px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  background: var(--color-disabled);
+  border-radius: 24px;
+  position: relative;
+  transition: background-color var(--transition-fast);
   flex-shrink: 0;
-  grid-column: unset;
-  justify-self: unset;
-  order: unset;
 }
 
 /* Uniform slider for ALL toggles */
@@ -1376,6 +1376,65 @@ body {
 
 .music-item:hover .music-play-btn {
   opacity: 1;
+}
+
+/* ===============================================
+   🎤 Artist Top Tracks View
+   =============================================== */
+
+.artist-tracks-header {
+  grid-column: 1 / -1;
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background: var(--color-surface);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.artist-back-button {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+  margin-bottom: var(--spacing-sm);
+  transition: all var(--transition-normal) var(--transition-easing);
+}
+
+.artist-back-button:hover {
+  background: var(--color-primary-dark);
+  transform: translateX(-2px);
+}
+
+.artist-tracks-title h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 18px;
+}
+
+.artist-tracks-title p {
+  margin: var(--spacing-xs) 0 0 0;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.artist-tracks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--spacing-sm);
+  width: 100%;
+}
+
+.track-item {
+  cursor: pointer;
+  transition: all var(--transition-normal) var(--transition-easing);
+}
+
+.track-item:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .music-play-btn:hover {
