@@ -1698,12 +1698,115 @@ class PlaylistSelector {
   
   attachItemClickListeners(grid) {
     grid.querySelectorAll('.playlist-item').forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', async () => {
         const uri = item.dataset.uri;
         const selectedItem = this.filteredItems.find(p => p.uri === uri);
-        this.selectItem(selectedItem);
+        
+        // Special handling for artists - load their top tracks
+        if (selectedItem && selectedItem.type === 'artist' && selectedItem.artist_id) {
+          await this.loadArtistTopTracks(selectedItem);
+        } else {
+          this.selectItem(selectedItem);
+        }
       });
     });
+  }
+  
+  async loadArtistTopTracks(artist) {
+    console.log('🎤 Loading top tracks for artist:', artist.name);
+    
+    // Show loading state
+    const grid = this.container.querySelector('#playlist-grid');
+    if (grid) {
+      grid.innerHTML = `
+        <div class="music-library-loader">
+          <div class="music-library-spinner"></div>
+          <div class="music-library-loader-text">Lade Top-Tracks von ${artist.name}...</div>
+        </div>
+      `;
+    }
+    
+    try {
+      const response = await fetchAPI(`/api/artist-top-tracks/${artist.artist_id}`);
+      
+      if (response && response.success && response.tracks) {
+        // Create a special "artist tracks" view
+        this.currentArtistTracks = {
+          artist: artist,
+          tracks: response.tracks
+        };
+        
+        // Switch to a special artist-tracks mode
+        this.showArtistTracks(artist, response.tracks);
+      } else {
+        console.error('Failed to load artist top tracks:', response);
+        grid.innerHTML = `<div class="playlist-no-results">Fehler beim Laden der Songs von ${artist.name}</div>`;
+      }
+    } catch (error) {
+      console.error('Error loading artist top tracks:', error);
+      if (grid) {
+        grid.innerHTML = `<div class="playlist-no-results">Fehler beim Laden der Songs von ${artist.name}</div>`;
+      }
+    }
+  }
+  
+  showArtistTracks(artist, tracks) {
+    console.log(`🎵 Showing ${tracks.length} top tracks for ${artist.name}`);
+    
+    // Update the grid with tracks
+    const grid = this.container.querySelector('#playlist-grid');
+    if (!grid) return;
+    
+    // Add a back button and title
+    const backButton = `
+      <div class="artist-tracks-header">
+        <button class="artist-back-button" onclick="window.playlistSelectors.library.returnToArtists()">
+          ← Zurück zu Künstlern
+        </button>
+        <div class="artist-tracks-title">
+          <h3>Top-Tracks: ${artist.name}</h3>
+          <p>${tracks.length} Songs</p>
+        </div>
+      </div>
+    `;
+    
+    // Render tracks similar to normal tracks
+    const tracksHtml = tracks.map((track, index) => {
+      const imageStyle = track.image_url ? `background-image: url(${track.image_url})` : '';
+      
+      return `
+        <div class="playlist-item track-item" data-uri="${track.uri}" data-track-index="${index}">
+          <div class="playlist-item-image" style="${imageStyle}">
+            ${!track.image_url ? '🎵' : ''}
+          </div>
+          <div class="playlist-item-info">
+            <div class="playlist-item-name">${track.name}</div>
+            <div class="playlist-item-meta">${track.artist}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    grid.innerHTML = backButton + `<div class="artist-tracks-grid">${tracksHtml}</div>`;
+    
+    // Add click listeners for tracks
+    grid.querySelectorAll('.track-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const uri = item.dataset.uri;
+        const trackIndex = parseInt(item.dataset.trackIndex);
+        const track = tracks[trackIndex];
+        
+        // Select the track for playback
+        this.selectItem(track);
+      });
+    });
+  }
+  
+  returnToArtists() {
+    console.log('🔙 Returning to artists view');
+    this.currentArtistTracks = null;
+    this.currentTab = 'artists';
+    this.updateCurrentTab();
   }
   
   switchTab(tabName) {
@@ -1984,6 +2087,40 @@ class MusicLibraryBrowser {
 
 // Initialize the browser instance
 window.musicLibraryBrowser = new MusicLibraryBrowser();
+
+// Global playMusic function for playlist selectors
+async function playMusic(uri, deviceName) {
+  if (!deviceName) {
+    alert(t('select_speaker_first') || 'Bitte wähle zuerst einen Lautsprecher aus.');
+    return;
+  }
+  
+  try {
+    const response = await fetchAPI('/play', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `device_name=${encodeURIComponent(deviceName)}&uri=${encodeURIComponent(uri)}`
+    });
+    
+    // fetchAPI returns raw response for POST requests, need to parse JSON
+    if (response.ok) {
+      const data = await response.json();
+      if (data?.success) {
+        showToast(t('playback_started') || 'Wiedergabe gestartet!');
+      } else {
+        console.error('Playback failed:', data);
+        alert(t('playback_failed') || 'Wiedergabe fehlgeschlagen.');
+      }
+    } else {
+      const errorData = await response.json();
+      console.error('Playback failed:', errorData);
+      alert(t('playback_failed') || 'Wiedergabe fehlgeschlagen.');
+    }
+  } catch (error) {
+    console.error('Failed to start playback:', error);
+    alert(t('playback_failed') || 'Wiedergabe fehlgeschlagen.');
+  }
+}
 
 function showToast(message) {
   const toast = document.createElement('div');

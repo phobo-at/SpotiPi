@@ -63,7 +63,7 @@ def get_sleep_status() -> Dict[str, Any]:
         logger.exception("Unexpected error getting sleep status")
         return {"active": False}
 
-def start_sleep_timer(duration_minutes: int, playlist_uri: str = "", device_name: str = "", volume: int = 30) -> bool:
+def start_sleep_timer(duration_minutes: int, playlist_uri: str = "", device_name: str = "", volume: int = 30, shuffle: bool = False) -> bool:
     """Start sleep timer with music playback.
     
     Args:
@@ -106,8 +106,8 @@ def start_sleep_timer(duration_minutes: int, playlist_uri: str = "", device_name
         
         # Start music playback if specified
         if playlist_uri and device_name:
-            print(f"🔥 DEBUG: Starting sleep music: {playlist_uri} on {device_name}")
-            success = _start_sleep_music(playlist_uri, device_name, volume)
+            print(f"🔥 DEBUG: Starting sleep music: {playlist_uri} on {device_name}, shuffle: {shuffle}")
+            success = _start_sleep_music(playlist_uri, device_name, volume, shuffle)
             if not success:
                 print("🔥 DEBUG: Failed to start sleep music")
                 logger.warning("Failed to start sleep music, but timer is still active")
@@ -149,13 +149,14 @@ def stop_sleep_timer() -> bool:
         logger.exception("Error stopping sleep timer")
         return False
 
-def _start_sleep_music(playlist_uri: str, device_name: str, volume: int) -> bool:
+def _start_sleep_music(playlist_uri: str, device_name: str, volume: int, shuffle: bool = False) -> bool:
     """Start sleep music playback.
     
     Args:
         playlist_uri: Spotify playlist URI
         device_name: Target device name
         volume: Playback volume (0-100)
+        shuffle: Enable shuffle mode
         
     Returns:
         bool: True if playback started successfully
@@ -179,8 +180,8 @@ def _start_sleep_music(playlist_uri: str, device_name: str, volume: int) -> bool
             return False
         
         # Start playback
-        start_playback(token, device_id, playlist_uri, volume_percent=volume)
-        logger.info(f"🎵 Started sleep music: {playlist_uri} on {device_name} at {volume}% volume")
+        start_playback(token, device_id, playlist_uri, volume_percent=volume, shuffle=shuffle)
+        logger.info(f"🎵 Started sleep music: {playlist_uri} on {device_name} at {volume}% volume, shuffle: {shuffle}")
         return True
         
     except Exception as e:

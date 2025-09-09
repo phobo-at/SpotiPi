@@ -392,6 +392,36 @@ def api_music_library():
             "message": "Spotify unavailable: failed to load music library"
         }), 503
 
+@app.route("/api/artist-top-tracks/<artist_id>")
+@api_error_handler
+@rate_limit("spotify_api")
+def api_artist_top_tracks(artist_id):
+    """API endpoint for artist top tracks"""
+    token = get_access_token()
+    if not token:
+        return jsonify({
+            "error": "401",
+            "message": "Spotify authentication required"
+        }), 401
+    
+    try:
+        from .api.spotify import get_artist_top_tracks
+        tracks = get_artist_top_tracks(token, artist_id)
+        
+        return jsonify({
+            "success": True,
+            "artist_id": artist_id,
+            "tracks": tracks,
+            "total": len(tracks)
+        })
+        
+    except Exception as e:
+        logging.exception("Error loading artist top tracks")
+        return jsonify({
+            "error": "500",
+            "message": f"Failed to load artist top tracks: {str(e)}"
+        }), 500
+
 @app.route("/api/token-cache/status")
 @rate_limit("status_check")
 def get_token_cache_status():
@@ -707,6 +737,52 @@ def start_playback_endpoint():
             
     except Exception as e:
         logging.exception("Error starting playback")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/play", methods=["POST"])
+@api_error_handler
+def play_endpoint():
+    """Play music on specified device - simplified endpoint for frontend"""
+    token = get_access_token()
+    if not token:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        # Handle form-encoded data (from frontend)
+        device_name = request.form.get('device_name')
+        uri = request.form.get('uri')
+        
+        if not uri:
+            return jsonify({"error": "Missing URI"}), 400
+        
+        if not device_name:
+            return jsonify({"error": "Missing device name"}), 400
+        
+        # Get devices to find device_id from device_name
+        devices = get_devices(token)
+        if not devices:
+            return jsonify({"error": "No devices available"}), 404
+        
+        # Find device by name
+        target_device = None
+        for device in devices:
+            if device['name'] == device_name:
+                target_device = device
+                break
+        
+        if not target_device:
+            return jsonify({"error": f"Device '{device_name}' not found"}), 404
+        
+        # Start playback
+        success = start_playback(token, target_device['id'], uri)
+        
+        if success:
+            return jsonify({"success": True, "message": "Playback started"})
+        else:
+            return jsonify({"error": "Failed to start playback"}), 500
+            
+    except Exception as e:
+        logging.exception("Error in play endpoint")
         return jsonify({"error": str(e)}), 500
 
 # =====================================

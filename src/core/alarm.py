@@ -131,7 +131,8 @@ def execute_alarm() -> None:
         # Use alarm_volume if available, otherwise fallback to volume
         target_volume = config.get("alarm_volume", config.get("volume", 50))
         fade_in = config.get("fade_in", False)
-        log(f"🎚️ Alarm volume: {target_volume}%, Fade-In: {fade_in}")
+        shuffle = config.get("shuffle", False)
+        log(f"🎚️ Alarm volume: {target_volume}%, Fade-In: {fade_in}, Shuffle: {shuffle}")
 
         if not fade_in:
             # Direct start with saved alarm volume
@@ -139,7 +140,8 @@ def execute_alarm() -> None:
                 token,
                 device_id,
                 config.get("playlist_uri", ""),
-                volume_percent=target_volume
+                volume_percent=target_volume,
+                shuffle=shuffle
             )
             log(f"▶️ Playback started directly with {target_volume}% alarm volume")
         else:
@@ -148,7 +150,8 @@ def execute_alarm() -> None:
                 token,
                 device_id,
                 config.get("playlist_uri", ""),
-                volume_percent=5
+                volume_percent=5,
+                shuffle=shuffle
             )
             log("▶️ Playback started at 5% volume (Fade-In to alarm volume)")
             

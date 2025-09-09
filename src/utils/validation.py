@@ -392,6 +392,10 @@ def validate_sleep_config(form_data: Dict[str, Any]) -> Dict[str, Any]:
         raise ValidationError(device_result.field_name, device_result.error)
     validated['device_name'] = device_result.value
     
+    # Shuffle validation (optional, defaults to False)
+    shuffle_value = form_data.get('shuffle', 'off')
+    validated['shuffle'] = shuffle_value == 'on' if isinstance(shuffle_value, str) else bool(shuffle_value)
+    
     return validated
 
 def validate_volume_only(form_data: Dict[str, Any]) -> int:

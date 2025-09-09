@@ -357,6 +357,68 @@ def get_user_saved_tracks(token: str) -> List[Dict[str, Any]]:
     logger.info(f"💚 Total {len(tracks)} saved songs found")
     return tracks
 
+def get_artist_top_tracks(token: str, artist_id: str, market: str = "US") -> List[Dict[str, Any]]:
+    """Get an artist's top tracks.
+    
+    Args:
+        token: Spotify access token
+        artist_id: Spotify artist ID (extracted from URI)
+        market: Country market (default: US)
+        
+    Returns:
+        List[Dict[str, Any]]: List of top tracks
+    """
+    logger = logging.getLogger('app')
+    url = f"https://api.spotify.com/v1/artists/{artist_id}/top-tracks"
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {"market": market}
+    
+    try:
+        r = _spotify_request('GET', url, headers=headers, params=params, timeout=SPOTIFY_API_TIMEOUT)
+        if r.status_code == 200:
+            data = r.json()
+            tracks = []
+            
+            for track in data.get("tracks", []):
+                # Get image from album
+                image_url = None
+                images = track.get("album", {}).get("images", [])
+                if images:
+                    # Prefer medium-sized images (around 300px)
+                    for img in images:
+                        width = img.get("width")
+                        if width and width <= 300 and width >= 200:
+                            image_url = img.get("url")
+                            break
+                    if not image_url:
+                        image_url = images[0].get("url")
+                
+                # Format artists
+                artists = track.get("artists", [])
+                artist_names = [artist.get("name", "") for artist in artists]
+                artist_string = ", ".join(artist_names) if artist_names else "Unknown Artist"
+                
+                tracks.append({
+                    "name": track.get("name", "Unknown Track"),
+                    "artist": artist_string,
+                    "uri": track.get("uri", ""),
+                    "image_url": image_url,
+                    "track_count": 1,  # Each track is 1 track
+                    "type": "track",
+                    "duration_ms": track.get("duration_ms", 0),
+                    "popularity": track.get("popularity", 0)
+                })
+            
+            logger.info(f"✅ Artist top tracks loaded: {len(tracks)} tracks")
+            return tracks
+        else:
+            logger.error(f"❌ Error fetching artist top tracks: {r.text}")
+            return []
+    except Exception as e:
+        logger.error(f"❌ Exception fetching artist top tracks: {e}")
+        return []
+
+
 def get_followed_artists(token: str) -> List[Dict[str, Any]]:
     """Fetches the user's followed artists from Spotify.
     
@@ -401,6 +463,7 @@ def get_followed_artists(token: str) -> List[Dict[str, Any]]:
                         "name": item.get("name", "Unknown Artist"),
                         "artist": f"{item.get('followers', {}).get('total', 0):,} Follower",  # Follower as additional info
                         "uri": item.get("uri", ""),
+                        "artist_id": item.get("id", ""),  # Artist ID for top tracks API
                         "image_url": image_url,
                         "track_count": None,  # Artists have no direct track count
                         "type": "artist"  # Marking as Artist
@@ -464,71 +527,63 @@ def get_device_id(token: str, device_name: str) -> Optional[str]:
     return None
 
 # ▶️ Playback
-def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_percent: int = 50) -> None:
-    """Start Spotify playback with specified parameters.
+def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_percent: int = 50, shuffle: bool = False) -> bool:
+    """Start playback on specified device with optional playlist and volume
     
     Args:
         token: Spotify access token
         device_id: Target device ID
-        playlist_uri: Playlist URI to play (optional)
+        playlist_uri: Optional playlist/album/track URI to play
         volume_percent: Volume level (0-100)
+        shuffle: Enable shuffle mode
+        
+    Returns:
+        bool: True if successful, False otherwise
     """
-    logger = logging.getLogger('app')
-    
-    # 1. Load configuration using centralized config system
-    config = load_config()
+    if not token or not device_id:
+        print("❌ Missing token or device_id for playback")
+        return False
 
-    # 2. Set shuffle only when needed with detailed message
-    shuffle_state = config.get("shuffle", False)
-    logger.info(f"🔀 Shuffle mode: {'enabled' if shuffle_state else 'disabled'}")
-    
     try:
-        shuffle_resp = _spotify_request(
+        # 1. Transfer playback to device
+        transfer_resp = _spotify_request(
             'PUT',
-            "https://api.spotify.com/v1/me/player/shuffle",
-            params={"state": shuffle_state, "device_id": device_id},
+            "https://api.spotify.com/v1/me/player",
+            json={"device_ids": [device_id], "play": False},
             headers={"Authorization": f"Bearer {token}"},
             timeout=10
         )
-        # ✅ Status 200 and 204 as success
-        if shuffle_resp.status_code in [200, 204]: 
-            if shuffle_state:
-                logger.info("✅ Shuffle successfully enabled")
+        if transfer_resp.status_code != 204:
+            print(f"⚠️ Could not transfer playback to device: {transfer_resp.text}")
+
+        # 2. Set volume
+        try:
+            vol_resp = _spotify_request(
+                'PUT',
+                "https://api.spotify.com/v1/me/player/volume",
+                params={"volume_percent": volume_percent},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10
+            )
+            if vol_resp.status_code != 204:
+                print(f"⚠️ Could not set volume: {vol_resp.text}")
+        except Exception as e:
+            print(f"❌ Error setting volume: {e}")
+
+        # 3. Start playback
+        if playlist_uri and playlist_uri.strip():
+            if playlist_uri.startswith("spotify:track:"):
+                # For individual tracks, use "uris" parameter
+                payload = {"uris": [playlist_uri]}
+                print(f"▶️ Starting track playback: {playlist_uri}")
             else:
-                logger.info("✅ Shuffle successfully disabled")
+                # For playlists/albums, use "context_uri" parameter
+                payload = {"context_uri": playlist_uri}
+                print(f"▶️ Starting context playback: {playlist_uri}")
         else:
-            action = "enable" if shuffle_state else "disable"
-            logger.warning(f"⚠️ Could not {action} shuffle: Status {shuffle_resp.status_code}")
-            if shuffle_resp.text:
-                logger.warning(f"   API response: {shuffle_resp.text}")
-    except Exception as e:
-        action = "enable" if shuffle_state else "disable"
-        logger.error(f"❌ Error {action}ing shuffle: {e}")
-
-    # 3. Set volume
-    try:
-        vol_resp = _spotify_request(
-            'PUT',
-            "https://api.spotify.com/v1/me/player/volume",
-            params={"volume_percent": volume_percent, "device_id": device_id},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10
-        )
-        if vol_resp.status_code != 204:
-            logger.warning(f"⚠️ Could not set volume: {vol_resp.text}")
-    except Exception as e:
-        logger.error(f"❌ Error setting volume: {e}")
-
-    # 4. Start playback
-    # If playlist_uri is empty, just resume without context (continues last music)
-    if playlist_uri and playlist_uri.strip():
-        payload = {"context_uri": playlist_uri}
-        logger.info(f"▶️ Starting playback with playlist: {playlist_uri}")
-    else:
-        payload = {}
-        logger.info("▶️ Playback started directly with alarm volume")
-    
-    try:
+            payload = {}
+            print("▶️ Resuming playback with specified volume")
+        
         play_resp = _spotify_request(
             'PUT',
             f"https://api.spotify.com/v1/me/player/play?device_id={device_id}",
@@ -536,10 +591,32 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
             headers={"Authorization": f"Bearer {token}"},
             timeout=10
         )
-        if play_resp.status_code != 204:
-            logger.error(f"❌ Error starting playbook: {play_resp.text}")
+        
+        if play_resp.status_code == 204:
+            # Set shuffle mode if requested
+            if shuffle:
+                try:
+                    shuffle_resp = _spotify_request(
+                        'PUT',
+                        f"https://api.spotify.com/v1/me/player/shuffle?state=true",
+                        headers={"Authorization": f"Bearer {token}"},
+                        timeout=10
+                    )
+                    if shuffle_resp.status_code == 204:
+                        print("🔀 Shuffle mode enabled")
+                    else:
+                        print(f"⚠️ Could not enable shuffle: {shuffle_resp.text}")
+                except Exception as e:
+                    print(f"⚠️ Error enabling shuffle: {e}")
+            
+            return True
+        else:
+            print(f"❌ Error starting playback: {play_resp.text}")
+            return False
+            
     except Exception as e:
-        logger.error(f"❌ Error starting playback: {e}")
+        print(f"❌ Error in start_playback: {e}")
+        return False
 
 def stop_playback(token: str) -> bool:
     """Stop Spotify playback.
@@ -618,7 +695,7 @@ __all__ = [
     "get_playlists", "get_devices", "get_device_id",
     "start_playback", "stop_playback", "resume_playback", "toggle_playback",
     "get_current_playback", "get_current_track", "get_current_spotify_volume", 
-    "get_saved_albums", "get_user_saved_tracks", "get_followed_artists",
+    "get_saved_albums", "get_user_saved_tracks", "get_followed_artists", "get_artist_top_tracks",
     "set_volume", "get_playback_status", "get_user_library",
     "load_music_library_parallel"
 ]
