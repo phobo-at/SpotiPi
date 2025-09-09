@@ -5,6 +5,43 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-09-09
+
+### ✨ New Features
+
+**Music Library Enhancements:**
+- 🎤 **Artist Top Tracks** - Interactive artists tab now shows and plays top tracks for each artist
+- ▶️ **Direct Track Playback** - Play individual tracks directly from the music library
+- 🔀 **Enhanced Shuffle Support** - Shuffle mode now available for both alarm and sleep timer
+
+**Alarm System Improvements:**
+- 📅 **Daily Alarm Support** - Alarms with no weekdays selected now trigger daily at the next possible time
+- 🔄 **Improved Scheduling Logic** - Better handling of alarm timing and weekday calculations
+
+**API & Performance:**
+- ⏱️ **Increased API Timeout** - Spotify API timeout extended from 10s to 30s for better reliability
+- 🚀 **Enhanced Error Handling** - Improved connection stability and error recovery
+
+### 🐛 Bug Fixes
+
+- Fixed alarm not starting when no weekdays were selected
+- Resolved Spotify API timeout issues with slow connections
+- Fixed shuffle mode not activating properly for alarms
+- Improved CSS alignment for toggle switches across different UI sections
+
+### 🔧 Technical Improvements
+
+- Added `/play` endpoint for direct track playback control
+- Enhanced `start_playback()` function to support both playlist contexts and individual tracks
+- Improved JavaScript playback functions with better error handling
+- Optimized deployment scripts with detailed logging for file operations
+
+### 🎨 UI/UX Improvements
+
+- Better visual alignment of toggle switches throughout the interface
+- Enhanced responsive design for artist top tracks display
+- Improved loading states and user feedback during playback operations
+
 ## [1.0.0] - 2025-08-14
 
 ### 🎉 Initial Release
