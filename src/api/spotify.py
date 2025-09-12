@@ -25,6 +25,7 @@ import socket
 from ..config import load_config, save_config
 # Import token caching system
 from ..utils.token_cache import initialize_token_cache, get_cached_token, force_token_refresh
+from ..utils.cache_migration import get_cache_migration_layer
 
 # Use the new central#  Exportable functions - Updated for new config system
 __all__ = [
@@ -96,6 +97,9 @@ def force_refresh_token() -> Optional[str]:
 
 # Initialize token cache when module is imported
 initialize_token_cache(refresh_access_token)
+
+# Initialize cache migration layer
+cache_migration = get_cache_migration_layer()
 
 # =============================
 # 🌐 HTTP Session + Circuit Breaker
@@ -493,7 +497,7 @@ def get_followed_artists(token: str) -> List[Dict[str, Any]]:
     return artists
 
 def get_devices(token: str) -> List[Dict[str, Any]]:
-    """Get available Spotify devices.
+    """Get available Spotify devices with unified caching.
     
     Args:
         token: Spotify access token
@@ -501,31 +505,27 @@ def get_devices(token: str) -> List[Dict[str, Any]]:
     Returns:
         List[Dict[str, Any]]: List of available devices
     """
-    ttl = int(os.getenv('SPOTIPI_DEVICE_CACHE_TTL', '15'))
-    now = time.time()
-    if '_DEVICE_CACHE' not in globals():
-        globals()['_DEVICE_CACHE'] = {'ts': 0, 'data': []}
-    cache = globals()['_DEVICE_CACHE']
-    if cache['data'] and (now - cache['ts'] < ttl):
-        return cache['data']
-    try:
-        r = _spotify_request(
-            'GET',
-            "https://api.spotify.com/v1/me/player/devices",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=8
-        )
-        if r.status_code == 200:
-            devices = r.json().get("devices", [])
-            cache['data'] = devices
-            cache['ts'] = now
-            return devices
-        else:
-            logging.getLogger('spotify').error(f"❌ Error fetching devices: {r.text}")
-            return cache['data']
-    except Exception as e:
-        logging.getLogger('spotify').exception(f"❌ Exception while fetching devices: {e}")
-        return cache['data']
+    def load_devices_from_api(token: str) -> List[Dict[str, Any]]:
+        """Load devices directly from Spotify API."""
+        try:
+            r = _spotify_request(
+                'GET',
+                "https://api.spotify.com/v1/me/player/devices",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=8
+            )
+            if r.status_code == 200:
+                devices = r.json().get("devices", [])
+                return devices
+            else:
+                logging.getLogger('spotify').error(f"❌ Error fetching devices: {r.text}")
+                return []
+        except Exception as e:
+            logging.getLogger('spotify').exception(f"❌ Exception while fetching devices: {e}")
+            return []
+    
+    # Use unified cache system for devices
+    return cache_migration.get_devices_cached(token, load_devices_from_api)
 
 def get_device_id(token: str, device_name: str) -> Optional[str]:
     """Get device ID by device name.

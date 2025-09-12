@@ -35,6 +35,7 @@ from .api.spotify import (
 from .utils.token_cache import get_token_cache_info, log_token_cache_performance
 from .utils.thread_safety import get_config_stats, invalidate_config_cache
 from .utils.rate_limiting import rate_limit, get_rate_limiter, add_rate_limit_headers
+from .utils.cache_migration import get_cache_migration_layer
 from .services.service_manager import get_service_manager, get_service
 from .core.sleep import (
     start_sleep_timer, stop_sleep_timer, get_sleep_status,
@@ -57,6 +58,9 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
 # Setup logging
 setup_logging()
 logger = setup_logger("spotipi")
+
+# Initialize cache migration layer
+cache_migration = get_cache_migration_layer(project_root)
 
 # Initialize rate limiter with default rules
 rate_limiter = get_rate_limiter()
@@ -328,11 +332,7 @@ def alarm_status():
 @api_error_handler
 @rate_limit("spotify_api")
 def api_music_library():
-    """API endpoint for music library data"""
-    # Simple in-memory TTL cache to reduce load
-    if not hasattr(api_music_library, '_cache'):
-        api_music_library._cache = { 'data': None, 'ts': 0 }
-    cache_ttl = int(os.getenv('SPOTIPI_MUSIC_CACHE_TTL', '600'))
+    """API endpoint for music library data with unified caching"""
     force_refresh = request.args.get('refresh') in ('1', 'true', 'yes')
 
     token = get_access_token()
@@ -340,92 +340,73 @@ def api_music_library():
         return api_response(False, message="Spotify authentication required", status=401, error_code="auth_required")
     
     try:
-        # Helper to compute stable hash
-        import hashlib, json as _json
-            # Hash & slimming now via central utilities
-
         want_fields = request.args.get('fields')  # "basic" -> slim lists
         if_modified = request.headers.get('If-None-Match')  # ETag header
 
-        # Serve from in-memory cache when fresh
-        now = time.time()
-        if not force_refresh and api_music_library._cache['data'] and (now - api_music_library._cache['ts'] < cache_ttl):
-            cached = api_music_library._cache['data']
-            hash_val = compute_library_hash(cached)
-            # Conditional request short‑circuit
-            if if_modified and if_modified == hash_val:
-                resp = Response(status=304)
-                resp.headers['ETag'] = hash_val
-                resp.headers['X-MusicLibrary-Hash'] = hash_val
-                return resp
-            resp_data = prepare_library_payload(cached, basic=want_fields=='basic')
-            resp_data["cached"] = True
-            resp = api_response(True, data=resp_data, message="ok (memory cache)")
-            resp.headers['X-MusicLibrary-Hash'] = hash_val
+        # Use unified cache system instead of legacy _cache attribute
+        library_data = cache_migration.get_full_library_cached(
+            token=token, 
+            loader_func=get_user_library, 
+            force_refresh=force_refresh
+        )
+
+        # Compute hash for ETag/conditional requests
+        hash_val = compute_library_hash(library_data)
+        
+        # Conditional request short-circuit
+        if if_modified and if_modified == hash_val:
+            resp = Response(status=304)
             resp.headers['ETag'] = hash_val
-            if want_fields == 'basic':
-                resp.headers['X-Data-Fields'] = 'basic'
+            resp.headers['X-MusicLibrary-Hash'] = hash_val
             return resp
 
-        # Get comprehensive music library
-        library_data = get_user_library(token)
-        api_music_library._cache = { 'data': library_data, 'ts': now }
-
-        # Persist a lightweight cache to serve when Spotify is unreachable
-        try:
-            from .utils.simple_cache import write_json_cache
-            cache_path = str(project_root / "logs" / "music_library_cache.json")
-            write_json_cache(cache_path, library_data)
-        except Exception as cache_err:
-            logging.debug(f"Could not write music library cache: {cache_err}")
-
+        # Prepare response payload
         resp_data = prepare_library_payload(library_data, basic=want_fields=='basic')
-        resp_data["cached"] = False
-        hash_val = resp_data["hash"]
-        resp = api_response(True, data=resp_data, message="ok (fresh)")
+        is_cached = library_data.get("cached", False)
+        is_offline = library_data.get("offline_mode", False)
+        
+        # Determine response message
+        if is_offline:
+            message = "ok (offline cache)"
+        elif is_cached:
+            message = "ok (cached)"
+        else:
+            message = "ok (fresh)"
+        
+        resp = api_response(True, data=resp_data, message=message)
         resp.headers['X-MusicLibrary-Hash'] = hash_val
         resp.headers['ETag'] = hash_val
+        
         if want_fields == 'basic':
             resp.headers['X-Data-Fields'] = 'basic'
+            
         return resp
         
     except Exception as e:
         logging.exception("Error loading music library")
-        # Try to serve last known good cache as a graceful fallback
-        if api_music_library._cache['data']:
-            cached = api_music_library._cache['data']
-            resp_data = prepare_library_payload(cached, basic=False)
-            resp_data["cached"] = True
+        
+        # Try offline fallback through unified cache
+        fallback_data = cache_migration.get_offline_fallback()
+        if fallback_data:
+            resp_data = prepare_library_payload(fallback_data, basic=False)
             hash_val = resp_data["hash"]
-            resp = api_response(True, data=resp_data, message="served memory cache (spotify issue)")
+            resp = api_response(True, data=resp_data, message="served offline cache (spotify issue)")
             resp.headers['X-MusicLibrary-Hash'] = hash_val
+            resp.headers['ETag'] = hash_val
             return resp
-
-        try:
-            from .utils.simple_cache import read_json_cache
-            cache_path = str(project_root / "logs" / "music_library_cache.json")
-            cached = read_json_cache(cache_path)
-            if cached:
-                resp_data = prepare_library_payload(cached, basic=False)
-                resp_data["cached"] = True
-                hash_val = resp_data["hash"]
-                resp = api_response(True, data=resp_data, message="served disk cache (spotify issue)")
-                resp.headers['X-MusicLibrary-Hash'] = hash_val
-                return resp
-        except Exception as cache_err:
-            logging.debug(f"Could not read music library cache: {cache_err}")
-
+        
         return api_response(False, message="Spotify unavailable: failed to load music library", status=503, error_code="spotify_unavailable")
 
 @app.route("/api/music-library/sections")
 @api_error_handler
 @rate_limit("spotify_api")
 def api_music_library_sections():
-    """Load only requested music library sections for faster initial UI.
+    """Load only requested music library sections with unified caching.
 
     Query params:
         sections: comma separated list (playlists,albums,tracks,artists)
         refresh: force bypass cache if '1' or 'true'
+        fields: 'basic' for slimmed down response
     """
     token = get_access_token()
     if not token:
@@ -434,11 +415,28 @@ def api_music_library_sections():
     raw_sections = request.args.get('sections', 'playlists')
     sections = [s.strip() for s in raw_sections.split(',') if s.strip()]
     force = request.args.get('refresh') in ('1', 'true', 'yes')
+    
     try:
+        # Import section loaders
+        from .api.spotify import get_playlists, get_saved_albums, get_user_saved_tracks, get_followed_artists
+        
+        section_loaders = {
+            'playlists': get_playlists,
+            'albums': get_saved_albums,
+            'tracks': get_user_saved_tracks,
+            'artists': get_followed_artists
+        }
+        
+        # Use unified cache for sections
+        partial = cache_migration.get_library_sections_cached(
+            token=token, 
+            sections=sections, 
+            section_loaders=section_loaders, 
+            force_refresh=force
+        )
+        
+        # Compute hash for ETag
         import hashlib
-        partial = load_music_library_sections(token, sections, force_refresh=force)
-        # Compute hash across *all* available sections already cached + just loaded
-        # We reuse the same helper logic as full endpoint in a lightweight form here
         def _compute_hash(data_dict):
             try:
                 parts = []
@@ -449,25 +447,40 @@ def api_music_library_sections():
                 return hashlib.md5(raw.encode("utf-8")).hexdigest() if raw else "0"*32
             except Exception:
                 return "0"*32
+        
         hash_val = _compute_hash(partial)
         partial['hash'] = hash_val
-        partial['cached'] = partial.get('cached', {})  # ensure field exists
+        
+        # Check for conditional request
         if_modified = request.headers.get('If-None-Match')
-        # Optional slimming
-        want_fields = request.args.get('fields')
-        def _slim(items):
-            allowed = {"uri","name","image_url","track_count","type","artist"}
-            return [{k: it.get(k) for k in allowed if k in it} for it in (items or [])]
-        if want_fields == 'basic':
-            for coll in ('playlists','albums','tracks','artists'):
-                partial[coll] = _slim(partial.get(coll, []))
         if if_modified and if_modified == hash_val:
             resp = Response(status=304)
             resp.headers['ETag'] = hash_val
             resp.headers['X-MusicLibrary-Hash'] = hash_val
             return resp
+
+        # Optional slimming for basic fields
+        want_fields = request.args.get('fields')
+        if want_fields == 'basic':
+            def _slim(items):
+                allowed = {"uri","name","image_url","track_count","type","artist"}
+                return [{k: it.get(k) for k in allowed if k in it} for it in (items or [])]
+            
+            for coll in ('playlists','albums','tracks','artists'):
+                partial[coll] = _slim(partial.get(coll, []))
+        
         resp = api_response(True, data=partial, message="ok (partial)")
         resp.headers['X-MusicLibrary-Hash'] = hash_val
+        resp.headers['ETag'] = hash_val
+        
+        if want_fields == 'basic':
+            resp.headers['X-Data-Fields'] = 'basic'
+            
+        return resp
+        
+    except Exception as e:
+        logging.exception("Error loading partial music library")
+        return api_response(False, message=str(e), status=500, error_code="music_library_partial_error")
         resp.headers['ETag'] = hash_val
         if want_fields == 'basic':
             resp.headers['X-Data-Fields'] = 'basic'
@@ -894,7 +907,71 @@ def start_alarm_scheduler():  # backward compatibility alias
     start_event_alarm_scheduler()
 
 # =====================================
-# 🚨 Rate Limiting Management API
+# �️ Cache Management API
+# =====================================
+
+@app.route("/api/cache/status")
+@rate_limit("status_check")
+def get_cache_status():
+    """📊 Get unified cache performance and statistics."""
+    try:
+        stats = cache_migration.get_cache_statistics()
+        return api_response(True, data={
+            "timestamp": datetime.datetime.now().isoformat(),
+            "cache_system": {
+                "type": "unified",
+                "status": "active",
+                **stats
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting cache status: {e}")
+        return api_response(False, message=str(e), status=500, error_code="cache_status_error")
+
+@app.route("/api/cache/invalidate", methods=["POST"])
+@rate_limit("config_changes")
+def invalidate_cache():
+    """🗑️ Invalidate all cache data."""
+    try:
+        count = cache_migration.invalidate_all_cache()
+        return api_response(True, data={
+            "timestamp": datetime.datetime.now().isoformat(),
+            "invalidated_entries": count
+        }, message=f"Successfully invalidated {count} cache entries")
+    except Exception as e:
+        logger.error(f"Error invalidating cache: {e}")
+        return api_response(False, message=str(e), status=500, error_code="cache_invalidate_error")
+
+@app.route("/api/cache/invalidate/music-library", methods=["POST"])
+@rate_limit("config_changes") 
+def invalidate_music_library_cache():
+    """🎵 Invalidate only music library cache data."""
+    try:
+        count = cache_migration.invalidate_music_library()
+        return api_response(True, data={
+            "timestamp": datetime.datetime.now().isoformat(),
+            "invalidated_entries": count
+        }, message=f"Successfully invalidated {count} music library cache entries")
+    except Exception as e:
+        logger.error(f"Error invalidating music library cache: {e}")
+        return api_response(False, message=str(e), status=500, error_code="music_cache_invalidate_error")
+
+@app.route("/api/cache/invalidate/devices", methods=["POST"])
+@rate_limit("config_changes")
+def invalidate_device_cache():
+    """📱 Invalidate only device cache data."""
+    try:
+        count = cache_migration.invalidate_devices()
+        return api_response(True, data={
+            "timestamp": datetime.datetime.now().isoformat(),
+            "invalidated_entries": count
+        }, message=f"Successfully invalidated {count} device cache entries")
+    except Exception as e:
+        logger.error(f"Error invalidating device cache: {e}")
+        return api_response(False, message=str(e), status=500, error_code="device_cache_invalidate_error")
+
+# =====================================
+# �🚨 Rate Limiting Management API
 # =====================================
 
 @app.route("/api/rate-limiting/status")
