@@ -570,7 +570,25 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
         except Exception as e:
             print(f"❌ Error setting volume: {e}")
 
-        # 3. Start playback
+        # 3. (Optional) Enable shuffle BEFORE starting playback so first track is randomized
+        shuffle_enabled_before = False
+        if shuffle:
+            try:
+                shuffle_resp = _spotify_request(
+                    'PUT',
+                    f"https://api.spotify.com/v1/me/player/shuffle?state=true",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=10
+                )
+                if shuffle_resp.status_code == 204:
+                    print("🔀 Shuffle mode enabled (pre-play)")
+                    shuffle_enabled_before = True
+                else:
+                    print(f"⚠️ Could not enable shuffle pre-play: {shuffle_resp.text}")
+            except Exception as e:
+                print(f"⚠️ Error enabling shuffle pre-play: {e}")
+
+        # 4. Start playback (with optional random offset when shuffle active)
         if playlist_uri and playlist_uri.strip():
             if playlist_uri.startswith("spotify:track:"):
                 # For individual tracks, use "uris" parameter
@@ -579,6 +597,42 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
             else:
                 # For playlists/albums, use "context_uri" parameter
                 payload = {"context_uri": playlist_uri}
+                # Randomize first track if shuffle requested: pick random offset
+                if shuffle and shuffle_enabled_before:
+                    import random, re
+                    try:
+                        # Only attempt for playlist or album contexts
+                        # Extract ID
+                        if playlist_uri.startswith("spotify:playlist:"):
+                            playlist_id = playlist_uri.split(":")[-1]
+                            meta_resp = _spotify_request(
+                                'GET',
+                                f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=tracks.total",
+                                headers={"Authorization": f"Bearer {token}"},
+                                timeout=10
+                            )
+                            if meta_resp.status_code == 200:
+                                total = meta_resp.json().get('tracks', {}).get('total', 0)
+                                if total > 1:
+                                    pos = random.randint(0, total - 1)
+                                    payload['offset'] = {"position": pos}
+                                    print(f"🎲 Starting at random playlist position {pos} of {total}")
+                        elif playlist_uri.startswith("spotify:album:"):
+                            album_id = playlist_uri.split(":")[-1]
+                            meta_resp = _spotify_request(
+                                'GET',
+                                f"https://api.spotify.com/v1/albums/{album_id}?fields=tracks.total",
+                                headers={"Authorization": f"Bearer {token}"},
+                                timeout=10
+                            )
+                            if meta_resp.status_code == 200:
+                                total = meta_resp.json().get('tracks', {}).get('total', 0)
+                                if total > 1:
+                                    pos = random.randint(0, total - 1)
+                                    payload['offset'] = {"position": pos}
+                                    print(f"🎲 Starting at random album position {pos} of {total}")
+                    except Exception as e:
+                        print(f"⚠️ Could not apply random offset: {e}")
                 print(f"▶️ Starting context playback: {playlist_uri}")
         else:
             payload = {}
@@ -593,8 +647,8 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
         )
         
         if play_resp.status_code == 204:
-            # Set shuffle mode if requested
-            if shuffle:
+            # Fallback: if shuffle requested but pre-play enable failed, retry once now
+            if shuffle and not shuffle_enabled_before:
                 try:
                     shuffle_resp = _spotify_request(
                         'PUT',
@@ -603,12 +657,11 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
                         timeout=10
                     )
                     if shuffle_resp.status_code == 204:
-                        print("🔀 Shuffle mode enabled")
+                        print("🔀 Shuffle mode enabled (post-play fallback)")
                     else:
-                        print(f"⚠️ Could not enable shuffle: {shuffle_resp.text}")
+                        print(f"⚠️ Could not enable shuffle (fallback): {shuffle_resp.text}")
                 except Exception as e:
-                    print(f"⚠️ Error enabling shuffle: {e}")
-            
+                    print(f"⚠️ Error enabling shuffle (fallback): {e}")
             return True
         else:
             print(f"❌ Error starting playback: {play_resp.text}")

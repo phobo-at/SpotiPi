@@ -5,6 +5,7 @@ Handles environment-specific configs and validation with thread safety
 
 import os
 import json
+import logging
 from typing import Dict, Any, Optional
 from pathlib import Path
 
@@ -154,17 +155,32 @@ class ConfigManager:
         try:
             # Remove runtime info before saving
             save_config = {k: v for k, v in config.items() if not k.startswith("_")}
-            
+
             # Ensure directory exists
             config_file.parent.mkdir(parents=True, exist_ok=True)
-            
+
+            # Pre-flight permission diagnostics
+            if not os.access(config_file.parent, os.W_OK):
+                logging.error(f"Config directory not writable: {config_file.parent}")
+            else:
+                logging.debug(f"Config directory writable: {config_file.parent}")
+
+            temp_path = config_file.parent / (config_file.name + ".tmp")
+            try:
+                with open(temp_path, 'w') as tf:
+                    json.dump({"_write_test": True}, tf)
+                os.remove(temp_path)
+            except Exception as te:
+                logging.error(f"Temp write test failed in config dir {config_file.parent}: {te}")
+
             with open(config_file, 'w') as f:
                 json.dump(save_config, f, indent=2)
-            
+
+            logging.info(f"Configuration saved to {config_file}")
             return True
-            
+
         except (IOError, json.JSONDecodeError) as e:
-            print(f"Error saving config: {e}")
+            logging.exception(f"Error saving config file {config_file}: {e}")
             return False
     
     def get_environment(self) -> str:

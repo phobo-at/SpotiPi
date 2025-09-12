@@ -235,9 +235,27 @@ def save_alarm():
         # Save configuration
         success = save_config(config)
         if not success:
+            # Additional diagnostics if save failed
+            probe_info = {}
+            try:
+                cfg_runtime = config.get('_runtime', {})
+                cfg_path = cfg_runtime.get('config_file')
+                if cfg_path:
+                    import os, errno
+                    parent_dir = os.path.dirname(cfg_path)
+                    writable = os.access(parent_dir, os.W_OK)
+                    probe_info = {
+                        'config_file': cfg_path,
+                        'dir_writable': writable,
+                        'exists': os.path.exists(cfg_path),
+                        'owner_uid': os.stat(parent_dir).st_uid if os.path.exists(parent_dir) else None,
+                    }
+            except Exception as pe:
+                probe_info['probe_error'] = str(pe)
             return jsonify({
                 "success": False,
-                "message": "Failed to save configuration"
+                "message": "Failed to save configuration",
+                "diagnostics": probe_info
             }), 500
         
         # Log the changes
@@ -264,10 +282,27 @@ def save_alarm():
             "field": e.field_name
         }), 400
     except Exception as e:
+        # Enhanced debug info if debug flag active
+        try:
+            cfg = load_config()
+            debug_mode = cfg.get('debug') if isinstance(cfg, dict) else False
+        except Exception:
+            debug_mode = False
         logging.exception("Error saving alarm configuration")
+        debug_payload = {}
+        if debug_mode:
+            try:
+                debug_payload = {
+                    "form_keys": list(request.form.keys()),
+                    "raw_form": {k: request.form.get(k) for k in request.form.keys()},
+                    "stack": True
+                }
+            except Exception:
+                pass
         return jsonify({
             "success": False,
-            "message": f"Error: {str(e)}"
+            "message": f"Error: {str(e)}",
+            "debug": debug_payload
         }), 500
 
 @app.route("/alarm_status")
