@@ -5,6 +5,7 @@ Flask web application with new modular structure
 
 import os
 import datetime
+from threading import Thread
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
@@ -207,6 +208,33 @@ def index():
     }
     
     return render_template('index.html', **template_data)
+
+# Background warmup (runs once after startup) to prefetch devices and music library
+if not hasattr(app, '_warmup_started'):
+    def _warmup_fetch():
+        try:
+            logging.info("🌅 Warmup: starting background prefetch")
+            token = get_access_token()
+            if not token:
+                logging.info("🌅 Warmup: no token available yet (user not authenticated)")
+                return
+            try:
+                devs = get_devices(token)
+                logging.info(f"🌅 Warmup: cached {len(devs)} devices")
+            except Exception as e:
+                logging.info(f"🌅 Warmup: device fetch error: {e}")
+            try:
+                _ = get_user_library(token)
+                logging.info("🌅 Warmup: music library prefetched")
+            except Exception as e:
+                logging.info(f"🌅 Warmup: library fetch error: {e}")
+        except Exception as e:
+            logging.info(f"🌅 Warmup: unexpected error: {e}")
+    try:
+        Thread(target=_warmup_fetch, daemon=True).start()
+        app._warmup_started = True
+    except Exception as e:
+        logging.info(f"🌅 Warmup: could not start: {e}")
 
 # =====================================
 # 🔧 API Routes - Alarm Management

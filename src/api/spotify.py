@@ -160,7 +160,10 @@ def get_playlists(token: str) -> List[Dict[str, Any]]:
     """
     logger = logging.getLogger('app')  # Use same logger as app.py
     playlists = []
-    url = "https://api.spotify.com/v1/me/playlists?limit=50"
+    url = (
+        "https://api.spotify.com/v1/me/playlists?limit=50&fields="
+        "items(name,uri,images,owner(display_name),tracks(total)),next"
+    )
     headers = {"Authorization": f"Bearer {token}"}
     
     while url:
@@ -235,7 +238,10 @@ def get_saved_albums(token: str) -> List[Dict[str, Any]]:
     """
     logger = logging.getLogger('app')
     albums = []
-    url = "https://api.spotify.com/v1/me/albums?limit=50"
+    url = (
+        "https://api.spotify.com/v1/me/albums?limit=50&fields="
+        "items(album(name,uri,images,artists(name),total_tracks)),next"
+    )
     headers = {"Authorization": f"Bearer {token}"}
     
     while url:
@@ -494,21 +500,31 @@ def get_devices(token: str) -> List[Dict[str, Any]]:
     Returns:
         List[Dict[str, Any]]: List of available devices
     """
+    ttl = int(os.getenv('SPOTIPI_DEVICE_CACHE_TTL', '15'))
+    now = time.time()
+    if '_DEVICE_CACHE' not in globals():
+        globals()['_DEVICE_CACHE'] = {'ts': 0, 'data': []}
+    cache = globals()['_DEVICE_CACHE']
+    if cache['data'] and (now - cache['ts'] < ttl):
+        return cache['data']
     try:
         r = _spotify_request(
             'GET',
             "https://api.spotify.com/v1/me/player/devices",
             headers={"Authorization": f"Bearer {token}"},
-            timeout=10
+            timeout=8
         )
         if r.status_code == 200:
-            return r.json().get("devices", [])
+            devices = r.json().get("devices", [])
+            cache['data'] = devices
+            cache['ts'] = now
+            return devices
         else:
             print("❌ Error fetching devices:", r.text)
-            return []
+            return cache['data']
     except Exception as e:
         print("❌ Exception while fetching devices:", e)
-        return []
+        return cache['data']
 
 def get_device_id(token: str, device_name: str) -> Optional[str]:
     """Get device ID by device name.
