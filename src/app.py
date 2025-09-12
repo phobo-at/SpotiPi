@@ -304,25 +304,48 @@ def save_alarm():
 @api_error_handler
 @rate_limit("status_check")
 def alarm_status():
-    """Get current alarm status with weekday information"""
+    """Get alarm status - supports both basic and advanced modes"""
     config = load_config()
+    advanced_mode = request.args.get('advanced', 'false').lower() == 'true'
     
-    next_alarm_time = ""
-    if config.get("enabled") and config.get("time"):
-        next_alarm_time = AlarmTimeValidator.format_time_until_alarm(
-            config["time"], 
-            config.get("weekdays", [])
-        )
-    return api_response(True, data={
-        "enabled": config.get("enabled", False),
-        "time": config.get("time", "07:00"),
-        "alarm_volume": config.get("alarm_volume", 50),
-        "weekdays": config.get("weekdays", []),
-        "weekdays_display": WeekdayScheduler.format_weekdays_display(config.get("weekdays", [])),
-        "next_alarm": next_alarm_time,
-        "playlist_uri": config.get("playlist_uri", ""),
-        "device_name": config.get("device_name", "")
-    })
+    if advanced_mode:
+        # Advanced status via service layer
+        try:
+            alarm_service = get_service("alarm")
+            result = alarm_service.get_alarm_status()
+            
+            if result.success:
+                return api_response(True, data={
+                    "timestamp": result.timestamp.isoformat(), 
+                    "alarm": result.data,
+                    "mode": "advanced"
+                })
+            else:
+                return api_response(False, message=result.message, status=400, 
+                                  error_code=result.error_code or "alarm_status_error")
+        except Exception as e:
+            logger.error(f"Error getting advanced alarm status: {e}")
+            return api_response(False, message=str(e), status=500, 
+                              error_code="alarm_status_exception")
+    else:
+        # Basic status (legacy format)
+        next_alarm_time = ""
+        if config.get("enabled") and config.get("time"):
+            next_alarm_time = AlarmTimeValidator.format_time_until_alarm(
+                config["time"], 
+                config.get("weekdays", [])
+            )
+        return api_response(True, data={
+            "enabled": config.get("enabled", False),
+            "time": config.get("time", "07:00"),
+            "alarm_volume": config.get("alarm_volume", 50),
+            "weekdays": config.get("weekdays", []),
+            "weekdays_display": WeekdayScheduler.format_weekdays_display(config.get("weekdays", [])),
+            "next_alarm": next_alarm_time,
+            "playlist_uri": config.get("playlist_uri", ""),
+            "device_name": config.get("device_name", ""),
+            "mode": "basic"
+        })
 
 # =====================================
 # 🎵 API Routes - Music & Playback
@@ -653,8 +676,8 @@ def toggle_play_pause():
 
 @app.route("/volume", methods=["POST"])
 @api_error_handler
-def set_volume_endpoint():
-    """Set Spotify volume with input validation"""
+def volume_endpoint():
+    """Unified volume endpoint - sets Spotify volume and optionally saves to config"""
     token = get_access_token()
     if not token:
         return api_response(False, message="Authentication required", status=401, error_code="auth_required")
@@ -663,15 +686,58 @@ def set_volume_endpoint():
         # Validate volume input
         volume = validate_volume_only(request.form)
         
-        success = set_volume(token, volume)
-        if success:
-            return api_response(True, data={"volume": volume})
+        # Always set Spotify volume first
+        spotify_success = set_volume(token, volume)
+        
+        # Check if we should also save to config (backward compatibility for /save_volume)
+        save_to_config = request.form.get('save_config', 'false').lower() == 'true'
+        config_success = True
+        
+        if save_to_config:
+            config = load_config()
+            config["volume"] = volume
+            config_success = save_config(config)
+        
+        if spotify_success and config_success:
+            message = f"Volume set to {volume}"
+            if save_to_config:
+                message += " and saved to configuration"
+            return api_response(True, data={"volume": volume}, message=message)
         else:
-            return api_response(False, message="Failed to set volume", status=500, error_code="volume_set_failed")
+            error_parts = []
+            if not spotify_success:
+                error_parts.append("Failed to set Spotify volume")
+            if not config_success:
+                error_parts.append("Failed to save to configuration")
+            
+            return api_response(False, message="; ".join(error_parts), status=500, 
+                              error_code="volume_operation_failed")
             
     except ValidationError as e:
         logging.warning(f"Volume validation error: {e.field_name} - {e.message}")
-        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", status=400, error_code=e.field_name)
+        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", 
+                          status=400, error_code=e.field_name)
+
+# Legacy endpoint redirect for backward compatibility
+@app.route("/save_volume", methods=["POST"])
+@api_error_handler
+@rate_limit("api_general")
+def save_volume():
+    """DEPRECATED: Use /volume with save_config=true instead. Legacy wrapper for backward compatibility."""
+    try:
+        volume = validate_volume_only(request.form)
+        config = load_config()
+        config["volume"] = volume
+        success = save_config(config)
+        return api_response(success, data={"volume": volume}, 
+                          message="Volume saved" if success else "Failed to save volume", 
+                          status=200 if success else 500, 
+                          error_code=None if success else "save_volume_failed")
+        
+    except ValidationError as e:
+        logging.warning(f"Save volume validation error: {e.field_name} - {e.message}")
+        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", 
+                          status=400, error_code=e.field_name)
 
 # =====================================
 # 😴 API Routes - Sleep Timer
@@ -681,8 +747,31 @@ def set_volume_endpoint():
 @api_error_handler
 @rate_limit("status_check")
 def sleep_status_api():
-    """Get current sleep timer status"""
-    return api_response(True, data=get_sleep_status())
+    """Get sleep timer status - supports both basic and advanced modes"""
+    advanced_mode = request.args.get('advanced', 'false').lower() == 'true'
+    
+    if advanced_mode:
+        # Advanced status via service layer
+        try:
+            sleep_service = get_service("sleep")
+            result = sleep_service.get_sleep_status()
+            
+            if result.success:
+                return api_response(True, data={
+                    "timestamp": result.timestamp.isoformat(), 
+                    "sleep": result.data,
+                    "mode": "advanced"
+                })
+            else:
+                return api_response(False, message=result.message, status=500, 
+                                  error_code=result.error_code or "sleep_status_error")
+        except Exception as e:
+            logger.error(f"Error getting advanced sleep status: {e}")
+            return api_response(False, message=str(e), status=500, 
+                              error_code="sleep_status_exception")
+    else:
+        # Basic status (legacy format)
+        return api_response(True, data=get_sleep_status())
 
 @app.route("/sleep", methods=["POST"])
 @api_error_handler
@@ -765,69 +854,56 @@ def music_library():
                          devices=devices,
                          has_token=bool(token))
 
-@app.route("/start_playback", methods=["POST"])
-@api_error_handler
-def start_playback_endpoint():
-    """Start playback for music library"""
-    token = get_access_token()
-    if not token:
-        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
-    
-    try:
-        data = request.get_json()
-        context_uri = data.get("context_uri")
-        device_id = data.get("device_id")
-        
-        if not context_uri:
-            return api_response(False, message="Missing context_uri", status=400, error_code="missing_context_uri")
-        
-        success = start_playback(token, device_id, context_uri)
-        
-        if success:
-            return jsonify({"success": True, "message": "Playback started"})
-        else:
-            return api_response(False, message="Failed to start playback", status=500, error_code="playback_start_failed")
-            
-    except Exception as e:
-        logging.exception("Error starting playback")
-    return api_response(False, message=str(e), status=500, error_code="playback_start_error")
-
 @app.route("/play", methods=["POST"])
 @api_error_handler
 def play_endpoint():
-    """Play music on specified device - simplified endpoint for frontend"""
+    """Unified playback endpoint - supports both JSON and form data"""
     token = get_access_token()
     if not token:
         return api_response(False, message="Authentication required", status=401, error_code="auth_required")
     
     try:
-        # Handle form-encoded data (from frontend)
-        device_name = request.form.get('device_name')
-        uri = request.form.get('uri')
-        
-        if not uri:
-            return api_response(False, message="Missing URI", status=400, error_code="missing_uri")
-        
-        if not device_name:
-            return api_response(False, message="Missing device name", status=400, error_code="missing_device")
-        
-        # Get devices to find device_id from device_name
-        devices = get_devices(token)
-        if not devices:
-            return api_response(False, message="No devices available", status=404, error_code="no_devices")
-        
-        # Find device by name
-        target_device = None
-        for device in devices:
-            if device['name'] == device_name:
-                target_device = device
-                break
-        
-        if not target_device:
-            return api_response(False, message=f"Device '{device_name}' not found", status=404, error_code="device_not_found")
-        
-        # Start playback
-        success = start_playback(token, target_device['id'], uri)
+        # Support both JSON and form data for backward compatibility
+        if request.is_json:
+            # JSON format (legacy /start_playback)
+            data = request.get_json()
+            context_uri = data.get("context_uri")
+            device_id = data.get("device_id")
+            
+            if not context_uri:
+                return api_response(False, message="Missing context_uri", status=400, error_code="missing_context_uri")
+            
+            # Direct device_id usage
+            success = start_playback(token, device_id, context_uri)
+            
+        else:
+            # Form format (legacy /play)
+            device_name = request.form.get('device_name')
+            context_uri = request.form.get('uri')
+            
+            if not context_uri:
+                return api_response(False, message="Missing URI", status=400, error_code="missing_uri")
+            
+            if not device_name:
+                return api_response(False, message="Missing device name", status=400, error_code="missing_device")
+            
+            # Get devices to find device_id from device_name
+            devices = get_devices(token)
+            if not devices:
+                return api_response(False, message="No devices available", status=404, error_code="no_devices")
+            
+            # Find device by name
+            target_device = None
+            for device in devices:
+                if device['name'] == device_name:
+                    target_device = device
+                    break
+            
+            if not target_device:
+                return api_response(False, message=f"Device '{device_name}' not found", status=404, error_code="device_not_found")
+            
+            # Start playback with found device_id
+            success = start_playback(token, target_device['id'], context_uri)
         
         if success:
             return api_response(True, message="Playback started")
@@ -837,6 +913,14 @@ def play_endpoint():
     except Exception as e:
         logging.exception("Error in play endpoint")
         return api_response(False, message=str(e), status=500, error_code="play_endpoint_error")
+
+# Legacy endpoint redirect for backward compatibility
+@app.route("/start_playback", methods=["POST"])
+@api_error_handler
+def start_playback_endpoint():
+    """DEPRECATED: Use /play instead. Redirect for backward compatibility."""
+    # Simply redirect to the unified endpoint
+    return play_endpoint()
 
 # =====================================
 # 📱 Utility Routes
@@ -854,22 +938,6 @@ def debug_language():
         "sample_translation": translations.get('app_title', 'Translation not found'),
         "all_headers": dict(request.headers)
     }
-
-@app.route("/save_volume", methods=["POST"])
-@api_error_handler
-@rate_limit("api_general")
-def save_volume():
-    """Save volume setting to configuration with input validation"""
-    try:
-        volume = validate_volume_only(request.form)
-        config = load_config()
-        config["volume"] = volume
-        success = save_config(config)
-        return api_response(success, data={"volume": volume}, message="Volume saved" if success else "Failed to save volume", status=200 if success else 500, error_code=None if success else "save_volume_failed")
-        
-    except ValidationError as e:
-        logging.warning(f"Save volume validation error: {e.field_name} - {e.message}")
-        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", status=400, error_code=e.field_name)
 
 # =====================================
 # 🚨 Error Handlers
@@ -1076,18 +1144,23 @@ def api_alarm_execute():
 @app.route("/api/alarm/advanced-status")
 @rate_limit("status_check")
 def api_alarm_advanced_status():
-    """⏰ Get advanced alarm status via service layer."""
+    """DEPRECATED: Use /alarm_status?advanced=true instead. Legacy wrapper for backward compatibility."""
     try:
         alarm_service = get_service("alarm")
         result = alarm_service.get_alarm_status()
         
         if result.success:
-            return api_response(True, data={"timestamp": result.timestamp.isoformat(), "alarm": result.data})
+            return api_response(True, data={
+                "timestamp": result.timestamp.isoformat(), 
+                "alarm": result.data,
+                "mode": "advanced_legacy"
+            })
         else:
-            return api_response(False, message=result.message, status=400, error_code=result.error_code or "alarm_status_error")
+            return api_response(False, message=result.message, status=400, 
+                              error_code=result.error_code or "alarm_status_error")
             
     except Exception as e:
-        logger.error(f"Error getting advanced alarm status: {e}")
+        logger.error(f"Error in legacy advanced alarm status: {e}")
         return api_response(False, message=str(e), status=500, error_code="alarm_status_exception")
 
 @app.route("/api/spotify/auth-status")
@@ -1110,18 +1183,23 @@ def api_spotify_auth_status():
 @app.route("/api/sleep/advanced-status")
 @rate_limit("status_check")
 def api_sleep_advanced_status():
-    """😴 Get advanced sleep status via service layer."""
+    """DEPRECATED: Use /sleep_status?advanced=true instead. Legacy wrapper for backward compatibility."""
     try:
         sleep_service = get_service("sleep")
         result = sleep_service.get_sleep_status()
         
         if result.success:
-            return api_response(True, data={"timestamp": result.timestamp.isoformat(), "sleep": result.data})
+            return api_response(True, data={
+                "timestamp": result.timestamp.isoformat(), 
+                "sleep": result.data,
+                "mode": "advanced_legacy"
+            })
         else:
-            return api_response(False, message=result.message, status=500, error_code=result.error_code or "sleep_status_error")
+            return api_response(False, message=result.message, status=500, 
+                              error_code=result.error_code or "sleep_status_error")
             
     except Exception as e:
-        logger.error(f"Error getting advanced sleep status: {e}")
+        logger.error(f"Error in legacy advanced sleep status: {e}")
         return api_response(False, message=str(e), status=500, error_code="sleep_status_exception")
 
 @app.route("/api/spotify/devices")
