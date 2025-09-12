@@ -23,6 +23,8 @@ from .utils.logger import setup_logger, setup_logging
 from .utils.validation import validate_alarm_config, validate_sleep_config, validate_volume_only, ValidationError
 from .version import get_app_info, VERSION
 from .utils.translations import get_translations, get_user_language
+from .utils.library_utils import compute_library_hash, prepare_library_payload, slim_collection
+from .constants import ALARM_TRIGGER_WINDOW_MINUTES
 from .api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
     start_playback, stop_playback, resume_playback, toggle_playback,
@@ -363,24 +365,7 @@ def api_music_library():
     try:
         # Helper to compute stable hash
         import hashlib, json as _json
-        def _compute_hash(data_dict):
-            try:
-                parts = []
-                for coll in ("playlists","albums","tracks","artists"):
-                    for item in data_dict.get(coll, []) or []:
-                        parts.append(item.get("uri", ""))
-                raw = "|".join(sorted(parts))
-                return hashlib.md5(raw.encode("utf-8")).hexdigest() if raw else "0"*32
-            except Exception:
-                return "0"*32
-
-        # Optional slimming (basic field set) helper
-        def _slim_items(items):
-            allowed = {"uri","name","image_url","track_count","type","artist"}
-            slimmed = []
-            for it in items or []:
-                slimmed.append({k: it.get(k) for k in allowed if k in it})
-            return slimmed
+            # Hash & slimming now via central utilities
 
         want_fields = request.args.get('fields')  # "basic" -> slim lists
         if_modified = request.headers.get('If-None-Match')  # ETag header
@@ -389,22 +374,15 @@ def api_music_library():
         now = time.time()
         if not force_refresh and api_music_library._cache['data'] and (now - api_music_library._cache['ts'] < cache_ttl):
             cached = api_music_library._cache['data']
-            hash_val = _compute_hash(cached)
+            hash_val = compute_library_hash(cached)
             # Conditional request short‑circuit
             if if_modified and if_modified == hash_val:
                 resp = Response(status=304)
                 resp.headers['ETag'] = hash_val
                 resp.headers['X-MusicLibrary-Hash'] = hash_val
                 return resp
-            resp_data = {
-                "total": cached.get("total", 0),
-                "playlists": _slim_items(cached.get("playlists", [])) if want_fields == 'basic' else cached.get("playlists", []),
-                "albums": _slim_items(cached.get("albums", [])) if want_fields == 'basic' else cached.get("albums", []),
-                "tracks": _slim_items(cached.get("tracks", [])) if want_fields == 'basic' else cached.get("tracks", []),
-                "artists": _slim_items(cached.get("artists", [])) if want_fields == 'basic' else cached.get("artists", []),
-                "hash": hash_val,
-                "cached": True
-            }
+            resp_data = prepare_library_payload(cached, basic=want_fields=='basic')
+            resp_data["cached"] = True
             resp = api_response(True, data=resp_data, message="ok (memory cache)")
             resp.headers['X-MusicLibrary-Hash'] = hash_val
             resp.headers['ETag'] = hash_val
@@ -424,16 +402,9 @@ def api_music_library():
         except Exception as cache_err:
             logging.debug(f"Could not write music library cache: {cache_err}")
 
-        hash_val = _compute_hash(library_data)
-        resp_data = {
-            "total": library_data.get("total", 0),
-            "playlists": _slim_items(library_data.get("playlists", [])) if want_fields == 'basic' else library_data.get("playlists", []),
-            "albums": _slim_items(library_data.get("albums", [])) if want_fields == 'basic' else library_data.get("albums", []),
-            "tracks": _slim_items(library_data.get("tracks", [])) if want_fields == 'basic' else library_data.get("tracks", []),
-            "artists": _slim_items(library_data.get("artists", [])) if want_fields == 'basic' else library_data.get("artists", []),
-            "hash": hash_val,
-            "cached": False
-        }
+        resp_data = prepare_library_payload(library_data, basic=want_fields=='basic')
+        resp_data["cached"] = False
+        hash_val = resp_data["hash"]
         resp = api_response(True, data=resp_data, message="ok (fresh)")
         resp.headers['X-MusicLibrary-Hash'] = hash_val
         resp.headers['ETag'] = hash_val
@@ -446,16 +417,9 @@ def api_music_library():
         # Try to serve last known good cache as a graceful fallback
         if api_music_library._cache['data']:
             cached = api_music_library._cache['data']
-            hash_val = _compute_hash(cached)
-            resp_data = {
-                "total": cached.get("total", 0),
-                "playlists": cached.get("playlists", []),
-                "albums": cached.get("albums", []),
-                "tracks": cached.get("tracks", []),
-                "artists": cached.get("artists", []),
-                "hash": hash_val,
-                "cached": True
-            }
+            resp_data = prepare_library_payload(cached, basic=False)
+            resp_data["cached"] = True
+            hash_val = resp_data["hash"]
             resp = api_response(True, data=resp_data, message="served memory cache (spotify issue)")
             resp.headers['X-MusicLibrary-Hash'] = hash_val
             return resp
@@ -465,16 +429,9 @@ def api_music_library():
             cache_path = str(project_root / "logs" / "music_library_cache.json")
             cached = read_json_cache(cache_path)
             if cached:
-                hash_val = _compute_hash(cached)
-                resp_data = {
-                    "total": cached.get("total", 0),
-                    "playlists": cached.get("playlists", []),
-                    "albums": cached.get("albums", []),
-                    "tracks": cached.get("tracks", []),
-                    "artists": cached.get("artists", []),
-                    "hash": hash_val,
-                    "cached": True
-                }
+                resp_data = prepare_library_payload(cached, basic=False)
+                resp_data["cached"] = True
+                hash_val = resp_data["hash"]
                 resp = api_response(True, data=resp_data, message="served disk cache (spotify issue)")
                 resp.headers['X-MusicLibrary-Hash'] = hash_val
                 return resp

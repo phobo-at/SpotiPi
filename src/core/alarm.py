@@ -20,6 +20,7 @@ from ..api.spotify import (
     get_device_id,
     start_playback
 )
+from ..constants import ALARM_TRIGGER_WINDOW_MINUTES
 from ..config import load_config, save_config
 from ..utils.logger import setup_logger
 from ..utils.thread_safety import config_transaction
@@ -98,7 +99,9 @@ def execute_alarm() -> bool:
     now_str = now.strftime("%H:%M")
     log(f"⏰ Current time: {now_str}")
     log(f"📅 Current weekday: {current_weekday} (0=Mon, 6=Sun)")
-    log(f"📄 Loaded config: {config}")
+    # Log only key fields to reduce noise
+    safe_cfg = {k: config.get(k) for k in ["enabled", "time", "weekdays", "device_name", "playlist_uri", "alarm_volume", "fade_in", "shuffle"]}
+    log(f"📄 Loaded config (sanitized): {safe_cfg}")
 
     # Time check
     try:
@@ -118,7 +121,7 @@ def execute_alarm() -> bool:
     log(f"🎯 Target time: {config['time']}")
     log(f"📏 Time difference: {diff_minutes:.2f} minutes")
 
-    if abs(diff_minutes) > 1.5:
+    if abs(diff_minutes) > ALARM_TRIGGER_WINDOW_MINUTES:
         debug(f"Not within trigger window (±1.5m). diff={diff_minutes:.2f}m")
         return False
 
