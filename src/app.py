@@ -23,7 +23,7 @@ from .core.alarm_scheduler import start_alarm_scheduler as start_event_alarm_sch
 from .utils.logger import setup_logger, setup_logging
 from .utils.validation import validate_alarm_config, validate_sleep_config, validate_volume_only, ValidationError
 from .version import get_app_info, VERSION
-from .utils.translations import get_translations, get_user_language
+from .utils.translations import get_translations, get_user_language, t_api
 from .utils.library_utils import compute_library_hash, prepare_library_payload, slim_collection
 from .constants import ALARM_TRIGGER_WINDOW_MINUTES
 from .api.spotify import (
@@ -121,7 +121,7 @@ def api_error_handler(func):
         except Exception as e:
             logging.exception(f"Error in {func.__name__}")
             if request.is_json or request.path.startswith('/api/'):
-                return api_response(False, message="An internal error occurred", status=500, error_code="unhandled_exception")
+                return api_response(False, message=t_api("an_internal_error_occurred", request), status=500, error_code="unhandled_exception")
             session['error_message'] = str(e)
             return redirect(url_for('index'))
     return wrapper
@@ -278,9 +278,9 @@ def save_alarm():
         config = load_config()
         config.update(validated_data)
         if config["time"] and not AlarmTimeValidator.validate_time_format(config["time"]):
-            return api_response(False, message="Invalid time format. Use HH:MM.", status=400, error_code="time_format")
+            return api_response(False, message=t_api("invalid_time_format", request), status=400, error_code="time_format")
         if not save_config(config):
-            return api_response(False, message="Failed to save configuration", status=500, error_code="save_failed")
+            return api_response(False, message=t_api("failed_save_config", request), status=500, error_code="save_failed")
         weekdays_info = WeekdayScheduler.format_weekdays_display(config.get('weekdays', []))
         logging.info(
             "Alarm settings saved: Active=%s Time=%s Volume=%s%% Weekdays=%s",
@@ -292,13 +292,13 @@ def save_alarm():
             "alarm_volume": config["alarm_volume"],
             "weekdays": config["weekdays"],
             "weekdays_display": weekdays_info
-        }, message="Alarm settings saved")
+        }, message=t_api("alarm_settings_saved", request))
     except ValidationError as e:
         logging.warning("Alarm validation error: %s - %s", e.field_name, e.message)
         return api_response(False, message=f"Invalid {e.field_name}: {e.message}", status=400, error_code=e.field_name)
     except Exception:
         logging.exception("Error saving alarm configuration")
-        return api_response(False, message="Internal error saving alarm", status=500, error_code="internal_error")
+        return api_response(False, message=t_api("internal_error_saving", request), status=500, error_code="internal_error")
 
 @app.route("/alarm_status")
 @api_error_handler
@@ -360,7 +360,7 @@ def api_music_library():
 
     token = get_access_token()
     if not token:
-        return api_response(False, message="Spotify authentication required", status=401, error_code="auth_required")
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
     try:
         want_fields = request.args.get('fields')  # "basic" -> slim lists
@@ -413,12 +413,12 @@ def api_music_library():
         if fallback_data:
             resp_data = prepare_library_payload(fallback_data, basic=False)
             hash_val = resp_data["hash"]
-            resp = api_response(True, data=resp_data, message="served offline cache (spotify issue)")
+            resp = api_response(True, data=resp_data, message=t_api("served_offline_cache", request))
             resp.headers['X-MusicLibrary-Hash'] = hash_val
             resp.headers['ETag'] = hash_val
             return resp
         
-        return api_response(False, message="Spotify unavailable: failed to load music library", status=503, error_code="spotify_unavailable")
+        return api_response(False, message=t_api("spotify_unavailable", request), status=503, error_code="spotify_unavailable")
 
 @app.route("/api/music-library/sections")
 @api_error_handler
@@ -433,7 +433,7 @@ def api_music_library_sections():
     """
     token = get_access_token()
     if not token:
-        return api_response(False, message="Spotify authentication required", status=401, error_code="auth_required")
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
 
     raw_sections = request.args.get('sections', 'playlists')
     sections = [s.strip() for s in raw_sections.split(',') if s.strip()]
@@ -492,7 +492,7 @@ def api_music_library_sections():
             for coll in ('playlists','albums','tracks','artists'):
                 partial[coll] = _slim(partial.get(coll, []))
         
-        resp = api_response(True, data=partial, message="ok (partial)")
+        resp = api_response(True, data=partial, message=t_api("ok_partial", request))
         resp.headers['X-MusicLibrary-Hash'] = hash_val
         resp.headers['ETag'] = hash_val
         
@@ -519,7 +519,7 @@ def api_artist_top_tracks(artist_id):
     """API endpoint for artist top tracks"""
     token = get_access_token()
     if not token:
-        return api_response(False, message="Spotify authentication required", status=401, error_code="auth_required")
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
     try:
         from .api.spotify import get_artist_top_tracks
@@ -592,13 +592,13 @@ def playback_status():
     """Get current Spotify playback status"""
     token = get_access_token()
     if not token:
-        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
     try:
         combined = get_combined_playback(token)
         if combined:
-            return api_response(True, data=combined, message="ok")
-        return api_response(False, message="No active playback", status=200, error_code="no_playback")
+            return api_response(True, data=combined, message=t_api("ok", request))
+        return api_response(False, message=t_api("no_active_playback", request), status=200, error_code="no_playback")
     except Exception as e:
         logging.exception("Error getting playback status")
         return api_response(False, message=str(e), status=503, error_code="playback_status_error")
@@ -611,7 +611,7 @@ def api_spotify_health():
         from .api.spotify import spotify_network_health
         health = spotify_network_health()
         http_code = 200 if health.get("ok") else 503
-        return api_response(health.get("ok", False), data=health, status=http_code, message="ok" if health.get("ok") else "degraded", error_code=None if health.get("ok") else "spotify_degraded")
+        return api_response(health.get("ok", False), data=health, status=http_code, message=t_api("ok", request) if health.get("ok") else "degraded", error_code=None if health.get("ok") else "spotify_degraded")
     except Exception as e:
         logging.exception("Error running Spotify health check")
         return jsonify({
@@ -669,7 +669,7 @@ def toggle_play_pause():
     """Toggle Spotify play/pause"""
     token = get_access_token()
     if not token:
-        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
     result = toggle_playback(token)
     return api_response(True, data=result) if isinstance(result, dict) else api_response(True, data={"result": result})
@@ -680,7 +680,7 @@ def volume_endpoint():
     """Unified volume endpoint - sets Spotify volume and optionally saves to config"""
     token = get_access_token()
     if not token:
-        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
     try:
         # Validate volume input
@@ -699,18 +699,16 @@ def volume_endpoint():
             config_success = save_config(config)
         
         if spotify_success and config_success:
-            message = f"Volume set to {volume}"
-            if save_to_config:
-                message += " and saved to configuration"
+            message = t_api("volume_set_saved", request, volume=volume) if save_to_config else f"Volume set to {volume}"
             return api_response(True, data={"volume": volume}, message=message)
         else:
             error_parts = []
             if not spotify_success:
-                error_parts.append("Failed to set Spotify volume")
+                error_parts.append(t_api("volume_set_failed", request))
             if not config_success:
-                error_parts.append("Failed to save to configuration")
+                error_parts.append(t_api("failed_save_volume", request))
             
-            return api_response(False, message="; ".join(error_parts), status=500, 
+            return api_response(False, message=t_api("volume_operation_failed", request), status=500, 
                               error_code="volume_operation_failed")
             
     except ValidationError as e:
@@ -730,7 +728,7 @@ def save_volume():
         config["volume"] = volume
         success = save_config(config)
         return api_response(success, data={"volume": volume}, 
-                          message="Volume saved" if success else "Failed to save volume", 
+                          message=t_api("volume_saved", request) if success else "Failed to save volume", 
                           status=200 if success else 500, 
                           error_code=None if success else "save_volume_failed")
         
@@ -791,7 +789,7 @@ def start_sleep():
             if success:
                 return api_response(True, message=f"Sleep timer started for {validated_data['duration_minutes']} minutes")
             else:
-                return api_response(False, message="Failed to start sleep timer", status=500, error_code="sleep_start_failed")
+                return api_response(False, message=t_api("failed_start_sleep", request), status=500, error_code="sleep_start_failed")
         else:
             # Traditional form submission
             if success:
@@ -830,7 +828,7 @@ def stop_sleep():
     # Return JSON for AJAX requests, redirect for form submissions
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
     if request.is_json or is_ajax:
-        return api_response(success, message="Sleep timer stopped" if success else "Failed to stop sleep timer", status=200 if success else 500, error_code=None if success else "sleep_stop_failed")
+        return api_response(success, message=t_api("sleep_stopped", request) if success else "Failed to stop sleep timer", status=200 if success else 500, error_code=None if success else "sleep_stop_failed")
     else:
         if success:
             session['success_message'] = "Sleep timer stopped"
@@ -860,7 +858,7 @@ def play_endpoint():
     """Unified playback endpoint - supports both JSON and form data"""
     token = get_access_token()
     if not token:
-        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
     try:
         # Support both JSON and form data for backward compatibility
@@ -871,7 +869,7 @@ def play_endpoint():
             device_id = data.get("device_id")
             
             if not context_uri:
-                return api_response(False, message="Missing context_uri", status=400, error_code="missing_context_uri")
+                return api_response(False, message=t_api("missing_context_uri", request), status=400, error_code="missing_context_uri")
             
             # Direct device_id usage
             success = start_playback(token, device_id, context_uri)
@@ -882,15 +880,15 @@ def play_endpoint():
             context_uri = request.form.get('uri')
             
             if not context_uri:
-                return api_response(False, message="Missing URI", status=400, error_code="missing_uri")
+                return api_response(False, message=t_api("missing_uri", request), status=400, error_code="missing_uri")
             
             if not device_name:
-                return api_response(False, message="Missing device name", status=400, error_code="missing_device")
+                return api_response(False, message=t_api("missing_device", request), status=400, error_code="missing_device")
             
             # Get devices to find device_id from device_name
             devices = get_devices(token)
             if not devices:
-                return api_response(False, message="No devices available", status=404, error_code="no_devices")
+                return api_response(False, message=t_api("no_devices", request), status=404, error_code="no_devices")
             
             # Find device by name
             target_device = None
@@ -900,15 +898,15 @@ def play_endpoint():
                     break
             
             if not target_device:
-                return api_response(False, message=f"Device '{device_name}' not found", status=404, error_code="device_not_found")
+                return api_response(False, message=t_api("device_not_found", request, name=r"{device_name}"), status=404, error_code="device_not_found")
             
             # Start playback with found device_id
             success = start_playback(token, target_device['id'], context_uri)
         
         if success:
-            return api_response(True, message="Playback started")
+            return api_response(True, message=t_api("playback_started", request))
         else:
-            return api_response(False, message="Failed to start playback", status=500, error_code="playback_start_failed")
+            return api_response(False, message=t_api("failed_start_playback", request), status=500, error_code="playback_start_failed")
             
     except Exception as e:
         logging.exception("Error in play endpoint")
@@ -947,7 +945,7 @@ def debug_language():
 def not_found_error(error):
     """Handle 404 errors by rendering a minimal error page"""
     return render_template('index.html', 
-                         error_message="Page not found",
+                         error_message=t_api("page_not_found"),
                          config={},
                          devices=[],
                          playlists=[],
@@ -959,7 +957,7 @@ def not_found_error(error):
 def internal_error(error):
     """Handle 500 errors by rendering a minimal error page"""
     return render_template('index.html', 
-                         error_message="Internal server error",
+                         error_message=t_api("internal_server_error_page"),
                          config={},
                          devices=[],
                          playlists=[],
@@ -1209,7 +1207,7 @@ def api_spotify_devices():
     """API endpoint for getting available Spotify devices."""
     token = get_access_token()
     if not token:
-        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
     devices = get_devices(token)
     return api_response(True, data={"devices": devices if devices else []})

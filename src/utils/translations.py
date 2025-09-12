@@ -101,6 +101,35 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'could_not_stop_sleep': 'Sleep-Modus konnte nicht gestoppt werden',
         'test_error': 'Test-Fehler',
         'alarm_tested_for': 'Wecker wird {seconds} Sekunden getestet',
+        'auth_required': 'Authentifizierung erforderlich',
+        'invalid_time_format': 'Ungültiges Zeitformat. Verwenden Sie HH:MM.',
+        'failed_save_config': 'Konfiguration konnte nicht gespeichert werden',
+        'alarm_settings_saved': 'Wecker-Einstellungen gespeichert',
+        'internal_error_saving': 'Interner Fehler beim Speichern des Weckers',
+        'spotify_unavailable': 'Spotify nicht verfügbar: Musik-Bibliothek konnte nicht geladen werden',
+        'served_offline_cache': 'Offline-Cache bereitgestellt (Spotify-Problem)',
+        'ok_partial': 'OK (teilweise)',
+        'ok': 'OK',
+        'degraded': 'Beeinträchtigt',
+        'no_active_playback': 'Keine aktive Wiedergabe',
+        'failed_start_playback': 'Wiedergabe konnte nicht gestartet werden',
+        'playback_started': 'Wiedergabe gestartet',
+        'missing_context_uri': 'Fehlende context_uri',
+        'missing_uri': 'Fehlende URI',
+        'missing_device': 'Fehlendes Gerät',
+        'no_devices': 'Keine Geräte verfügbar',
+        'device_not_found': 'Gerät \'{name}\' nicht gefunden',
+        'volume_set_failed': 'Lautstärke konnte nicht gesetzt werden',
+        'volume_operation_failed': 'Lautstärke-Operation fehlgeschlagen',
+        'volume_saved': 'Lautstärke gespeichert',
+        'failed_save_volume': 'Lautstärke konnte nicht gespeichert werden',
+        'failed_start_sleep': 'Sleep-Timer konnte nicht gestartet werden',
+        'sleep_stopped': 'Sleep-Timer gestoppt',
+        'failed_stop_sleep': 'Sleep-Timer konnte nicht gestoppt werden',
+        'an_internal_error_occurred': 'Ein interner Fehler ist aufgetreten',
+        'volume_set_saved': 'Lautstärke auf {volume} gesetzt und in der Konfiguration gespeichert',
+        'page_not_found': 'Seite nicht gefunden',
+        'internal_server_error_page': 'Interner Server-Fehler',
         
         # Time & Date
         'and': 'und',
@@ -222,6 +251,35 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'could_not_stop_sleep': 'Could not stop sleep mode',
         'test_error': 'Test error',
         'alarm_tested_for': 'Alarm will be tested for {seconds} seconds',
+        'auth_required': 'Authentication required',
+        'invalid_time_format': 'Invalid time format. Use HH:MM.',
+        'failed_save_config': 'Failed to save configuration',
+        'alarm_settings_saved': 'Alarm settings saved',
+        'internal_error_saving': 'Internal error saving alarm',
+        'spotify_unavailable': 'Spotify unavailable: failed to load music library',
+        'served_offline_cache': 'served offline cache (spotify issue)',
+        'ok_partial': 'ok (partial)',
+        'ok': 'ok',
+        'degraded': 'degraded',
+        'no_active_playback': 'No active playback',
+        'failed_start_playback': 'Failed to start playback',
+        'playback_started': 'Playback started',
+        'missing_context_uri': 'Missing context_uri',
+        'missing_uri': 'Missing URI',
+        'missing_device': 'Missing device name',
+        'no_devices': 'No devices available',
+        'device_not_found': 'Device \'{name}\' not found',
+        'volume_set_failed': 'Failed to set volume',
+        'volume_operation_failed': 'Volume operation failed',
+        'volume_saved': 'Volume saved',
+        'failed_save_volume': 'Failed to save volume',
+        'failed_start_sleep': 'Failed to start sleep timer',
+        'sleep_stopped': 'Sleep timer stopped',
+        'failed_stop_sleep': 'Failed to stop sleep timer',
+        'an_internal_error_occurred': 'An internal error occurred',
+        'volume_set_saved': 'Volume set to {volume} and saved to configuration',
+        'page_not_found': 'Page not found',
+        'internal_server_error_page': 'Internal server error',
         
         # Time & Date
         'and': 'and',
@@ -319,3 +377,17 @@ def get_translations(lang: str = 'en') -> Dict[str, str]:
         dict: All translations for the specified language
     """
     return TRANSLATIONS.get(lang, TRANSLATIONS['en'])
+
+def t_api(key: str, request=None, **kwargs) -> str:
+    """Translation function for API responses with automatic language detection.
+    
+    Args:
+        key: Translation key to lookup
+        request: Flask request object for language detection
+        **kwargs: Placeholder values for string formatting
+        
+    Returns:
+        str: Translated and formatted string
+    """
+    lang = get_user_language(request)
+    return t(key, lang, **kwargs)

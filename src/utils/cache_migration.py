@@ -27,7 +27,7 @@ from .music_library_cache import get_music_library_cache, CacheType
 
 
 class CacheMigrationLayer:
-    """Migration wrapper für bestehende Cache-Operationen."""
+    """Migration wrapper for existing cache operations."""
     
     def __init__(self, project_root: Optional[Path] = None):
         self.logger = logging.getLogger("cache_migration")
@@ -164,7 +164,7 @@ class CacheMigrationLayer:
         self.logger.debug("💾 Legacy device cache -> unified cache")
 
     # =====================================
-    # 4. Modern API für neue Implementierungen
+    # 4. Modern API for new implementations
     # =====================================
     
     def get_full_library_cached(self, token: str, loader_func: Callable, 
@@ -308,19 +308,20 @@ def get_cache_migration_layer(project_root: Optional[Path] = None) -> CacheMigra
 
 
 # =====================================
-# Convenience functions für direkte Integration
+# Convenience functions for direct integration
 # =====================================
 
 def migrate_app_music_library_cache(project_root: Path):
-    """Drop-in replacement für app.py music library caching.
+    """Drop-in replacement for app.py music library caching.
     
     Usage in app.py:
-    # Ersetzt: if not hasattr(api_music_library, '_cache'):
-    # Ersetzt:     api_music_library._cache = { 'data': None, 'ts': 0 }
+    # Replaces: if not hasattr(api_music_library, '_cache'):
+    # Replaces:     api_music_library._cache = { 'data': None, 'ts': 0 }
     
     # Ersetzt: cache_ttl = int(os.getenv('SPOTIPI_MUSIC_CACHE_TTL', '600'))
     # Ersetzt: if api_music_library._cache['data'] and (now - api_music_library._cache['ts'] < cache_ttl):
-    # Mit:     cached = get_migrated_app_cache(force_refresh)
+        
+    # With:     cached = get_migrated_app_cache(force_refresh)
     """
     return get_cache_migration_layer(project_root)
 
@@ -330,7 +331,8 @@ def migrate_spotify_section_cache():
     
     Usage in spotify.py:
     # Ersetzt: def _get_section_cache(name: str) -> Dict[str, Any]:
-    # Mit:     migration_layer.get_legacy_section_cache(name)
+        
+    # With:     migration_layer.get_legacy_section_cache(name)
     """
     return get_cache_migration_layer()
 
@@ -340,6 +342,7 @@ def migrate_device_cache():
     
     Usage in spotify.py:
     # Ersetzt: globals()['_DEVICE_CACHE'] = {'ts': 0, 'data': []}
-    # Mit:     migration_layer.get_legacy_device_cache()
+        
+    # With:     migration_layer.get_legacy_device_cache()
     """
     return get_cache_migration_layer()
