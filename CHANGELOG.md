@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.1.0] - 2025-09-09
+## [1.1.1] - 2025-09-12
+
+### 🛠 Patch Release
+
+Small corrective release after reverting experimental modular frontend changes.
+
+### Changed
+- Reverted temporary modular JS refactor (app.js + feature modules) to restore stable legacy bundle while investigation continues.
+- Maintained previous 1.1.0 feature set (no feature removals for end users).
+
+### Fixed
+- Eliminated potential inconsistent state caused by partially deployed modular scripts.
+- Ensured version reporting (`get_app_info()`) reflects correct semantic patch bump.
+
+### Notes
+- Modular frontend work will return in a future minor release (>= 1.2.0) with full test coverage and incremental migration plan.
+- No database or API contract changes in this patch.
+
 
 ### ✨ New Features
 
