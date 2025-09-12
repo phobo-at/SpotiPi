@@ -19,6 +19,7 @@ import time
 from .config import load_config, save_config
 from .core.alarm import execute_alarm
 from .core.scheduler import WeekdayScheduler, AlarmTimeValidator
+from .core.alarm_scheduler import start_alarm_scheduler as start_event_alarm_scheduler
 from .utils.logger import setup_logger, setup_logging
 from .utils.validation import validate_alarm_config, validate_sleep_config, validate_volume_only, ValidationError
 from .version import get_app_info, VERSION
@@ -29,7 +30,7 @@ from .api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
     start_playback, stop_playback, resume_playback, toggle_playback,
     set_volume, get_current_track, get_current_spotify_volume,
-    get_playback_status, load_music_library_sections
+    get_playback_status, load_music_library_sections, get_combined_playback
 )
 from .utils.token_cache import get_token_cache_info, log_token_cache_performance
 from .utils.thread_safety import get_config_stats, invalidate_config_cache
@@ -121,31 +122,7 @@ def api_error_handler(func):
             return redirect(url_for('index'))
     return wrapper
 
-# =====================================
-# 🕐 Background Alarm Scheduler
-# =====================================
-
-def alarm_scheduler():
-    """Background thread to check alarms every minute"""
-    logger = setup_logger('alarm_scheduler')
-    logger.info("⏰ Alarm scheduler thread started")
-    
-    while True:
-        try:
-            current_time = time.strftime('%H:%M')
-            logger.debug(f"⏰ Checking alarm at {current_time}")
-            
-            config = load_config()
-            if config.get("enabled", False):
-                logger.debug(f"✅ Alarm enabled, checking time...")
-                execute_alarm()
-            else:
-                logger.debug("❌ Alarm disabled, skipping check")
-                
-        except Exception as e:
-            logger.error(f"Error in alarm scheduler: {e}")
-        
-        time.sleep(60)
+## Legacy minute-based alarm_scheduler removed; replaced by event-driven version in core.alarm_scheduler
 
 @app.context_processor
 def inject_global_vars():
@@ -582,14 +559,10 @@ def playback_status():
         return api_response(False, message="Authentication required", status=401, error_code="auth_required")
     
     try:
-        status = get_playback_status(token)
-        if status:
-            current_track = get_current_track(token)
-            status['current_track'] = current_track
-            # Transitional dual-shape: put essentials also in top-level data
-            return api_response(True, data=status, message="ok")
-        else:
-            return api_response(False, message="No active playback", status=200, error_code="no_playback")
+        combined = get_combined_playback(token)
+        if combined:
+            return api_response(True, data=combined, message="ok")
+        return api_response(False, message="No active playback", status=200, error_code="no_playback")
     except Exception as e:
         logging.exception("Error getting playback status")
         return api_response(False, message=str(e), status=503, error_code="playback_status_error")
@@ -917,16 +890,8 @@ def internal_error(error):
 # 🚀 Application Startup
 # =====================================
 
-def start_alarm_scheduler():
-    """Start the background alarm scheduler thread."""
-    # Ensure single-flight startup
-    if getattr(start_alarm_scheduler, '_started', False):
-        return
-    logging.info("🚨 Starting alarm scheduler thread...")
-    alarm_thread = threading.Thread(target=alarm_scheduler, daemon=True)
-    alarm_thread.start()
-    start_alarm_scheduler._started = True
-    logging.info("⏰ Background alarm scheduler started")
+def start_alarm_scheduler():  # backward compatibility alias
+    start_event_alarm_scheduler()
 
 # =====================================
 # 🚨 Rate Limiting Management API
@@ -1099,8 +1064,8 @@ def api_spotify_devices():
 # =====================================
 
 def run_app(host="0.0.0.0", port=5001, debug=False):
-    """Run the Flask app with alarm scheduler."""
-    start_alarm_scheduler()
+    """Run the Flask app with event-driven alarm scheduler."""
+    start_event_alarm_scheduler()
     app.run(host=host, port=port, debug=debug, threaded=True)
 
 # Do not start scheduler at import time to avoid duplicate threads in WSGI
@@ -1115,5 +1080,5 @@ if __name__ == "__main__":
     debug_mode = config.get("debug", False)
     port = int(os.getenv("PORT", 5000))
     
-    # Use the run_app function that includes scheduler
+    # Start with new event-driven scheduler
     run_app(host="0.0.0.0", port=port, debug=debug_mode)

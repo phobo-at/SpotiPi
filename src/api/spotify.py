@@ -33,7 +33,7 @@ __all__ = [
     "start_playback", "stop_playback", "resume_playback", "toggle_playback",
     "get_current_playback", "get_current_track", "get_current_spotify_volume", 
     "get_saved_albums", "get_user_saved_tracks", "get_followed_artists",
-    "set_volume", "get_playback_status", "get_user_library",
+    "set_volume", "get_playback_status", "get_user_library", "get_combined_playback",
     "load_music_library_parallel", "spotify_network_health", "load_music_library_sections"
 ]
 
@@ -866,6 +866,45 @@ def get_current_track(token: str) -> Optional[Dict[str, Any]]:
         }
     except Exception as e:
         logging.error(f"Error getting current track: {e}")
+        return None
+
+def get_combined_playback(token: str) -> Optional[Dict[str, Any]]:
+    """Single-call helper returning playback + simplified track + volume.
+
+    Avoids making three separate requests (status + track + volume) since
+    Spotify's /me/player already contains everything needed.
+    """
+    try:
+        playback = get_current_playback(token)
+        if not playback:
+            return None
+        item = playback.get("item")
+        track = None
+        if item:
+            album = item.get("album", {})
+            images = album.get("images", [])
+            artists = item.get("artists", [])
+            track = {
+                "name": item.get("name"),
+                "artist": ", ".join([a.get("name", "") for a in artists]),
+                "album": album.get("name"),
+                "album_image": images[0]["url"] if images else None,
+                "is_playing": playback.get("is_playing", False),
+                "uri": item.get("uri")
+            }
+        volume = int(playback.get("device", {}).get("volume_percent", 50))
+        combined = {
+            "is_playing": playback.get("is_playing", False),
+            "device": playback.get("device"),
+            "progress_ms": playback.get("progress_ms"),
+            "shuffle_state": playback.get("shuffle_state"),
+            "repeat_state": playback.get("repeat_state"),
+            "current_track": track,
+            "volume": volume
+        }
+        return combined
+    except Exception as e:
+        logging.getLogger('spotify').debug(f"Combined playback fetch failed: {e}")
         return None
 
 def load_music_library_parallel(token: str) -> Dict[str, Any]:

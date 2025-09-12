@@ -14,7 +14,7 @@ from ..api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
     start_playback, stop_playback, resume_playback, toggle_playback,
     set_volume, get_current_track, get_current_spotify_volume,
-    get_playback_status
+    get_playback_status, get_combined_playback
 )
 from ..utils.token_cache import get_token_cache_info
 
@@ -171,20 +171,19 @@ class SpotifyService(BaseService):
             
             token = get_access_token()
             
-            # Get playback status and current track
-            playback_status = get_playback_status(token)
-            current_track = get_current_track(token)
-            current_volume = get_current_spotify_volume(token)
-            
-            status_data = {
-                "is_playing": playback_status.get("is_playing", False) if playback_status else False,
-                "current_track": current_track,
-                "volume": current_volume,
-                "device": playback_status.get("device") if playback_status else None,
-                "progress_ms": playback_status.get("progress_ms", 0) if playback_status else 0,
-                "shuffle_state": playback_status.get("shuffle_state", False) if playback_status else False,
-                "repeat_state": playback_status.get("repeat_state", "off") if playback_status else "off"
-            }
+            combined = get_combined_playback(token)
+            if not combined:
+                status_data = {
+                    "is_playing": False,
+                    "current_track": None,
+                    "volume": 50,
+                    "device": None,
+                    "progress_ms": 0,
+                    "shuffle_state": False,
+                    "repeat_state": "off"
+                }
+            else:
+                status_data = combined
             
             return self._success_result(
                 data=status_data,
