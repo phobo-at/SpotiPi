@@ -353,4 +353,4 @@ if __name__ == "__main__":
         log_exception(test_logger)
     
     log_shutdown(test_logger, "test")
-    print(f"\n📂 Logs written to: {LOG_DIR}")
+    test_logger.info(f"Logs written to: {LOG_DIR}")

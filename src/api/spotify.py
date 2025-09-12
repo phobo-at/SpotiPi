@@ -14,6 +14,7 @@ import requests
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 import time
+from functools import lru_cache
 import logging
 from typing import Dict, List, Optional, Any, Union
 from requests.adapters import HTTPAdapter
@@ -33,7 +34,7 @@ __all__ = [
     "get_current_playback", "get_current_track", "get_current_spotify_volume", 
     "get_saved_albums", "get_user_saved_tracks", "get_followed_artists",
     "set_volume", "get_playback_status", "get_user_library",
-    "load_music_library_parallel", "spotify_network_health"
+    "load_music_library_parallel", "spotify_network_health", "load_music_library_sections"
 ]
 
 # 🔧 File paths
@@ -70,10 +71,10 @@ def refresh_access_token() -> Optional[str]:
         if r.status_code == 200:
             return r.json().get("access_token")
         else:
-            print("❌ Token refresh failed:", r.text)
+            logging.getLogger('spotify').error(f"❌ Token refresh failed: {r.text}")
             return None
     except Exception as e:
-        print("❌ Exception during token refresh:", e)
+        logging.getLogger('spotify').exception(f"❌ Exception during token refresh: {e}")
         return None
 
 # 🎟️ Cached token functions
@@ -520,10 +521,10 @@ def get_devices(token: str) -> List[Dict[str, Any]]:
             cache['ts'] = now
             return devices
         else:
-            print("❌ Error fetching devices:", r.text)
+            logging.getLogger('spotify').error(f"❌ Error fetching devices: {r.text}")
             return cache['data']
     except Exception as e:
-        print("❌ Exception while fetching devices:", e)
+        logging.getLogger('spotify').exception(f"❌ Exception while fetching devices: {e}")
         return cache['data']
 
 def get_device_id(token: str, device_name: str) -> Optional[str]:
@@ -557,7 +558,7 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
         bool: True if successful, False otherwise
     """
     if not token or not device_id:
-        print("❌ Missing token or device_id for playback")
+        logging.getLogger('spotify').error("❌ Missing token or device_id for playback")
         return False
 
     try:
@@ -570,7 +571,7 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
             timeout=10
         )
         if transfer_resp.status_code != 204:
-            print(f"⚠️ Could not transfer playback to device: {transfer_resp.text}")
+            logging.getLogger('spotify').warning(f"⚠️ Could not transfer playback to device: {transfer_resp.text}")
 
         # 2. Set volume
         try:
@@ -582,9 +583,9 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
                 timeout=10
             )
             if vol_resp.status_code != 204:
-                print(f"⚠️ Could not set volume: {vol_resp.text}")
+                logging.getLogger('spotify').warning(f"⚠️ Could not set volume: {vol_resp.text}")
         except Exception as e:
-            print(f"❌ Error setting volume: {e}")
+            logging.getLogger('spotify').exception(f"❌ Error setting volume: {e}")
 
         # 3. (Optional) Enable shuffle BEFORE starting playback so first track is randomized
         shuffle_enabled_before = False
@@ -597,62 +598,44 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
                     timeout=10
                 )
                 if shuffle_resp.status_code == 204:
-                    print("🔀 Shuffle mode enabled (pre-play)")
+                    logging.getLogger('spotify').info("🔀 Shuffle mode enabled (pre-play)")
                     shuffle_enabled_before = True
                 else:
-                    print(f"⚠️ Could not enable shuffle pre-play: {shuffle_resp.text}")
+                    logging.getLogger('spotify').warning(f"⚠️ Could not enable shuffle pre-play: {shuffle_resp.text}")
             except Exception as e:
-                print(f"⚠️ Error enabling shuffle pre-play: {e}")
+                logging.getLogger('spotify').warning(f"⚠️ Error enabling shuffle pre-play: {e}")
 
         # 4. Start playback (with optional random offset when shuffle active)
         if playlist_uri and playlist_uri.strip():
             if playlist_uri.startswith("spotify:track:"):
                 # For individual tracks, use "uris" parameter
                 payload = {"uris": [playlist_uri]}
-                print(f"▶️ Starting track playback: {playlist_uri}")
+                logging.getLogger('spotify').info(f"▶️ Starting track playback: {playlist_uri}")
             else:
                 # For playlists/albums, use "context_uri" parameter
                 payload = {"context_uri": playlist_uri}
                 # Randomize first track if shuffle requested: pick random offset
                 if shuffle and shuffle_enabled_before:
-                    import random, re
+                    import random
                     try:
-                        # Only attempt for playlist or album contexts
-                        # Extract ID
                         if playlist_uri.startswith("spotify:playlist:"):
-                            playlist_id = playlist_uri.split(":")[-1]
-                            meta_resp = _spotify_request(
-                                'GET',
-                                f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=tracks.total",
-                                headers={"Authorization": f"Bearer {token}"},
-                                timeout=10
-                            )
-                            if meta_resp.status_code == 200:
-                                total = meta_resp.json().get('tracks', {}).get('total', 0)
-                                if total > 1:
-                                    pos = random.randint(0, total - 1)
-                                    payload['offset'] = {"position": pos}
-                                    print(f"🎲 Starting at random playlist position {pos} of {total}")
+                            total = _get_track_total_cached(token, playlist_uri, 'playlist')
+                            if total > 1:
+                                pos = random.randint(0, total - 1)
+                                payload['offset'] = {"position": pos}
+                                logging.getLogger('spotify').info(f"🎲 Starting at random playlist position {pos} of {total}")
                         elif playlist_uri.startswith("spotify:album:"):
-                            album_id = playlist_uri.split(":")[-1]
-                            meta_resp = _spotify_request(
-                                'GET',
-                                f"https://api.spotify.com/v1/albums/{album_id}?fields=tracks.total",
-                                headers={"Authorization": f"Bearer {token}"},
-                                timeout=10
-                            )
-                            if meta_resp.status_code == 200:
-                                total = meta_resp.json().get('tracks', {}).get('total', 0)
-                                if total > 1:
-                                    pos = random.randint(0, total - 1)
-                                    payload['offset'] = {"position": pos}
-                                    print(f"🎲 Starting at random album position {pos} of {total}")
+                            total = _get_track_total_cached(token, playlist_uri, 'album')
+                            if total > 1:
+                                pos = random.randint(0, total - 1)
+                                payload['offset'] = {"position": pos}
+                                logging.getLogger('spotify').info(f"🎲 Starting at random album position {pos} of {total}")
                     except Exception as e:
-                        print(f"⚠️ Could not apply random offset: {e}")
-                print(f"▶️ Starting context playback: {playlist_uri}")
+                        logging.getLogger('spotify').warning(f"⚠️ Could not apply random offset: {e}")
+                logging.getLogger('spotify').info(f"▶️ Starting context playback: {playlist_uri}")
         else:
             payload = {}
-            print("▶️ Resuming playback with specified volume")
+            logging.getLogger('spotify').info("▶️ Resuming playback with specified volume")
         
         play_resp = _spotify_request(
             'PUT',
@@ -673,19 +656,45 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
                         timeout=10
                     )
                     if shuffle_resp.status_code == 204:
-                        print("🔀 Shuffle mode enabled (post-play fallback)")
+                        logging.getLogger('spotify').info("🔀 Shuffle mode enabled (post-play fallback)")
                     else:
-                        print(f"⚠️ Could not enable shuffle (fallback): {shuffle_resp.text}")
+                        logging.getLogger('spotify').warning(f"⚠️ Could not enable shuffle (fallback): {shuffle_resp.text}")
                 except Exception as e:
-                    print(f"⚠️ Error enabling shuffle (fallback): {e}")
+                    logging.getLogger('spotify').warning(f"⚠️ Error enabling shuffle (fallback): {e}")
             return True
         else:
-            print(f"❌ Error starting playback: {play_resp.text}")
+            logging.getLogger('spotify').error(f"❌ Error starting playback: {play_resp.text}")
             return False
             
     except Exception as e:
-        print(f"❌ Error in start_playback: {e}")
+        logging.getLogger('spotify').error(f"❌ Error in start_playback: {e}")
         return False
+
+# --- Track count caching for random offset (playlist/album) ---
+@lru_cache(maxsize=256)
+def _get_track_total_cached(token: str, uri: str, kind: str) -> int:
+    try:
+        if kind == 'playlist':
+            playlist_id = uri.split(":")[-1]
+            meta_resp = _spotify_request(
+                'GET',
+                f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=tracks.total",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=8
+            )
+        else:
+            album_id = uri.split(":")[-1]
+            meta_resp = _spotify_request(
+                'GET',
+                f"https://api.spotify.com/v1/albums/{album_id}?fields=tracks.total",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=8
+            )
+        if meta_resp.status_code == 200:
+            return meta_resp.json().get('tracks', {}).get('total', 0)
+    except Exception:
+        pass
+    return 0
 
 def stop_playback(token: str) -> bool:
     """Stop Spotify playback.
@@ -915,6 +924,80 @@ def load_music_library_parallel(token: str) -> Dict[str, Any]:
         "tracks": results['tracks'],
         "artists": results['artists'],
         "total": total_items
+    }
+
+# ------------------------------
+# ⚡ Incremental / Section-based loading with per-section cache
+# ------------------------------
+
+# In-process cache for individual sections to accelerate partial requests.
+_LIB_SECTION_CACHE: Dict[str, Dict[str, Any]] = {}
+
+def _get_section_cache(name: str) -> Dict[str, Any]:
+    if name not in _LIB_SECTION_CACHE:
+        _LIB_SECTION_CACHE[name] = {"ts": 0.0, "data": []}
+    return _LIB_SECTION_CACHE[name]
+
+def load_music_library_sections(token: str, sections: List[str], force_refresh: bool = False) -> Dict[str, Any]:
+    """Load only the requested music library sections with caching.
+
+    Args:
+        token: Spotify access token
+        sections: List of section names to load (playlists, albums, tracks, artists)
+        force_refresh: Bypass cache when True
+
+    Returns:
+        Dict[str, Any]: Partial library containing only requested sections (others empty)
+    """
+    valid_sections = {"playlists", "albums", "tracks", "artists"}
+    wanted = [s for s in sections if s in valid_sections]
+    if not wanted:
+        wanted = ["playlists"]  # sensible default
+
+    ttl = int(os.getenv('SPOTIPI_LIBRARY_SECTION_TTL', '600'))
+    now = time.time()
+
+    # Mapping from section name to loader function
+    loaders = {
+        "playlists": get_playlists,
+        "albums": get_saved_albums,
+        "tracks": get_user_saved_tracks,
+        "artists": get_followed_artists,
+    }
+
+    results: Dict[str, List[Dict[str, Any]]] = {s: [] for s in valid_sections}
+
+    def load_if_needed(name: str):
+        cache = _get_section_cache(name)
+        if (not force_refresh) and cache['data'] and (now - cache['ts'] < ttl):
+            return cache['data']
+        try:
+            data = loaders[name](token)
+            cache['data'] = data
+            cache['ts'] = now
+            return data
+        except Exception as e:
+            logging.getLogger('app').warning(f"⚠️ Failed loading section {name}: {e}")
+            return cache['data'] or []
+
+    # Load requested sections (in parallel to retain performance)
+    with ThreadPoolExecutor(max_workers=min(len(wanted), 4)) as executor:
+        future_map = {sec: executor.submit(load_if_needed, sec) for sec in wanted}
+        for sec, fut in future_map.items():
+            results[sec] = fut.result()
+
+    # Compose partial result with total count for only loaded sections
+    total_loaded = sum(len(results[s]) for s in wanted)
+
+    return {
+        "playlists": results["playlists"],
+        "albums": results["albums"],
+        "tracks": results["tracks"],
+        "artists": results["artists"],
+        "total": total_loaded,
+        "partial": True,
+        "sections": wanted,
+        "cached": {s: (now - _get_section_cache(s)['ts'] < ttl) for s in wanted}
     }
 
 # Additional functions for the new modular app.py

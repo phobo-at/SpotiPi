@@ -58,11 +58,41 @@ async function fetchAPI(url, options = {}) {
     if (typeof window.__API_BACKOFF_UNTIL === 'number' && Date.now() < window.__API_BACKOFF_UNTIL) {
       return { error: "Backoff", success: false, offline: true };
     }
-    const response = await fetch(url, options);
+    // Attach If-None-Match header when we have a stored hash for music library endpoints
+    const headers = new Headers(options.headers || {});
+    if (url.startsWith('/api/music-library') && !headers.has('If-None-Match')) {
+      const cachedMeta = JSON.parse(localStorage.getItem('musicLibraryMeta') || 'null');
+      if (cachedMeta?.hash) {
+        headers.set('If-None-Match', cachedMeta.hash);
+      }
+    }
+    const response = await fetch(url, { ...options, headers });
 
     // If it's a POST request, return the response directly
     if (options.method === 'POST') {
       return response;
+    }
+
+    // Special handling: 304 Not Modified for music library endpoints should reuse cached data
+    if (response.status === 304 && url.startsWith('/api/music-library')) {
+      try {
+        const cachedFullRaw = localStorage.getItem('musicLibraryFull');
+        if (cachedFullRaw) {
+          const parsedFull = JSON.parse(cachedFullRaw);
+          console.log('♻️ Using cached FULL music library (304 Not Modified)');
+          return parsedFull; // envelope or data object as stored
+        }
+      } catch (e) { /* swallow */ }
+      try {
+        const cachedPartialRaw = localStorage.getItem('musicLibraryPartial');
+        if (cachedPartialRaw) {
+          const parsedPartial = JSON.parse(cachedPartialRaw);
+          console.log('♻️ Using cached PARTIAL music library (304 Not Modified)');
+          return parsedPartial; // plain data object
+        }
+      } catch (e) { /* swallow */ }
+      // No cached data available; treat as soft success with empty payload
+      return { success: true, data: {}, notModified: true };
     }
 
     // For non-successful responses, return a structured error object instead of throwing an error
@@ -85,7 +115,8 @@ async function fetchAPI(url, options = {}) {
 
     // Try to parse the response as JSON
     try {
-      return await response.json();
+      const json = await response.json();
+      return json;
     } catch (parseError) {
       // If the response is not valid JSON
       if (window.location.href.includes('debug=true')) {
@@ -112,12 +143,23 @@ async function fetchAPI(url, options = {}) {
   }
 }
 
+// Unified API unwrap helper (tolerates legacy top-level fields)
+function unwrapResponse(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if ('success' in obj && obj.data && typeof obj.data === 'object') {
+    // Merge data and keep meta under _meta
+    return { ...obj.data, _meta: { success: obj.success, message: obj.message, error_code: obj.error_code } };
+  }
+  return obj; // legacy shape
+}
+
 /**
  * Gets the current playback status
  * @returns {Promise<Object} Playback status
  */
 async function getPlaybackStatus() {
-  return await fetchAPI("/playback_status");
+  const raw = await fetchAPI("/playback_status");
+  return unwrapResponse(raw);
 }
 
 /**
@@ -125,7 +167,8 @@ async function getPlaybackStatus() {
  * @returns {Promise<Object>} Sleep status
  */
 async function getSleepStatus() {
-  return await fetchAPI("/sleep_status");
+  const raw = await fetchAPI("/sleep_status");
+  return unwrapResponse(raw);
 }
 
 /**
@@ -874,19 +917,27 @@ async function loadInitialData() {
   console.log('🚀 Kicking off asynchronous data loading...');
   
   try {
-    // Fetch data in parallel
-    const [playback, devices] = await Promise.all([
+    // Fetch data in parallel (devices now returned via unified API envelope)
+    const [playback, devicesResp] = await Promise.all([
       getPlaybackStatus(),
       fetchAPI('/api/spotify/devices')
     ]);
 
-    // Check for errors in API responses
-    if (devices?.error) {
-      console.error('❌ Failed to load Spotify devices:', devices.error);
-      updateDevices([]); // Update with empty list to show "No devices found"
-    } else if (devices) {
-      updateDevices(devices);
+    // Unwrap devices response (supports both legacy array and new envelope)
+    let deviceList = [];
+    if (devicesResp) {
+      if (Array.isArray(devicesResp)) {
+        deviceList = devicesResp;
+      } else if (devicesResp.data && Array.isArray(devicesResp.data.devices)) {
+        deviceList = devicesResp.data.devices;
+      } else if (Array.isArray(devicesResp.devices)) { // defensive fallback
+        deviceList = devicesResp.devices;
+      } else if (devicesResp.error || devicesResp.success === false) {
+        console.warn('⚠️ Devices response indicates failure:', devicesResp.error || devicesResp.error_code);
+      }
     }
+
+    updateDevices(deviceList);
 
     if (playback?.error) {
         console.warn('⚠️ Could not get playback status:', playback.error);
@@ -922,17 +973,25 @@ async function loadInitialData() {
  * @param {Array} devices - Array of device objects from the Spotify API.
  */
 function updateDevices(devices) {
+  // Allow passing API envelope directly
+  if (!Array.isArray(devices) && devices && Array.isArray(devices.devices)) {
+    devices = devices.devices;
+  }
+  if (!Array.isArray(devices)) {
+    devices = [];
+  }
+
   const selectors = document.querySelectorAll('select[name="device_name"]');
   if (!selectors.length) {
-    console.warn('No device selectors found to update.');
+    // Silently ignore if not on a page with device selectors
     return;
   }
 
   selectors.forEach(selector => {
     const currentValue = selector.value;
-    selector.innerHTML = ''; // Clear existing options
+    selector.innerHTML = '';
 
-    if (!devices || devices.length === 0) {
+    if (devices.length === 0) {
       const option = document.createElement('option');
       option.value = '';
       option.textContent = t('no_devices_found') || 'Keine Geräte gefunden';
@@ -941,21 +1000,24 @@ function updateDevices(devices) {
     }
 
     devices.forEach(device => {
+      if (!device || !device.name) return;
       const option = document.createElement('option');
       option.value = device.name;
-      option.textContent = `${device.name} (${device.type})`;
-      if (device.is_active) {
-        option.selected = true;
-      }
+      option.textContent = `${device.name} (${device.type || '?'})`;
+      if (device.is_active) option.selected = true;
       selector.appendChild(option);
     });
 
-    // Restore previous selection if it still exists
-    if (Array.from(selector.options).some(opt => opt.value === currentValue)) {
+    // Restore previous selection if still present
+    if (currentValue && Array.from(selector.options).some(o => o.value === currentValue)) {
       selector.value = currentValue;
     }
   });
-  console.log('✅ Device selectors updated.');
+  if (devices.length > 0) {
+    console.log(`✅ Device selectors updated (${devices.length} devices).`);
+  } else {
+    console.log('⚠️ No devices available to populate.');
+  }
 }
 
 
@@ -1209,6 +1271,8 @@ class PlaylistSelector {
     this.albums = [];
     this.tracks = [];
     this.artists = [];
+  // Track which sections have been loaded to support lazy loading per tab
+  this.loadedSections = new Set();
     this.currentTab = 'playlists';
     this.selectedItem = null;
     this.isOpen = false;
@@ -1291,6 +1355,10 @@ class PlaylistSelector {
     this.albums = data.albums || [];
     this.tracks = data.tracks || [];
     this.artists = data.artists || [];
+    if (this.playlists.length) this.loadedSections.add('playlists');
+    if (this.albums.length) this.loadedSections.add('albums');
+    if (this.tracks.length) this.loadedSections.add('tracks');
+    if (this.artists.length) this.loadedSections.add('artists');
     this.createTabs();
     this.updateCurrentTab();
   }
@@ -1699,7 +1767,7 @@ class PlaylistSelector {
   attachItemClickListeners(grid) {
     grid.querySelectorAll('.playlist-item').forEach(item => {
       item.addEventListener('click', async () => {
-        const uri = item.dataset.uri;
+  const uri = item.dataset.uri; // used to resolve selectedItem below
         const selectedItem = this.filteredItems.find(p => p.uri === uri);
         
         // Special handling for artists - load their top tracks
@@ -1729,7 +1797,8 @@ class PlaylistSelector {
     try {
       const response = await fetchAPI(`/api/artist-top-tracks/${artist.artist_id}`);
       
-      if (response && response.success && response.tracks) {
+  // Support unified + legacy response shapes
+  if (response?.tracks || (response?._meta?.success && response?.tracks)) {
         // Create a special "artist tracks" view
         this.currentArtistTracks = {
           artist: artist,
@@ -1832,7 +1901,43 @@ class PlaylistSelector {
     // Kleine Verzögerung für UI-Update, dann Daten laden
     setTimeout(() => {
       this.updateCurrentTab();
+      // Lazy fetch section if not loaded yet (excluding playlists which load early)
+      if (!this.loadedSections.has(tabName)) {
+        this.fetchSection(tabName);
+      }
     }, 50);
+  }
+
+  async fetchSection(section) {
+    try {
+      const resp = await fetchAPI(`/api/music-library/sections?sections=${section}&fields=basic`);
+      let data = resp;
+      if (resp?.data) data = resp.data;
+      if (data && Array.isArray(data[section])) {
+        // Merge into existing collections
+        if (section === 'albums') this.albums = data.albums;
+        if (section === 'tracks') this.tracks = data.tracks;
+        if (section === 'artists') this.artists = data.artists;
+        this.loadedSections.add(section);
+        this.updateCurrentTab();
+        // Promote to global selectors localStorage full cache snapshot (basic fields)
+        try {
+          const meta = JSON.parse(localStorage.getItem('musicLibraryMeta') || 'null') || {}; 
+          const partial = JSON.parse(localStorage.getItem('musicLibraryPartial') || 'null') || {}; 
+          const merged = {
+            playlists: this.playlists,
+            albums: this.albums,
+            tracks: this.tracks,
+            artists: this.artists,
+            hash: data.hash || meta.hash || partial.hash || null
+          };
+            localStorage.setItem('musicLibraryFull', JSON.stringify({ data: merged, success: true }));
+            localStorage.setItem('musicLibraryMeta', JSON.stringify({ hash: merged.hash, ts: Date.now(), fields: 'basic', phase: 'lazy' }));
+        } catch (e) { /* ignore quota */ }
+      }
+    } catch (e) {
+      console.warn('⚠️ Failed to lazy-load section', section, e);
+    }
   }
   
   updateCurrentTab() {
@@ -1909,21 +2014,33 @@ async function loadPlaylistsForSelectors() {
   console.log('📋 Loading music library from API...');
   
   try {
-    const data = await fetchAPI('/api/music-library');
-
-    if (data?.error) {
-      console.error('❌ Failed to load music library:', data.error);
-      // Update selectors to show an error state
-      if (window.playlistSelectors?.alarm) {
-        window.playlistSelectors.alarm.setMusicLibrary({ error: true });
-      }
-      if (window.playlistSelectors?.sleep) {
-        window.playlistSelectors.sleep.setMusicLibrary({ error: true });
-      }
-      return; // Stop execution
+    // Attempt to hydrate from LocalStorage first (fast path)
+    const meta = JSON.parse(localStorage.getItem('musicLibraryMeta') || 'null');
+    const cachedPartial = JSON.parse(localStorage.getItem('musicLibraryPartial') || 'null');
+    if (cachedPartial && meta?.hash) {
+      console.log('⚡ Using cached partial music library from LocalStorage');
+      if (window.playlistSelectors?.alarm) window.playlistSelectors.alarm.setMusicLibrary(cachedPartial);
+      if (window.playlistSelectors?.sleep) window.playlistSelectors.sleep.setMusicLibrary(cachedPartial);
+      if (window.playlistSelectors?.library) window.playlistSelectors.library.setMusicLibrary(cachedPartial);
     }
 
-    console.log('📋 Music library loaded:', data?.total || 0, 'items');
+    // Phase 1: fast partial load (playlists only) for quicker UI readiness, use basic field slimming
+  const resp = await fetchAPI('/api/music-library/sections?sections=playlists&fields=basic');
+    // Unwrap unified envelope
+    let data = resp;
+  if (resp?.data && (resp.data.playlists || resp.data.albums)) {
+      data = resp.data;
+    }
+
+    if (resp?.success === false && !data.playlists && !data.albums) {
+      console.error('❌ Failed to load music library:', resp.error || resp.message || resp.error_code);
+      if (window.playlistSelectors?.alarm) window.playlistSelectors.alarm.setMusicLibrary({ error: true });
+      if (window.playlistSelectors?.sleep) window.playlistSelectors.sleep.setMusicLibrary({ error: true });
+      if (window.playlistSelectors?.library) window.playlistSelectors.library.setMusicLibrary({ error: true });
+      return;
+    }
+
+    console.log('📋 Partial music library loaded (phase 1):', (data?.playlists?.length || 0), 'playlists');
     
     if (data && (data.playlists || data.albums)) {
       // Update both selectors
@@ -1958,10 +2075,39 @@ async function loadPlaylistsForSelectors() {
         window.playlistSelectors.library.setMusicLibrary(data);
       }
       
-      console.log('✅ Music library selectors updated successfully');
+      console.log('✅ Music library selectors updated (phase 1)');
+      // Persist partial (playlists only) for reuse
+      try {
+        localStorage.setItem('musicLibraryPartial', JSON.stringify(data));
+        localStorage.setItem('musicLibraryMeta', JSON.stringify({ hash: data.hash, ts: Date.now(), fields: 'basic', phase: 1 }));
+      } catch (e) { console.debug('LocalStorage write failed (partial):', e); }
     } else {
       console.warn('⚠️ No music library data received');
     }
+
+    // Phase 2: load remaining sections in background (albums, tracks, artists) lazily; we'll only prefetch hash now
+    setTimeout(async () => {
+      try {
+        const fullResp = await fetchAPI('/api/music-library?fields=basic');
+        let fullData = fullResp;
+  if (fullResp?.data && (fullResp.data.albums || fullResp.data.tracks || fullResp.data.artists)) {
+          fullData = fullResp.data;
+        }
+        if (fullData?.albums || fullData?.tracks || fullData?.artists) {
+          // Merge by simply re-setting full library; selectors should re-render if open
+            if (window.playlistSelectors?.alarm) window.playlistSelectors.alarm.setMusicLibrary(fullData);
+            if (window.playlistSelectors?.sleep) window.playlistSelectors.sleep.setMusicLibrary(fullData);
+            if (window.playlistSelectors?.library) window.playlistSelectors.library.setMusicLibrary(fullData);
+            console.log('✅ Full music library loaded (phase 2)');
+            try {
+              localStorage.setItem('musicLibraryFull', JSON.stringify(fullResp)); // store with envelope for reuse
+              localStorage.setItem('musicLibraryMeta', JSON.stringify({ hash: fullData.hash, ts: Date.now(), fields: 'basic', phase: 2 }));
+            } catch (e) { console.debug('LocalStorage write failed (full):', e); }
+        }
+      } catch (e) {
+        console.warn('⚠️ Failed background full library load:', e);
+      }
+    }, 250); // slight delay to let UI settle
   } catch (error) {
     console.error('❌ Failed to load music library:', error);
   }

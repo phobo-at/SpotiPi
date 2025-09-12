@@ -204,8 +204,6 @@ def execute_alarm() -> bool:
     finally:
         debug("Alarm evaluation finished")
 
-if __name__ == "__main__":
-    execute_alarm()
 
 def get_weekday_name(weekday: int) -> str:
     """Get weekday name from number.
@@ -219,30 +217,4 @@ def get_weekday_name(weekday: int) -> str:
     weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     return weekdays[weekday] if 0 <= weekday <= 6 else "Unknown"
 
-def validate_alarm_config(config: Dict[str, Any]) -> bool:
-    """Validate alarm configuration completeness.
-    
-    Args:
-        config: Alarm configuration dictionary
-        
-    Returns:
-        bool: True if configuration is valid, False otherwise
-    """
-    required_fields = ["time", "device_name"]
-    
-    for field in required_fields:
-        if not config.get(field):
-            logger.warning(f"⚠️ Missing required alarm config field: {field}")
-            return False
-    
-    # Validate time format
-    try:
-        datetime.datetime.strptime(config["time"], "%H:%M")
-    except (ValueError, TypeError):
-        logger.warning(f"⚠️ Invalid time format: {config.get('time')}")
-        return False
-    
-    return True
-
-if __name__ == "__main__":
-    execute_alarm()
+## Removed legacy validate_alarm_config (duplicated by utils.validation.validate_alarm_config)

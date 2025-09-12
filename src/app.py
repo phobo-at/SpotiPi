@@ -5,10 +5,11 @@ Flask web application with new modular structure
 
 import os
 import datetime
+import uuid
 from threading import Thread
 from pathlib import Path
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response
 from functools import wraps
 import logging
 import threading
@@ -26,7 +27,7 @@ from .api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
     start_playback, stop_playback, resume_playback, toggle_playback,
     set_volume, get_current_track, get_current_spotify_volume,
-    get_playback_status
+    get_playback_status, load_music_library_sections
 )
 from .utils.token_cache import get_token_cache_info, log_token_cache_performance
 from .utils.thread_safety import get_config_stats, invalidate_config_cache
@@ -61,20 +62,47 @@ rate_limiter = get_rate_limiter()
 service_manager = get_service_manager()
 
 @app.after_request
-def after_request(response):
-    """Add CORS headers to all responses with environment-aware policy"""
-    # Allow broad CORS in development; restrict via env in production
+def after_request(response: Response):
+    """Add CORS headers + (optional) gzip compression & cache related headers."""
+    # ---- CORS ----
     allowed_origins = os.getenv('SPOTIPI_CORS_ORIGINS')
     if allowed_origins:
         origin = request.headers.get('Origin', '')
         allowed = [o.strip() for o in allowed_origins.split(',') if o.strip()]
         if origin in allowed:
             response.headers['Access-Control-Allow-Origin'] = origin
-            response.headers['Vary'] = 'Origin'
+            response.headers.setdefault('Vary', 'Origin')
     else:
         response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
     response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+
+    # ---- Optional gzip compression ----
+    try:
+        enable_compress = os.getenv('SPOTIPI_ENABLE_GZIP', '1') in ('1', 'true', 'yes')
+        accept_encoding = request.headers.get('Accept-Encoding', '')
+        already_encoded = response.headers.get('Content-Encoding')
+        is_json = response.mimetype == 'application/json'
+        size_threshold = int(os.getenv('SPOTIPI_GZIP_MIN_BYTES', '2048'))
+        if (enable_compress and 'gzip' in accept_encoding and not already_encoded and is_json \
+                and response.status_code not in (204, 304) and response.direct_passthrough is False):
+            data = response.get_data()
+            if len(data) >= size_threshold:
+                import gzip, io
+                buf = io.BytesIO()
+                with gzip.GzipFile(mode='wb', fileobj=buf) as gz:
+                    gz.write(data)
+                compressed = buf.getvalue()
+                response.set_data(compressed)
+                response.headers['Content-Encoding'] = 'gzip'
+                response.headers['Content-Length'] = str(len(compressed))
+                # Ensure caches differentiate
+                vary = response.headers.get('Vary') or ''
+                if 'Accept-Encoding' not in vary:
+                    response.headers['Vary'] = (vary + ', Accept-Encoding').strip(', ')
+    except Exception as gzip_err:
+        logging.debug(f"Compression skipped: {gzip_err}")
+
     return response
 
 def api_error_handler(func):
@@ -86,15 +114,9 @@ def api_error_handler(func):
         except Exception as e:
             logging.exception(f"Error in {func.__name__}")
             if request.is_json or request.path.startswith('/api/'):
-                return jsonify({
-                    "success": False,
-                    "error": str(e),
-                    "message": "An internal error occurred"
-                }), 500
-            else:
-                # For HTML requests, redirect to main page with error
-                session['error_message'] = str(e)
-                return redirect(url_for('index'))
+                return api_response(False, message="An internal error occurred", status=500, error_code="unhandled_exception")
+            session['error_message'] = str(e)
+            return redirect(url_for('index'))
     return wrapper
 
 # =====================================
@@ -142,14 +164,37 @@ def inject_global_vars():
         'app_info': get_app_info(),
         'current_config': config,
         'translations': translations,
-        't': template_t,  # Translation function with parameter support
-        'lang': user_language,  # Add language variable
+        't': template_t,
+        'lang': user_language,
         'weekday_scheduler': WeekdayScheduler,
         'static_css_path': '/static/css/',
         'static_js_path': '/static/js/',
         'static_icons_path': '/static/icons/',
-        'now': datetime.datetime.now()  # Add current time for templates
+        'now': datetime.datetime.now()
     }
+
+# Unified API response helper
+from typing import Any
+def api_response(success: bool, *, data: Any | None = None, message: str = "", status: int = 200, error_code: str | None = None):
+    req_id = str(uuid.uuid4())
+    timestamp = datetime.datetime.utcnow().isoformat() + 'Z'
+    payload = {
+        "success": success,
+        "timestamp": timestamp,
+        "request_id": req_id
+    }
+    if message:
+        payload["message"] = message
+    if data is not None:
+        payload["data"] = data
+    if error_code:
+        payload["error_code"] = error_code
+    resp = jsonify(payload)
+    resp.status_code = status
+    # Correlation headers
+    resp.headers['X-Request-ID'] = req_id
+    resp.headers['X-Response-Timestamp'] = timestamp
+    return resp
 
 # =====================================
 # 🏠 Main Routes
@@ -246,92 +291,31 @@ if not hasattr(app, '_warmup_started'):
 def save_alarm():
     """Save alarm settings with comprehensive input validation"""
     try:
-        # Validate all alarm inputs using centralized validation
         validated_data = validate_alarm_config(request.form)
-        
-        # Load current config and update with validated data
         config = load_config()
         config.update(validated_data)
-        
-        # Additional business logic validation
         if config["time"] and not AlarmTimeValidator.validate_time_format(config["time"]):
-            return jsonify({
-                "success": False,
-                "message": "Invalid time format. Please use HH:MM format."
-            }), 400
-        
-        # Save configuration
-        success = save_config(config)
-        if not success:
-            # Additional diagnostics if save failed
-            probe_info = {}
-            try:
-                cfg_runtime = config.get('_runtime', {})
-                cfg_path = cfg_runtime.get('config_file')
-                if cfg_path:
-                    import os, errno
-                    parent_dir = os.path.dirname(cfg_path)
-                    writable = os.access(parent_dir, os.W_OK)
-                    probe_info = {
-                        'config_file': cfg_path,
-                        'dir_writable': writable,
-                        'exists': os.path.exists(cfg_path),
-                        'owner_uid': os.stat(parent_dir).st_uid if os.path.exists(parent_dir) else None,
-                    }
-            except Exception as pe:
-                probe_info['probe_error'] = str(pe)
-            return jsonify({
-                "success": False,
-                "message": "Failed to save configuration",
-                "diagnostics": probe_info
-            }), 500
-        
-        # Log the changes
-        weekdays_info = f", Weekdays={WeekdayScheduler.format_weekdays_display(config['weekdays'])}" if config.get('weekdays') else " (daily)"
-        logging.info(f"Alarm settings saved: Active={config['enabled']}, Time={config['time']}, Volume={config['alarm_volume']}%{weekdays_info}")
-        
-        return jsonify({
-            "success": True,
-            "message": "Alarm settings saved successfully",
-            "config": {
-                "enabled": config["enabled"],
-                "time": config["time"],
-                "alarm_volume": config["alarm_volume"],
-                "weekdays": config["weekdays"],
-                "weekdays_display": WeekdayScheduler.format_weekdays_display(config["weekdays"])
-            }
-        })
-        
+            return api_response(False, message="Invalid time format. Use HH:MM.", status=400, error_code="time_format")
+        if not save_config(config):
+            return api_response(False, message="Failed to save configuration", status=500, error_code="save_failed")
+        weekdays_info = WeekdayScheduler.format_weekdays_display(config.get('weekdays', []))
+        logging.info(
+            "Alarm settings saved: Active=%s Time=%s Volume=%s%% Weekdays=%s",
+            config['enabled'], config['time'], config['alarm_volume'], weekdays_info or 'daily'
+        )
+        return api_response(True, data={
+            "enabled": config["enabled"],
+            "time": config["time"],
+            "alarm_volume": config["alarm_volume"],
+            "weekdays": config["weekdays"],
+            "weekdays_display": weekdays_info
+        }, message="Alarm settings saved")
     except ValidationError as e:
-        logging.warning(f"Alarm validation error: {e.field_name} - {e.message}")
-        return jsonify({
-            "success": False,
-            "message": f"Invalid {e.field_name}: {e.message}",
-            "field": e.field_name
-        }), 400
-    except Exception as e:
-        # Enhanced debug info if debug flag active
-        try:
-            cfg = load_config()
-            debug_mode = cfg.get('debug') if isinstance(cfg, dict) else False
-        except Exception:
-            debug_mode = False
+        logging.warning("Alarm validation error: %s - %s", e.field_name, e.message)
+        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", status=400, error_code=e.field_name)
+    except Exception:
         logging.exception("Error saving alarm configuration")
-        debug_payload = {}
-        if debug_mode:
-            try:
-                debug_payload = {
-                    "form_keys": list(request.form.keys()),
-                    "raw_form": {k: request.form.get(k) for k in request.form.keys()},
-                    "stack": True
-                }
-            except Exception:
-                pass
-        return jsonify({
-            "success": False,
-            "message": f"Error: {str(e)}",
-            "debug": debug_payload
-        }), 500
+        return api_response(False, message="Internal error saving alarm", status=500, error_code="internal_error")
 
 @app.route("/alarm_status")
 @api_error_handler
@@ -346,8 +330,7 @@ def alarm_status():
             config["time"], 
             config.get("weekdays", [])
         )
-    
-    return jsonify({
+    return api_response(True, data={
         "enabled": config.get("enabled", False),
         "time": config.get("time", "07:00"),
         "alarm_volume": config.get("alarm_volume", 50),
@@ -375,25 +358,59 @@ def api_music_library():
 
     token = get_access_token()
     if not token:
-        return jsonify({
-            "error": "401",
-            "message": "Spotify authentication required"
-        }), 401
+        return api_response(False, message="Spotify authentication required", status=401, error_code="auth_required")
     
     try:
+        # Helper to compute stable hash
+        import hashlib, json as _json
+        def _compute_hash(data_dict):
+            try:
+                parts = []
+                for coll in ("playlists","albums","tracks","artists"):
+                    for item in data_dict.get(coll, []) or []:
+                        parts.append(item.get("uri", ""))
+                raw = "|".join(sorted(parts))
+                return hashlib.md5(raw.encode("utf-8")).hexdigest() if raw else "0"*32
+            except Exception:
+                return "0"*32
+
+        # Optional slimming (basic field set) helper
+        def _slim_items(items):
+            allowed = {"uri","name","image_url","track_count","type","artist"}
+            slimmed = []
+            for it in items or []:
+                slimmed.append({k: it.get(k) for k in allowed if k in it})
+            return slimmed
+
+        want_fields = request.args.get('fields')  # "basic" -> slim lists
+        if_modified = request.headers.get('If-None-Match')  # ETag header
+
         # Serve from in-memory cache when fresh
         now = time.time()
         if not force_refresh and api_music_library._cache['data'] and (now - api_music_library._cache['ts'] < cache_ttl):
             cached = api_music_library._cache['data']
-            return jsonify({
-                "success": True,
-                "cached": True,
+            hash_val = _compute_hash(cached)
+            # Conditional request short‑circuit
+            if if_modified and if_modified == hash_val:
+                resp = Response(status=304)
+                resp.headers['ETag'] = hash_val
+                resp.headers['X-MusicLibrary-Hash'] = hash_val
+                return resp
+            resp_data = {
                 "total": cached.get("total", 0),
-                "playlists": cached.get("playlists", []),
-                "albums": cached.get("albums", []),
-                "tracks": cached.get("tracks", []),
-                "artists": cached.get("artists", [])
-            })
+                "playlists": _slim_items(cached.get("playlists", [])) if want_fields == 'basic' else cached.get("playlists", []),
+                "albums": _slim_items(cached.get("albums", [])) if want_fields == 'basic' else cached.get("albums", []),
+                "tracks": _slim_items(cached.get("tracks", [])) if want_fields == 'basic' else cached.get("tracks", []),
+                "artists": _slim_items(cached.get("artists", [])) if want_fields == 'basic' else cached.get("artists", []),
+                "hash": hash_val,
+                "cached": True
+            }
+            resp = api_response(True, data=resp_data, message="ok (memory cache)")
+            resp.headers['X-MusicLibrary-Hash'] = hash_val
+            resp.headers['ETag'] = hash_val
+            if want_fields == 'basic':
+                resp.headers['X-Data-Fields'] = 'basic'
+            return resp
 
         # Get comprehensive music library
         library_data = get_user_library(token)
@@ -407,53 +424,123 @@ def api_music_library():
         except Exception as cache_err:
             logging.debug(f"Could not write music library cache: {cache_err}")
 
-        return jsonify({
-            "success": True,
+        hash_val = _compute_hash(library_data)
+        resp_data = {
             "total": library_data.get("total", 0),
-            "playlists": library_data.get("playlists", []),
-            "albums": library_data.get("albums", []),
-            "tracks": library_data.get("tracks", []),
-            "artists": library_data.get("artists", [])
-        })
+            "playlists": _slim_items(library_data.get("playlists", [])) if want_fields == 'basic' else library_data.get("playlists", []),
+            "albums": _slim_items(library_data.get("albums", [])) if want_fields == 'basic' else library_data.get("albums", []),
+            "tracks": _slim_items(library_data.get("tracks", [])) if want_fields == 'basic' else library_data.get("tracks", []),
+            "artists": _slim_items(library_data.get("artists", [])) if want_fields == 'basic' else library_data.get("artists", []),
+            "hash": hash_val,
+            "cached": False
+        }
+        resp = api_response(True, data=resp_data, message="ok (fresh)")
+        resp.headers['X-MusicLibrary-Hash'] = hash_val
+        resp.headers['ETag'] = hash_val
+        if want_fields == 'basic':
+            resp.headers['X-Data-Fields'] = 'basic'
+        return resp
         
     except Exception as e:
         logging.exception("Error loading music library")
         # Try to serve last known good cache as a graceful fallback
         if api_music_library._cache['data']:
             cached = api_music_library._cache['data']
-            return jsonify({
-                "success": True,
-                "cached": True,
+            hash_val = _compute_hash(cached)
+            resp_data = {
                 "total": cached.get("total", 0),
                 "playlists": cached.get("playlists", []),
                 "albums": cached.get("albums", []),
                 "tracks": cached.get("tracks", []),
                 "artists": cached.get("artists", []),
-                "message": "Served in-memory cached library due to Spotify connectivity issue"
-            })
+                "hash": hash_val,
+                "cached": True
+            }
+            resp = api_response(True, data=resp_data, message="served memory cache (spotify issue)")
+            resp.headers['X-MusicLibrary-Hash'] = hash_val
+            return resp
 
         try:
             from .utils.simple_cache import read_json_cache
             cache_path = str(project_root / "logs" / "music_library_cache.json")
             cached = read_json_cache(cache_path)
             if cached:
-                return jsonify({
-                    "success": True,
-                    "cached": True,
+                hash_val = _compute_hash(cached)
+                resp_data = {
                     "total": cached.get("total", 0),
                     "playlists": cached.get("playlists", []),
                     "albums": cached.get("albums", []),
                     "tracks": cached.get("tracks", []),
                     "artists": cached.get("artists", []),
-                    "message": "Served cached music library due to Spotify connectivity issue"
-                })
+                    "hash": hash_val,
+                    "cached": True
+                }
+                resp = api_response(True, data=resp_data, message="served disk cache (spotify issue)")
+                resp.headers['X-MusicLibrary-Hash'] = hash_val
+                return resp
         except Exception as cache_err:
             logging.debug(f"Could not read music library cache: {cache_err}")
 
-        return jsonify({
-            "error": "503",
-            "message": "Spotify unavailable: failed to load music library"
-        }), 503
+        return api_response(False, message="Spotify unavailable: failed to load music library", status=503, error_code="spotify_unavailable")
+
+@app.route("/api/music-library/sections")
+@api_error_handler
+@rate_limit("spotify_api")
+def api_music_library_sections():
+    """Load only requested music library sections for faster initial UI.
+
+    Query params:
+        sections: comma separated list (playlists,albums,tracks,artists)
+        refresh: force bypass cache if '1' or 'true'
+    """
+    token = get_access_token()
+    if not token:
+        return api_response(False, message="Spotify authentication required", status=401, error_code="auth_required")
+
+    raw_sections = request.args.get('sections', 'playlists')
+    sections = [s.strip() for s in raw_sections.split(',') if s.strip()]
+    force = request.args.get('refresh') in ('1', 'true', 'yes')
+    try:
+        import hashlib
+        partial = load_music_library_sections(token, sections, force_refresh=force)
+        # Compute hash across *all* available sections already cached + just loaded
+        # We reuse the same helper logic as full endpoint in a lightweight form here
+        def _compute_hash(data_dict):
+            try:
+                parts = []
+                for coll in ("playlists","albums","tracks","artists"):
+                    for item in data_dict.get(coll, []) or []:
+                        parts.append(item.get("uri", ""))
+                raw = "|".join(sorted(parts))
+                return hashlib.md5(raw.encode("utf-8")).hexdigest() if raw else "0"*32
+            except Exception:
+                return "0"*32
+        hash_val = _compute_hash(partial)
+        partial['hash'] = hash_val
+        partial['cached'] = partial.get('cached', {})  # ensure field exists
+        if_modified = request.headers.get('If-None-Match')
+        # Optional slimming
+        want_fields = request.args.get('fields')
+        def _slim(items):
+            allowed = {"uri","name","image_url","track_count","type","artist"}
+            return [{k: it.get(k) for k in allowed if k in it} for it in (items or [])]
+        if want_fields == 'basic':
+            for coll in ('playlists','albums','tracks','artists'):
+                partial[coll] = _slim(partial.get(coll, []))
+        if if_modified and if_modified == hash_val:
+            resp = Response(status=304)
+            resp.headers['ETag'] = hash_val
+            resp.headers['X-MusicLibrary-Hash'] = hash_val
+            return resp
+        resp = api_response(True, data=partial, message="ok (partial)")
+        resp.headers['X-MusicLibrary-Hash'] = hash_val
+        resp.headers['ETag'] = hash_val
+        if want_fields == 'basic':
+            resp.headers['X-Data-Fields'] = 'basic'
+        return resp
+    except Exception as e:
+        logging.exception("Error loading partial music library")
+        return api_response(False, message=str(e), status=500, error_code="music_library_partial_error")
 
 @app.route("/api/artist-top-tracks/<artist_id>")
 @api_error_handler
@@ -462,28 +549,17 @@ def api_artist_top_tracks(artist_id):
     """API endpoint for artist top tracks"""
     token = get_access_token()
     if not token:
-        return jsonify({
-            "error": "401",
-            "message": "Spotify authentication required"
-        }), 401
+        return api_response(False, message="Spotify authentication required", status=401, error_code="auth_required")
     
     try:
         from .api.spotify import get_artist_top_tracks
         tracks = get_artist_top_tracks(token, artist_id)
         
-        return jsonify({
-            "success": True,
-            "artist_id": artist_id,
-            "tracks": tracks,
-            "total": len(tracks)
-        })
+        return api_response(True, data={"artist_id": artist_id, "tracks": tracks, "total": len(tracks)})
         
     except Exception as e:
         logging.exception("Error loading artist top tracks")
-        return jsonify({
-            "error": "500",
-            "message": f"Failed to load artist top tracks: {str(e)}"
-        }), 500
+        return api_response(False, message=f"Failed to load artist top tracks: {str(e)}", status=500, error_code="artist_tracks_failed")
 
 @app.route("/api/token-cache/status")
 @rate_limit("status_check")
@@ -491,16 +567,10 @@ def get_token_cache_status():
     """📊 Get token cache performance and status information."""
     try:
         cache_info = get_token_cache_info()
-        return jsonify({
-            "success": True,
-            "cache_info": cache_info
-        })
+        return api_response(True, data={"cache_info": cache_info})
     except Exception as e:
         logging.error(f"❌ Error getting token cache status: {e}")
-        return jsonify({
-            "success": False,
-            "message": f"Error getting cache status: {str(e)}"
-        }), 500
+        return api_response(False, message=f"Error getting cache status: {str(e)}", status=500, error_code="cache_status_error")
 
 @app.route("/api/thread-safety/status")
 @rate_limit("status_check")
@@ -508,16 +578,10 @@ def get_thread_safety_status():
     """📊 Get thread safety status and statistics."""
     try:
         stats = get_config_stats()
-        return jsonify({
-            "success": True,
-            "thread_safety_stats": stats
-        })
+        return api_response(True, data={"thread_safety_stats": stats})
     except Exception as e:
         logging.error(f"❌ Error getting thread safety status: {e}")
-        return jsonify({
-            "success": False,
-            "message": f"Error getting thread safety status: {str(e)}"
-        }), 500
+        return api_response(False, message=f"Error getting thread safety status: {str(e)}", status=500, error_code="thread_safety_error")
 
 @app.route("/api/thread-safety/invalidate-cache", methods=["POST"])
 def invalidate_thread_safe_cache():
@@ -558,21 +622,20 @@ def playback_status():
     """Get current Spotify playback status"""
     token = get_access_token()
     if not token:
-        return jsonify({"error": "401", "message": "Authentication required"})
+        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
     
     try:
         status = get_playback_status(token)
         if status:
-            # Add current track information to playback status
             current_track = get_current_track(token)
             status['current_track'] = current_track
-            return jsonify(status)
+            # Transitional dual-shape: put essentials also in top-level data
+            return api_response(True, data=status, message="ok")
         else:
-            return jsonify({"error": "No active playback"})
+            return api_response(False, message="No active playback", status=200, error_code="no_playback")
     except Exception as e:
         logging.exception("Error getting playback status")
-        # Return a proper service-unavailable status so the UI can degrade gracefully
-        return jsonify({"error": "503", "message": str(e)}), 503
+        return api_response(False, message=str(e), status=503, error_code="playback_status_error")
 
 @app.route("/api/spotify/health")
 @rate_limit("status_check")
@@ -582,7 +645,7 @@ def api_spotify_health():
         from .api.spotify import spotify_network_health
         health = spotify_network_health()
         http_code = 200 if health.get("ok") else 503
-        return jsonify(health), http_code
+        return api_response(health.get("ok", False), data=health, status=http_code, message="ok" if health.get("ok") else "degraded", error_code=None if health.get("ok") else "spotify_degraded")
     except Exception as e:
         logging.exception("Error running Spotify health check")
         return jsonify({
@@ -640,10 +703,10 @@ def toggle_play_pause():
     """Toggle Spotify play/pause"""
     token = get_access_token()
     if not token:
-        return jsonify({"error": "401"}), 401
+        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
     
     result = toggle_playback(token)
-    return jsonify(result)
+    return api_response(True, data=result) if isinstance(result, dict) else api_response(True, data={"result": result})
 
 @app.route("/volume", methods=["POST"])
 @api_error_handler
@@ -651,7 +714,7 @@ def set_volume_endpoint():
     """Set Spotify volume with input validation"""
     token = get_access_token()
     if not token:
-        return jsonify({"error": "401"}), 401
+        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
     
     try:
         # Validate volume input
@@ -659,16 +722,13 @@ def set_volume_endpoint():
         
         success = set_volume(token, volume)
         if success:
-            return jsonify({"success": True, "volume": volume})
+            return api_response(True, data={"volume": volume})
         else:
-            return jsonify({"error": "Failed to set volume"}), 500
+            return api_response(False, message="Failed to set volume", status=500, error_code="volume_set_failed")
             
     except ValidationError as e:
         logging.warning(f"Volume validation error: {e.field_name} - {e.message}")
-        return jsonify({
-            "error": f"Invalid {e.field_name}: {e.message}",
-            "field": e.field_name
-        }), 400
+        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", status=400, error_code=e.field_name)
 
 # =====================================
 # 😴 API Routes - Sleep Timer
@@ -679,7 +739,7 @@ def set_volume_endpoint():
 @rate_limit("status_check")
 def sleep_status_api():
     """Get current sleep timer status"""
-    return jsonify(get_sleep_status())
+    return api_response(True, data=get_sleep_status())
 
 @app.route("/sleep", methods=["POST"])
 @api_error_handler
@@ -697,15 +757,9 @@ def start_sleep():
         is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
         if request.is_json or is_ajax:
             if success:
-                return jsonify({
-                    "success": True,
-                    "message": f"Sleep timer started for {validated_data['duration_minutes']} minutes"
-                })
+                return api_response(True, message=f"Sleep timer started for {validated_data['duration_minutes']} minutes")
             else:
-                return jsonify({
-                    "success": False,
-                    "message": "Failed to start sleep timer"
-                })
+                return api_response(False, message="Failed to start sleep timer", status=500, error_code="sleep_start_failed")
         else:
             # Traditional form submission
             if success:
@@ -720,11 +774,7 @@ def start_sleep():
         logging.warning(f"Sleep timer validation error: {e.field_name} - {e.message}")
         is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
         if request.is_json or is_ajax:
-            return jsonify({
-                "success": False, 
-                "message": error_msg,
-                "field": e.field_name
-            }), 400
+            return api_response(False, message=error_msg, status=400, error_code=e.field_name)
         else:
             session['error_message'] = error_msg
             return redirect(url_for('index'))
@@ -733,7 +783,7 @@ def start_sleep():
         logging.exception("Error starting sleep timer")
         is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
         if request.is_json or is_ajax:
-            return jsonify({"success": False, "message": error_msg}), 500
+            return api_response(False, message=error_msg, status=500, error_code="sleep_start_error")
         else:
             session['error_message'] = error_msg
             return redirect(url_for('index'))
@@ -748,10 +798,7 @@ def stop_sleep():
     # Return JSON for AJAX requests, redirect for form submissions
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
     if request.is_json or is_ajax:
-        return jsonify({
-            "success": success,
-            "message": "Sleep timer stopped" if success else "Failed to stop sleep timer"
-        })
+        return api_response(success, message="Sleep timer stopped" if success else "Failed to stop sleep timer", status=200 if success else 500, error_code=None if success else "sleep_stop_failed")
     else:
         if success:
             session['success_message'] = "Sleep timer stopped"
@@ -781,7 +828,7 @@ def start_playback_endpoint():
     """Start playback for music library"""
     token = get_access_token()
     if not token:
-        return jsonify({"error": "Authentication required"}), 401
+        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
     
     try:
         data = request.get_json()
@@ -789,18 +836,18 @@ def start_playback_endpoint():
         device_id = data.get("device_id")
         
         if not context_uri:
-            return jsonify({"error": "Missing context_uri"}), 400
+            return api_response(False, message="Missing context_uri", status=400, error_code="missing_context_uri")
         
         success = start_playback(token, device_id, context_uri)
         
         if success:
             return jsonify({"success": True, "message": "Playback started"})
         else:
-            return jsonify({"error": "Failed to start playback"}), 500
+            return api_response(False, message="Failed to start playback", status=500, error_code="playback_start_failed")
             
     except Exception as e:
         logging.exception("Error starting playback")
-        return jsonify({"error": str(e)}), 500
+    return api_response(False, message=str(e), status=500, error_code="playback_start_error")
 
 @app.route("/play", methods=["POST"])
 @api_error_handler
@@ -808,7 +855,7 @@ def play_endpoint():
     """Play music on specified device - simplified endpoint for frontend"""
     token = get_access_token()
     if not token:
-        return jsonify({"error": "Authentication required"}), 401
+        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
     
     try:
         # Handle form-encoded data (from frontend)
@@ -816,15 +863,15 @@ def play_endpoint():
         uri = request.form.get('uri')
         
         if not uri:
-            return jsonify({"error": "Missing URI"}), 400
+            return api_response(False, message="Missing URI", status=400, error_code="missing_uri")
         
         if not device_name:
-            return jsonify({"error": "Missing device name"}), 400
+            return api_response(False, message="Missing device name", status=400, error_code="missing_device")
         
         # Get devices to find device_id from device_name
         devices = get_devices(token)
         if not devices:
-            return jsonify({"error": "No devices available"}), 404
+            return api_response(False, message="No devices available", status=404, error_code="no_devices")
         
         # Find device by name
         target_device = None
@@ -834,19 +881,19 @@ def play_endpoint():
                 break
         
         if not target_device:
-            return jsonify({"error": f"Device '{device_name}' not found"}), 404
+            return api_response(False, message=f"Device '{device_name}' not found", status=404, error_code="device_not_found")
         
         # Start playback
         success = start_playback(token, target_device['id'], uri)
         
         if success:
-            return jsonify({"success": True, "message": "Playback started"})
+            return api_response(True, message="Playback started")
         else:
-            return jsonify({"error": "Failed to start playback"}), 500
+            return api_response(False, message="Failed to start playback", status=500, error_code="playback_start_failed")
             
     except Exception as e:
         logging.exception("Error in play endpoint")
-        return jsonify({"error": str(e)}), 500
+        return api_response(False, message=str(e), status=500, error_code="play_endpoint_error")
 
 # =====================================
 # 📱 Utility Routes
@@ -871,21 +918,15 @@ def debug_language():
 def save_volume():
     """Save volume setting to configuration with input validation"""
     try:
-        # Validate volume input
         volume = validate_volume_only(request.form)
-        
         config = load_config()
         config["volume"] = volume
-        
         success = save_config(config)
-        return jsonify({"success": success, "volume": volume})
+        return api_response(success, data={"volume": volume}, message="Volume saved" if success else "Failed to save volume", status=200 if success else 500, error_code=None if success else "save_volume_failed")
         
     except ValidationError as e:
         logging.warning(f"Save volume validation error: {e.field_name} - {e.message}")
-        return jsonify({
-            "error": f"Invalid {e.field_name}: {e.message}",
-            "field": e.field_name
-        }), 400
+        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", status=400, error_code=e.field_name)
 
 # =====================================
 # 🚨 Error Handlers
@@ -924,11 +965,11 @@ def start_alarm_scheduler():
     # Ensure single-flight startup
     if getattr(start_alarm_scheduler, '_started', False):
         return
-    print("🚨 Starting alarm scheduler thread...")
+    logging.info("🚨 Starting alarm scheduler thread...")
     alarm_thread = threading.Thread(target=alarm_scheduler, daemon=True)
     alarm_thread.start()
     start_alarm_scheduler._started = True
-    print("⏰ Background alarm scheduler started")
+    logging.info("⏰ Background alarm scheduler started")
 
 # =====================================
 # 🚨 Rate Limiting Management API
@@ -940,8 +981,7 @@ def get_rate_limiting_status():
     """📊 Get rate limiting status and statistics."""
     try:
         stats = rate_limiter.get_statistics()
-        return jsonify({
-            "success": True,
+        return api_response(True, data={
             "timestamp": datetime.datetime.now().isoformat(),
             "rate_limiting": {
                 "enabled": True,
@@ -951,11 +991,7 @@ def get_rate_limiting_status():
         })
     except Exception as e:
         logger.error(f"Error getting rate limiting status: {e}")
-        return jsonify({
-            "success": False,
-            "error": "Failed to get rate limiting status",
-            "message": str(e)
-        }), 500
+        return api_response(False, message=str(e), status=500, error_code="rate_limit_status_error")
 
 @app.route("/api/rate-limiting/reset", methods=["POST"])
 @rate_limit("config_changes")
@@ -965,18 +1001,10 @@ def reset_rate_limiting():
         # Clear all rate limiting data
         rate_limiter._storage.clear()
         
-        return jsonify({
-            "success": True,
-            "message": "Rate limiting data reset successfully",
-            "timestamp": datetime.datetime.now().isoformat()
-        })
+        return api_response(True, data={"timestamp": datetime.datetime.now().isoformat()}, message="Rate limiting data reset successfully")
     except Exception as e:
         logger.error(f"Error resetting rate limiting: {e}")
-        return jsonify({
-            "success": False,
-            "error": "Failed to reset rate limiting",
-            "message": str(e)
-        }), 500
+        return api_response(False, message=str(e), status=500, error_code="rate_limit_reset_error")
 
 # =====================================
 # 🏗️ Service Layer API Endpoints
@@ -989,25 +1017,13 @@ def api_services_health():
     try:
         result = service_manager.health_check_all()
         if result.success:
-            return jsonify({
-                "success": True,
-                "timestamp": result.timestamp.isoformat(),
-                "health": result.data
-            })
+            return api_response(True, data={"timestamp": result.timestamp.isoformat(), "health": result.data})
         else:
-            return jsonify({
-                "success": False,
-                "error": result.message,
-                "error_code": result.error_code
-            }), 500
+            return api_response(False, message=result.message, status=500, error_code=result.error_code or "services_health_error")
             
     except Exception as e:
         logger.error(f"Error in services health check: {e}")
-        return jsonify({
-            "success": False,
-            "error": "Failed to check services health",
-            "message": str(e)
-        }), 500
+        return api_response(False, message=str(e), status=500, error_code="services_health_exception")
 
 @app.route("/api/services/performance")
 @rate_limit("status_check")
@@ -1016,25 +1032,13 @@ def api_services_performance():
     try:
         result = service_manager.get_performance_overview()
         if result.success:
-            return jsonify({
-                "success": True,
-                "timestamp": result.timestamp.isoformat(),
-                "performance": result.data
-            })
+            return api_response(True, data={"timestamp": result.timestamp.isoformat(), "performance": result.data})
         else:
-            return jsonify({
-                "success": False,
-                "error": result.message,
-                "error_code": result.error_code
-            }), 500
+            return api_response(False, message=result.message, status=500, error_code=result.error_code or "services_performance_error")
             
     except Exception as e:
         logger.error(f"Error getting performance overview: {e}")
-        return jsonify({
-            "success": False,
-            "error": "Failed to get performance overview",
-            "message": str(e)
-        }), 500
+        return api_response(False, message=str(e), status=500, error_code="services_performance_exception")
 
 @app.route("/api/services/diagnostics")
 @rate_limit("status_check")
@@ -1043,25 +1047,13 @@ def api_services_diagnostics():
     try:
         result = service_manager.run_diagnostics()
         if result.success:
-            return jsonify({
-                "success": True,
-                "timestamp": result.timestamp.isoformat(),
-                "diagnostics": result.data
-            })
+            return api_response(True, data={"timestamp": result.timestamp.isoformat(), "diagnostics": result.data})
         else:
-            return jsonify({
-                "success": False,
-                "error": result.message,
-                "error_code": result.error_code
-            }), 500
+            return api_response(False, message=result.message, status=500, error_code=result.error_code or "services_diagnostics_error")
             
     except Exception as e:
         logger.error(f"Error running diagnostics: {e}")
-        return jsonify({
-            "success": False,
-            "error": "Failed to run diagnostics",
-            "message": str(e)
-        }), 500
+        return api_response(False, message=str(e), status=500, error_code="services_diagnostics_exception")
 
 # =====================================
 # ⏱️ Alarm Manual Trigger Endpoint
@@ -1077,18 +1069,10 @@ def api_alarm_execute():
     """
     try:
         result = execute_alarm()
-        return jsonify({
-            "success": bool(result),
-            "executed": bool(result),
-            "message": "Alarm executed" if result else "Alarm conditions not met or failed"
-        }), 200 if result else 400
+        return api_response(bool(result), data={"executed": bool(result)}, message="Alarm executed" if result else "Alarm conditions not met or failed", status=200 if result else 400, error_code=None if result else "alarm_not_executed")
     except Exception as e:
         logger.error(f"Error executing alarm manually: {e}")
-        return jsonify({
-            "success": False,
-            "error": "Failed to execute alarm",
-            "message": str(e)
-        }), 500
+        return api_response(False, message=str(e), status=500, error_code="alarm_execute_error")
 
 @app.route("/api/alarm/advanced-status")
 @rate_limit("status_check")
@@ -1099,25 +1083,13 @@ def api_alarm_advanced_status():
         result = alarm_service.get_alarm_status()
         
         if result.success:
-            return jsonify({
-                "success": True,
-                "timestamp": result.timestamp.isoformat(),
-                "alarm": result.data
-            })
+            return api_response(True, data={"timestamp": result.timestamp.isoformat(), "alarm": result.data})
         else:
-            return jsonify({
-                "success": False,
-                "error": result.message,
-                "error_code": result.error_code
-            }), 400
+            return api_response(False, message=result.message, status=400, error_code=result.error_code or "alarm_status_error")
             
     except Exception as e:
         logger.error(f"Error getting advanced alarm status: {e}")
-        return jsonify({
-            "success": False,
-            "error": "Failed to get alarm status",
-            "message": str(e)
-        }), 500
+        return api_response(False, message=str(e), status=500, error_code="alarm_status_exception")
 
 @app.route("/api/spotify/auth-status")
 @rate_limit("spotify_api")
@@ -1128,25 +1100,13 @@ def api_spotify_auth_status():
         result = spotify_service.get_authentication_status()
         
         if result.success:
-            return jsonify({
-                "success": True,
-                "timestamp": result.timestamp.isoformat(),
-                "spotify": result.data
-            })
+            return api_response(True, data={"timestamp": result.timestamp.isoformat(), "spotify": result.data})
         else:
-            return jsonify({
-                "success": False,
-                "error": result.message,
-                "error_code": result.error_code
-            }), 401 if result.error_code == "AUTH_REQUIRED" else 500
+            return api_response(False, message=result.message, status=401 if result.error_code == "AUTH_REQUIRED" else 500, error_code=result.error_code or "spotify_auth_error")
             
     except Exception as e:
         logger.error(f"Error getting Spotify auth status: {e}")
-        return jsonify({
-            "success": False,
-            "error": "Failed to get Spotify status",
-            "message": str(e)
-        }), 500
+        return api_response(False, message=str(e), status=500, error_code="spotify_auth_exception")
 
 @app.route("/api/sleep/advanced-status")
 @rate_limit("status_check")
@@ -1157,25 +1117,13 @@ def api_sleep_advanced_status():
         result = sleep_service.get_sleep_status()
         
         if result.success:
-            return jsonify({
-                "success": True,
-                "timestamp": result.timestamp.isoformat(),
-                "sleep": result.data
-            })
+            return api_response(True, data={"timestamp": result.timestamp.isoformat(), "sleep": result.data})
         else:
-            return jsonify({
-                "success": False,
-                "error": result.message,
-                "error_code": result.error_code
-            }), 500
+            return api_response(False, message=result.message, status=500, error_code=result.error_code or "sleep_status_error")
             
     except Exception as e:
         logger.error(f"Error getting advanced sleep status: {e}")
-        return jsonify({
-            "success": False,
-            "error": "Failed to get sleep status",
-            "message": str(e)
-        }), 500
+        return api_response(False, message=str(e), status=500, error_code="sleep_status_exception")
 
 @app.route("/api/spotify/devices")
 @api_error_handler
@@ -1184,10 +1132,10 @@ def api_spotify_devices():
     """API endpoint for getting available Spotify devices."""
     token = get_access_token()
     if not token:
-        return jsonify({"error": "401", "message": "Authentication required"}), 401
+        return api_response(False, message="Authentication required", status=401, error_code="auth_required")
     
     devices = get_devices(token)
-    return jsonify(devices if devices else [])
+    return api_response(True, data={"devices": devices if devices else []})
 
 # =====================================
 # 🚀 Application Runner
@@ -1201,9 +1149,9 @@ def run_app(host="0.0.0.0", port=5001, debug=False):
 # Do not start scheduler at import time to avoid duplicate threads in WSGI
 
 if __name__ == "__main__":
-    print(f"🎵 Starting {get_app_info()}")
-    print(f"📁 Project root: {project_root}")
-    print(f"⚙️ Config loaded: {bool(load_config())}")
+    logging.info(f"🎵 Starting {get_app_info()}")
+    logging.info(f"📁 Project root: {project_root}")
+    logging.info(f"⚙️ Config loaded: {bool(load_config())}")
     
     # Development vs Production
     config = load_config()
