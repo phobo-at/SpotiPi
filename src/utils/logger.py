@@ -23,32 +23,50 @@ IS_RASPBERRY_PI = (
 )
 IS_DEV_MODE = '--dev' in sys.argv or os.getenv('SPOTIPI_DEV') == '1'
 
-# SD-Card friendly settings for Raspberry Pi
+# Base defaults depending on environment (before overrides)
 if IS_RASPBERRY_PI and not IS_DEV_MODE:
-    # Minimal logging for production on Raspberry Pi
     LOG_LEVEL = logging.WARNING
     ENABLE_FILE_LOGGING = False
     ENABLE_DAILY_LOGS = False
-    ENABLE_ERROR_LOGS = True  # Only critical errors
-    MAX_LOG_SIZE = 1 * 1024 * 1024  # 1MB max
-    BACKUP_COUNT = 1  # Only 1 backup file
+    ENABLE_ERROR_LOGS = True
+    MAX_LOG_SIZE = 1 * 1024 * 1024
+    BACKUP_COUNT = 1
     ENABLE_SYSTEM_INFO = False
-    LOG_DIR = Path("/tmp/spotipi_logs")  # Use RAM disk for minimal logging
+    LOG_DIR = Path("/tmp/spotipi_logs")
 else:
-    # Full logging for development or non-Pi systems
     LOG_LEVEL = logging.INFO
     ENABLE_FILE_LOGGING = True
     ENABLE_DAILY_LOGS = True
     ENABLE_ERROR_LOGS = True
-    MAX_LOG_SIZE = 10 * 1024 * 1024  # 10MB max
+    MAX_LOG_SIZE = 10 * 1024 * 1024
     BACKUP_COUNT = 5
     ENABLE_SYSTEM_INFO = True
-    # Allow override via env
     _env_log_dir = os.getenv('SPOTIPI_LOG_DIR')
     if _env_log_dir:
         LOG_DIR = Path(_env_log_dir)
     else:
         LOG_DIR = Path.home() / ".spotify_wakeup" / "logs"
+
+# ---- Environment overrides (systemd friendly) ----
+_env_level = os.getenv('SPOTIPI_LOG_LEVEL')
+if _env_level:
+    try:
+        LOG_LEVEL = getattr(logging, _env_level.upper())
+    except AttributeError:
+        pass  # Ignore invalid level
+
+if os.getenv('SPOTIPI_FORCE_FILE_LOG') == '1':
+    ENABLE_FILE_LOGGING = True
+    # Keep directory writable
+    if 'LOG_DIR' not in globals():
+        LOG_DIR = Path.home() / ".spotify_wakeup" / "logs"
+
+if os.getenv('SPOTIPI_DISABLE_DAILY_LOGS') == '1':
+    ENABLE_DAILY_LOGS = False
+
+if os.getenv('SPOTIPI_SYSTEM_INFO') == '0':
+    ENABLE_SYSTEM_INFO = False
+
 try:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 except Exception:

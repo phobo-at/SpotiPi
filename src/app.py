@@ -1000,6 +1000,33 @@ def api_services_diagnostics():
             "message": str(e)
         }), 500
 
+# =====================================
+# ⏱️ Alarm Manual Trigger Endpoint
+# =====================================
+
+@app.route("/api/alarm/execute", methods=["POST"])
+@rate_limit("config_changes")
+def api_alarm_execute():
+    """Manually execute the alarm immediately.
+
+    Useful for debugging on the Raspberry Pi when checking playlist/device
+    configuration or verifying logging. Returns JSON with success flag.
+    """
+    try:
+        result = execute_alarm()
+        return jsonify({
+            "success": bool(result),
+            "executed": bool(result),
+            "message": "Alarm executed" if result else "Alarm conditions not met or failed"
+        }), 200 if result else 400
+    except Exception as e:
+        logger.error(f"Error executing alarm manually: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Failed to execute alarm",
+            "message": str(e)
+        }), 500
+
 @app.route("/api/alarm/advanced-status")
 @rate_limit("status_check")
 def api_alarm_advanced_status():
