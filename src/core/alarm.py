@@ -54,30 +54,42 @@ def is_weekday_enabled(config: Dict[str, Any], current_weekday: int) -> bool:
     # Check if current weekday is in enabled list
     return current_weekday in weekdays
 
-def execute_alarm() -> None:
-    """Main alarm execution function with comprehensive error handling."""
-    # ✅ CHECK FIRST, THEN LOG - saves 99% of SD access
+def execute_alarm() -> bool:
+    """Main alarm execution function.
+
+    Returns:
+        bool: True if playback was started, False otherwise
+    """
     now = datetime.datetime.now()
-    
+
     try:
         config = load_config()
     except Exception as e:
         logger.error(f"❌ Failed to load config: {e}")
-        return
+        return False
 
-    # 🔇 Silent exit if alarm is disabled – NO LOGS!
+    # Helper for conditional debug logging (only when config.debug True)
+    def debug(reason: str):
+        try:
+            if config and config.get("debug"):
+                logger.info(f"[ALARM DEBUG] {reason}")
+        except Exception:
+            pass
+
     if not config:
-        return
+        debug("Config is empty or could not be loaded")
+        return False
 
     if not config.get("enabled", False):
-        return
+        debug("Alarm not enabled -> skip")
+        return False
 
-    # Check weekday scheduling
-    current_weekday = now.weekday()  # 0=Monday, 6=Sunday
+    current_weekday = now.weekday()  # 0=Mon, 6=Sun
     if not is_weekday_enabled(config, current_weekday):
-        return
+        debug(f"Weekday {current_weekday} not enabled (weekdays={config.get('weekdays')})")
+        return False
 
-    # ✅ From here on, log only if alarm is ACTIVE
+    # From here on we log normal info
     log("🚀 SpotiPi Wakeup started")
     log(f"👤 User: {os.getenv('USER', 'Unknown')}")
     log(f"🏠 Home directory (expanduser): {os.path.expanduser('~')}")
@@ -88,12 +100,12 @@ def execute_alarm() -> None:
     log(f"📅 Current weekday: {current_weekday} (0=Mon, 6=Sun)")
     log(f"📄 Loaded config: {config}")
 
-    # 🎯 Time check
+    # Time check
     try:
         target_time = datetime.datetime.strptime(config["time"], "%H:%M")
     except (ValueError, KeyError) as e:
         log(f"❌ Invalid time format in config: {config.get('time')} - {e}")
-        return
+        return False
 
     target_today = now.replace(
         hour=target_time.hour,
@@ -107,35 +119,35 @@ def execute_alarm() -> None:
     log(f"📏 Time difference: {diff_minutes:.2f} minutes")
 
     if abs(diff_minutes) > 1.5:
-        log("⏳ Not time yet.")
-        return
+        debug(f"Not within trigger window (±1.5m). diff={diff_minutes:.2f}m")
+        return False
 
-    # ▶️ Start playback
+    # Start playback
     try:
         token = get_access_token()
         if not token:
             log("❌ Failed to retrieve token.")
-            return
+            return False
 
         device_name = config.get("device_name", "")
         if not device_name:
             log("❌ No device name configured.")
-            return
+            return False
 
         device_id = get_device_id(token, device_name)
         if not device_id:
             log(f"❌ Device '{device_name}' not found.")
-            return
+            return False
 
-        # 🎚️ Target volume and Fade-In
-        # Use alarm_volume if available, otherwise fallback to volume
         target_volume = config.get("alarm_volume", config.get("volume", 50))
         fade_in = config.get("fade_in", False)
         shuffle = config.get("shuffle", False)
         log(f"🎚️ Alarm volume: {target_volume}%, Fade-In: {fade_in}, Shuffle: {shuffle}")
 
+        if not config.get("playlist_uri"):
+            debug("No playlist_uri configured; playback may fail")
+
         if not fade_in:
-            # Direct start with saved alarm volume
             start_playback(
                 token,
                 device_id,
@@ -145,7 +157,6 @@ def execute_alarm() -> None:
             )
             log(f"▶️ Playback started directly with {target_volume}% alarm volume")
         else:
-            # Gentle start at 5%, then ramp fade-in to saved alarm volume
             start_playback(
                 token,
                 device_id,
@@ -154,8 +165,6 @@ def execute_alarm() -> None:
                 shuffle=shuffle
             )
             log("▶️ Playback started at 5% volume (Fade-In to alarm volume)")
-            
-            # Fade-in with better error handling
             try:
                 for v in range(10, target_volume + 1, 5):
                     time.sleep(5)
@@ -174,10 +183,9 @@ def execute_alarm() -> None:
             except Exception as e:
                 log(f"❌ Error during fade-in: {e}")
 
-        # After successful playback:
         log("✅ Playback started.")
 
-        # 🔄 Automatically disable alarm after triggering (THREAD-SAFE)
+        # Auto-disable alarm
         try:
             with config_transaction() as transaction:
                 current_config = transaction.load()
@@ -187,11 +195,14 @@ def execute_alarm() -> None:
         except Exception as e:
             log(f"❌ Error disabling the alarm: {e}")
 
+        return True
+
     except Exception as e:
         log(f"❌ Unexpected error during alarm execution: {e}")
         logger.exception("Full traceback for alarm error:")
-
-        log("🏁 Alarm execution finished")
+        return False
+    finally:
+        debug("Alarm evaluation finished")
 
 if __name__ == "__main__":
     execute_alarm()
