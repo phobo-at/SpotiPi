@@ -74,7 +74,26 @@
     <small id="device-help" class="form-help">{{ t('device_help') }}</small>
   </div>
 
-  <!-- Hidden field for volume -->
+  <!-- Alarm Volume Control -->
+  <div class="form-group">
+    <label for="alarm_volume_slider">{{ t('alarm_volume') }}</label>
+    <div class="volume-control">
+      <input 
+        type="range" 
+        id="alarm_volume_slider" 
+        name="alarm_volume"
+        min="5" 
+        max="100" 
+        value="{{ config.get('alarm_volume', 50) }}" 
+        class="volume-slider"
+        aria-describedby="alarm-volume-help"
+      >
+      <span class="volume-display" id="alarm-volume-display">{{ config.get('alarm_volume', 50) }}%</span>
+    </div>
+    <small id="alarm-volume-help" class="form-help">{{ t('alarm_volume_help') }}</small>
+  </div>
+
+  <!-- Hidden field for volume (legacy compatibility) -->
   <input type="hidden" id="volume" name="volume" value="{{ config.volume or 50 }}">
   
   <!-- Hidden field for playlist URI -->

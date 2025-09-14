@@ -18,10 +18,10 @@ export function saveAlarmSettings() {
   // Create FormData from form
   const formData = new FormData(form);
   
-  // Add current volume value from local state
-  const volumeSlider = DOM.getElement('volume-slider');
-  const currentVolume = volumeSlider && volumeSlider.value ? volumeSlider.value : 50;
-  formData.set('alarm_volume', currentVolume);
+  // Add current alarm volume value from the dedicated slider
+  const alarmVolumeSlider = DOM.getElement('alarm_volume_slider');
+  const alarmVolume = alarmVolumeSlider && alarmVolumeSlider.value ? alarmVolumeSlider.value : 50;
+  formData.set('alarm_volume', alarmVolume);
   
   // Playlist URI from hidden field
   const playlistUri = DOM.getElement('playlist_uri')?.value || '';
@@ -61,7 +61,7 @@ export function saveAlarmSettings() {
     
     if (data && data.success) {
       const timeValue = formData.get('time') || t('unknown') || 'unknown';
-      const volumeValue = currentVolume || '50';
+      const volumeValue = alarmVolume || '50';
       const statusMessage = formData.get('enabled') === 'on' 
         ? `${t('alarm_set_for') || 'Alarm set for'} ${timeValue}<br><span class="volume-info">${t('volume') || 'Volume'}: ${volumeValue}%</span>`
         : t('no_alarm_active') || 'No alarm active';

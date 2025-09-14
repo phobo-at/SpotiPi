@@ -82,6 +82,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'no_devices_found': 'Keine Lautsprecher gefunden',
         'speaker_error': 'Fehler beim Laden der Lautsprecher',
         
+        # Volume Controls
+        'alarm_volume': 'Wecker-Lautstärke',
+        'alarm_volume_help': 'Lautstärke nur für den Wecker (hat keine Auswirkung auf die aktuelle Wiedergabe)',
+        
         # Status Messages
         'settings_saved': 'Einstellungen gespeichert!',
         'error_saving': 'Fehler beim Speichern der Einstellungen',
@@ -254,6 +258,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'loading_devices': 'Loading speakers...',
         'no_devices_found': 'No speakers found',
         'speaker_error': 'Error loading speakers',
+        
+        # Volume Controls
+        'alarm_volume': 'Alarm Volume',
+        'alarm_volume_help': 'Volume for alarm only (does not affect current playback)',
         
         # Status Messages
         'settings_saved': 'Settings saved!',

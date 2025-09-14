@@ -7,6 +7,34 @@ import { saveAlarmSettings } from './settings.js';
 
 console.log("eventListeners.js loaded");
 
+// Debouncing for alarm settings to prevent rapid-fire saves
+let alarmSaveTimeout = null;
+let lastAlarmSaveTime = 0;
+const ALARM_SAVE_COOLDOWN = 2000; // 2 seconds between saves
+
+function throttledSaveAlarmSettings() {
+    const now = Date.now();
+    
+    // Clear existing timeout
+    if (alarmSaveTimeout) {
+        clearTimeout(alarmSaveTimeout);
+    }
+    
+    // If enough time has passed since last save, save immediately
+    if (now - lastAlarmSaveTime >= ALARM_SAVE_COOLDOWN) {
+        lastAlarmSaveTime = now;
+        console.log('🚨 Immediate alarm save (cooldown passed)');
+        saveAlarmSettings();
+    } else {
+        // Otherwise, debounce the save
+        alarmSaveTimeout = setTimeout(() => {
+            lastAlarmSaveTime = Date.now();
+            console.log('🚨 Debounced alarm save');
+            saveAlarmSettings();
+        }, 1000);
+    }
+}
+
 export function initializeEventListeners() {
     console.log("Event Listeners Initializing...");
 
@@ -20,7 +48,7 @@ export function initializeEventListeners() {
         // Alarm form elements
         alarmEnabled: '#enabled',
         alarmTime: '#time',
-        alarmVolumeSlider: '#volume-slider',
+        alarmVolumeSlider: '#alarm_volume_slider',
         deviceSelect: '#device_name',
         fadeInSelect: '#fade_in',
         shuffleCheckbox: '#shuffle'
@@ -56,46 +84,52 @@ export function initializeEventListeners() {
     // Update playback info immediately
     updatePlaybackInfo();
 
-    // Alarm form event handlers - rely on backend rate limiting
+    // Alarm form event handlers with intelligent throttling
     if (elements.alarmEnabled) {
         elements.alarmEnabled.addEventListener('change', function() {
             console.log('🚨 Alarm enabled changed:', this.checked);
-            saveAlarmSettings();
+            throttledSaveAlarmSettings();
         });
     }
 
     if (elements.alarmTime) {
         elements.alarmTime.addEventListener('change', function() {
             console.log('🚨 Alarm time changed:', this.value);
-            saveAlarmSettings();
+            throttledSaveAlarmSettings();
         });
     }
 
     if (elements.alarmVolumeSlider) {
         elements.alarmVolumeSlider.addEventListener('input', function() {
+            // Always update display immediately
+            const display = document.getElementById('alarm-volume-display');
+            if (display) {
+                display.textContent = this.value + '%';
+            }
+            
             console.log('🚨 Alarm volume changed:', this.value);
-            saveAlarmSettings();
+            throttledSaveAlarmSettings();
         });
     }
 
     if (elements.deviceSelect) {
         elements.deviceSelect.addEventListener('change', function() {
             console.log('🚨 Device changed:', this.value);
-            saveAlarmSettings();
+            throttledSaveAlarmSettings();
         });
     }
 
     if (elements.fadeInSelect) {
         elements.fadeInSelect.addEventListener('change', function() {
             console.log('🚨 Fade in changed:', this.value);
-            saveAlarmSettings();
+            throttledSaveAlarmSettings();
         });
     }
 
     if (elements.shuffleCheckbox) {
         elements.shuffleCheckbox.addEventListener('change', function() {
             console.log('🚨 Shuffle changed:', this.checked);
-            saveAlarmSettings();
+            throttledSaveAlarmSettings();
         });
     }
 

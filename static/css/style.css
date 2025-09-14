@@ -219,6 +219,7 @@ select {
   padding: var(--spacing-md);
   padding-top: calc(var(--spacing-md) + 8px);
   padding-bottom: var(--spacing-lg);
+  margin-top: var(--spacing-lg); /* Extra top margin for better spacing */
   margin-bottom: var(--spacing-md);
   position: relative;
 }
@@ -477,7 +478,28 @@ input[type="range"]::-moz-range-thumb:hover {
 }
 
 /* ===============================================
-   🎵 Current Track
+   �️ Volume Controls
+   =============================================== */
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.volume-control .volume-slider {
+  flex: 1;
+}
+
+.volume-control .volume-display {
+  color: var(--color-primary);
+  font-weight: 500;
+  font-size: 14px;
+  min-width: 45px;
+  text-align: right;
+}
+
+/* ===============================================
+   �🎵 Current Track
    =============================================== */
 .current-track {
   display: flex;
@@ -1153,6 +1175,8 @@ body {
   min-height: 200px; /* Minimum height */
   scrollbar-width: none; /* Firefox - hide scrollbar */
   -ms-overflow-style: none; /* IE and Edge - hide scrollbar */
+  /* Fix for single item centering */
+  align-content: start; /* Force grid content to start at top */
 }
 
 /* Webkit Scrollbar (Chrome, Safari, Edge) - hide completely */
@@ -1318,8 +1342,9 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: var(--spacing-sm);
   width: 100%;
-  min-height: 400px;
+  /* Remove min-height to prevent vertical centering with few items */
   place-items: start;
+  align-content: start;
   position: relative;
   max-width: 100%;
 }
