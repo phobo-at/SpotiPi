@@ -49,7 +49,8 @@ static_dir = project_root / "static"
 
 app = Flask(__name__, 
            template_folder=str(template_dir), 
-           static_folder=str(static_dir))
+           static_folder=str(static_dir),
+           static_url_path='/static')
 
 # Secure secret key generation
 import secrets

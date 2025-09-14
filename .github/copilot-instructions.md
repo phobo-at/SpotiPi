@@ -229,3 +229,5 @@ manager.restart()  # Zero-downtime restart
 - **Config Updates**: Use `config_transaction()` for atomic config changes  
 - **Service Access**: Get services via `get_service_manager().service_name`
 - **Background Tasks**: Use Flask's thread-safe patterns for alarm scheduling
+- **Language**: Project language is English. Make sure that all comments, logs are in English.
+- **Translations**: make sure that user-facing strings are translatable using the `t_api` function.

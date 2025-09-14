@@ -85,11 +85,6 @@
           min="0"
           max="100"
           value="{{ config.volume or 50 }}"
-          oninput="handleSliderChange(this.value)"
-          onmousedown="handleSliderStart()"
-          onmouseup="handleSliderEnd(this.value)"
-          ontouchstart="handleSliderStart()"
-          ontouchend="handleSliderEnd(this.value)"
           aria-valuemin="0"
           aria-valuemax="100"
           aria-valuenow="{{ config.volume or 50 }}"
@@ -105,7 +100,6 @@
           id="alarm-tab"
           aria-controls="alarm-interface"
           aria-selected="true"
-          onclick="showInterface('alarm')"
         >
           {{ t('alarm_tab')|safe }}
         </button>
@@ -115,7 +109,6 @@
           id="sleep-tab"
           aria-controls="sleep-interface"
           aria-selected="false"
-          onclick="showInterface('sleep')"
         >
           {{ t('sleep_tab')|safe }}
         </button>
@@ -125,7 +118,6 @@
           id="library-tab"
           aria-controls="library-interface"
           aria-selected="false"
-          onclick="showInterface('library')"
         >
           {{ t('library_tab')|safe }}
         </button>
@@ -133,7 +125,6 @@
           id="playPauseBtn" 
           type="button" 
           class="control-btn" 
-          onclick="togglePlayPause()"
           aria-label="{{ t('play_pause') }}"
         >
           <i class="fas fa-pause"></i>
@@ -194,6 +185,6 @@
 </script>
   
   <!-- Main JavaScript with togglePlayPause etc. -->
-  <script defer src="{{ url_for('static', filename='js/script.js') }}"></script>
+  <script defer type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
