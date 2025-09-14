@@ -689,7 +689,7 @@ def volume_endpoint():
         # Always set Spotify volume first
         spotify_success = set_volume(token, volume)
         
-        # Check if we should also save to config (backward compatibility for /save_volume)
+        # Check if we should also save to config 
         save_to_config = request.form.get('save_config', 'false').lower() == 'true'
         config_success = True
         
@@ -713,27 +713,6 @@ def volume_endpoint():
             
     except ValidationError as e:
         logging.warning(f"Volume validation error: {e.field_name} - {e.message}")
-        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", 
-                          status=400, error_code=e.field_name)
-
-# Legacy endpoint redirect for backward compatibility
-@app.route("/save_volume", methods=["POST"])
-@api_error_handler
-@rate_limit("api_general")
-def save_volume():
-    """DEPRECATED: Use /volume with save_config=true instead. Legacy wrapper for backward compatibility."""
-    try:
-        volume = validate_volume_only(request.form)
-        config = load_config()
-        config["volume"] = volume
-        success = save_config(config)
-        return api_response(success, data={"volume": volume}, 
-                          message=t_api("volume_saved", request) if success else "Failed to save volume", 
-                          status=200 if success else 500, 
-                          error_code=None if success else "save_volume_failed")
-        
-    except ValidationError as e:
-        logging.warning(f"Save volume validation error: {e.field_name} - {e.message}")
         return api_response(False, message=f"Invalid {e.field_name}: {e.message}", 
                           status=400, error_code=e.field_name)
 
@@ -911,14 +890,6 @@ def play_endpoint():
     except Exception as e:
         logging.exception("Error in play endpoint")
         return api_response(False, message=str(e), status=500, error_code="play_endpoint_error")
-
-# Legacy endpoint redirect for backward compatibility
-@app.route("/start_playback", methods=["POST"])
-@api_error_handler
-def start_playback_endpoint():
-    """DEPRECATED: Use /play instead. Redirect for backward compatibility."""
-    # Simply redirect to the unified endpoint
-    return play_endpoint()
 
 # =====================================
 # 📱 Utility Routes
@@ -1139,28 +1110,6 @@ def api_alarm_execute():
         logger.error(f"Error executing alarm manually: {e}")
         return api_response(False, message=str(e), status=500, error_code="alarm_execute_error")
 
-@app.route("/api/alarm/advanced-status")
-@rate_limit("status_check")
-def api_alarm_advanced_status():
-    """DEPRECATED: Use /alarm_status?advanced=true instead. Legacy wrapper for backward compatibility."""
-    try:
-        alarm_service = get_service("alarm")
-        result = alarm_service.get_alarm_status()
-        
-        if result.success:
-            return api_response(True, data={
-                "timestamp": result.timestamp.isoformat(), 
-                "alarm": result.data,
-                "mode": "advanced_legacy"
-            })
-        else:
-            return api_response(False, message=result.message, status=400, 
-                              error_code=result.error_code or "alarm_status_error")
-            
-    except Exception as e:
-        logger.error(f"Error in legacy advanced alarm status: {e}")
-        return api_response(False, message=str(e), status=500, error_code="alarm_status_exception")
-
 @app.route("/api/spotify/auth-status")
 @rate_limit("spotify_api")
 def api_spotify_auth_status():
@@ -1177,28 +1126,6 @@ def api_spotify_auth_status():
     except Exception as e:
         logger.error(f"Error getting Spotify auth status: {e}")
         return api_response(False, message=str(e), status=500, error_code="spotify_auth_exception")
-
-@app.route("/api/sleep/advanced-status")
-@rate_limit("status_check")
-def api_sleep_advanced_status():
-    """DEPRECATED: Use /sleep_status?advanced=true instead. Legacy wrapper for backward compatibility."""
-    try:
-        sleep_service = get_service("sleep")
-        result = sleep_service.get_sleep_status()
-        
-        if result.success:
-            return api_response(True, data={
-                "timestamp": result.timestamp.isoformat(), 
-                "sleep": result.data,
-                "mode": "advanced_legacy"
-            })
-        else:
-            return api_response(False, message=result.message, status=500, 
-                              error_code=result.error_code or "sleep_status_error")
-            
-    except Exception as e:
-        logger.error(f"Error in legacy advanced sleep status: {e}")
-        return api_response(False, message=str(e), status=500, error_code="sleep_status_exception")
 
 @app.route("/api/spotify/devices")
 @api_error_handler

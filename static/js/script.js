@@ -180,18 +180,12 @@ async function setVolumeAndSave(value) {
   updateLocalVolumeDisplay(value);
   
   try {
-    await Promise.all([
-      fetchAPI("/volume", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `volume=${value}`
-      }),
-      fetchAPI("/save_volume", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `volume=${value}`
-      })
-    ]);
+    // Use unified volume endpoint with save_config=true
+    await fetchAPI("/volume", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `volume=${value}&save_config=true`
+    });
   } catch (error) {
     console.error('Failed to set and save volume:', error);
   }
