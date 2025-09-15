@@ -132,7 +132,7 @@ def process_alarm(alarm_config: Dict[str, Any]) -> ServiceResult:
 python run.py
 
 # Production logs on Pi
-tail -f ~/.spotify_wakeup/logs/spotipi.log
+tail -f ~/spotipi/logs/spotipi.log
 
 # Browser console (F12 → Console tab)
 ```

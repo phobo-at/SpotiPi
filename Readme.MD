@@ -52,8 +52,8 @@ Everything else is auto-configured with smart defaults.
 
 ```bash
 # On your Pi
-git clone https://github.com/phobo-at/SpotiPi.git /home/pi/.spotify_wakeup
-cd /home/pi/.spotify_wakeup && python3 -m venv venv && source venv/bin/activate
+git clone https://github.com/phobo-at/SpotiPi.git /home/pi/spotipi
+cd /home/pi/spotipi && python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt && python generate_token.py
 
 # Install as service
