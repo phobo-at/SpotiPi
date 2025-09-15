@@ -1,0 +1,66 @@
+/* ===============================================
+   ⏰ Alarm-specific Styles
+   =============================================== */
+.alarm-time-label {
+  display: block;
+  margin-bottom: var(--spacing-sm); /* Match global label spacing */
+  font-weight: bold;
+}
+
+.alarm-time-input {
+  width: 100%;
+  padding: var(--spacing-xs);
+  font-size: 1rem;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background-color: var(--color-surface);
+  color: var(--color-inverse-text);
+  box-sizing: border-box;
+}
+
+/* Weekday Bubbles */
+.weekday-bubbles {
+  display: flex;
+  gap: var(--spacing-xs);
+  justify-content: center;
+  margin: var(--spacing-md) 0;
+  flex-wrap: wrap;
+}
+
+.weekday-bubble {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast) var(--transition-easing);
+  user-select: none;
+
+  /* Inactive (dark gray) */
+  background-color: #4a4a4a;
+  color: var(--color-text-muted);
+  border: 2px solid #666;
+}
+
+.weekday-bubble:hover {
+  background-color: #5a5a5a;
+  border-color: #777;
+  transform: scale(1.05);
+}
+
+.weekday-bubble.active {
+  background-color: var(--color-primary);
+  color: var(--color-inverse-text);
+  border-color: var(--color-primary-hover);
+  box-shadow: 0 0 10px rgba(29, 185, 84, 0.3);
+}
+
+.weekday-bubble.active:hover {
+  background-color: var(--color-primary-hover);
+  box-shadow: 0 0 15px rgba(29, 185, 84, 0.4);
+  transform: scale(1.05);
+}

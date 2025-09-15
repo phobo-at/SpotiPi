@@ -1,0 +1,15 @@
+/* ===============================================
+   📱 PWA iOS Status-Bar
+   =============================================== */
+@media (display-mode: standalone) {
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top);
+    background-color: var(--color-primary);
+    z-index: 9999;
+  }
+}

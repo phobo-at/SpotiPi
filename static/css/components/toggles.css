@@ -1,0 +1,114 @@
+/* ===============================================
+   🔘 Toggle Switches (uniform for all checkboxes)
+   =============================================== */
+.toggle-switch {
+  display: grid;
+  grid-template-columns: 1fr 60px; /* Fixed width for toggle area */
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin: var(--spacing-md) 0;
+}
+
+/* Enable-container uses flexbox for better alignment */
+.enable-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+/* Toggle-switch labels (for grid layout) */
+.toggle-switch label {
+  margin: 0;
+  padding: 0;
+  font-weight: 500;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  grid-column: 1;
+}
+
+/* Enable-container labels (for flexbox layout) */
+.enable-container .enable-label {
+  margin: 0;
+  padding: 0;
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+/* Hide all checkboxes */
+.toggle-switch input[type="checkbox"], .enable-container .enable-checkbox {
+  height: 0;
+  width: 0;
+  visibility: hidden;
+  position: absolute;
+}
+
+/* Switch for toggle-switch (grid layout) */
+.toggle-switch .switch {
+  width: 48px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  background: var(--color-disabled);
+  border-radius: 24px;
+  position: relative;
+  transition: background-color var(--transition-fast);
+  grid-column: 2;
+  justify-self: end;
+}
+
+/* Switch for enable-container (flexbox layout) */
+.enable-container .switch {
+  width: 48px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  background: var(--color-disabled);
+  border-radius: 24px;
+  position: relative;
+  transition: background-color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+/* Uniform slider for ALL toggles */
+.toggle-switch .switch::after, .enable-container .switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px; /* UNIFORM size */
+  height: 20px; /* UNIFORM size */
+  background: var(--color-inverse-text);
+  border-radius: 20px;
+  transition: var(--transition-normal);
+}
+
+/* Common rules for active state */
+.toggle-switch input:checked + .switch, .enable-container input:checked + .switch {
+  background: var(--color-primary);
+}
+
+.toggle-switch input:checked + .switch::after, .enable-container input:checked + .switch::after {
+  left: calc(100% - 2px);
+  transform: translateX(-100%);
+}
+
+.toggle-switch .switch:active:after, .enable-container .switch:active:after {
+  width: 28px;
+}
+
+/* Only the Enable container gets visual highlighting */
+.enable-container {
+  background-color: rgba(29, 185, 84, 0.08);
+  border: 1px solid rgba(29, 185, 84, 0.2);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: var(--spacing-md) 0;
+}

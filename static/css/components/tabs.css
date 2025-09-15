@@ -1,0 +1,61 @@
+/* ===============================================
+   🔗 Shared Tab Components
+   =============================================== */
+
+/* Container for tab groups */
+.tab-container {
+  display: flex;
+  background: var(--color-bg);
+}
+
+/* Base style for all tab buttons */
+.tab-button {
+  flex: 1;
+  padding: var(--spacing-md) var(--spacing-sm); /* Increased vertical padding */
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 16px; /* Increased from 14px */
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  min-width: fit-content;
+  min-height: 48px; /* Minimum touch target size */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Special adjustment for playlist tabs (Alarm/Sleep) */
+.playlist-tabs .tab-button {
+  flex: 0 0 auto; /* Tabs only as wide as their content */
+  padding: var(--spacing-md) var(--spacing-md); /* Match music library padding */
+  font-size: 16px; /* Match music library font size */
+  min-width: 80px; /* Match music library minimum width */
+}
+
+/* Music library tabs need extra touch space */
+.music-library-tabs .tab-button {
+  padding: var(--spacing-md) var(--spacing-md); /* Better touch targets */
+  font-size: 16px; /* Consistent larger font */
+  min-width: 80px; /* Minimum width for easy tapping */
+}
+
+.tab-button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.tab-button.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+/* Playlist Modal Tabs (specific adjustments) */
+.playlist-tabs {
+  display: flex;
+  background: var(--color-bg);
+}

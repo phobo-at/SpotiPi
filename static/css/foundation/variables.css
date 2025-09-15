@@ -1,0 +1,39 @@
+/* ===============================================
+   🎨 Color Scheme & Core Variables
+   =============================================== */
+:root {
+  /* Color palette */
+  --color-bg: #1e1e1e;
+  --color-text: #f1f1f1;
+  --color-text-muted: #999;
+  --color-primary: #1db954;
+  --color-surface: #2c2c2c;
+  --color-surface-hover: #383838;
+  --color-border: #404040;
+  --color-primary-hover: #17a44b;
+  --color-disabled: #555;
+  --color-inverse-text: #ffffff;
+  --color-error: #e74c3c;
+  --color-primary-dark: #145e32;
+  
+  /* Sizes */
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 0.75rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-xxl: 3rem;
+  
+  /* Shadows */
+  --shadow-sm: 0 2px 4px rgba(0,0,0,0.1);
+  --shadow-md: 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-lg: 0 4px 8px rgba(0,0,0,0.3);
+  
+  /* Animations & Transitions */
+  --transition-fast: 0.2s;
+  --transition-normal: 0.3s;
+  --transition-slow: 0.4s;
+  --transition-easing: cubic-bezier(0.4, 0, 0.2, 1);
+}

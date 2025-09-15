@@ -1,0 +1,69 @@
+/* ===============================================
+   🔘 Buttons
+   =============================================== */
+
+/* Base style for all buttons */
+.control-btn, .toggle-buttons button {
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Tab buttons should stack icon over text */
+.toggle-buttons button[role="tab"] {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toggle-buttons button[role="tab"] i {
+  font-size: 1.1em;
+}
+
+.toggle-buttons button[role="tab"] span {
+  font-size: 0.9em;
+  margin-top: 2px;
+}
+
+/* For all buttons */
+.toggle-buttons button {
+  flex: 1;
+  background-color: var(--color-primary);
+  color: var(--color-inverse-text);
+  padding: var(--spacing-sm);
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* Specific styles for tab buttons */
+.toggle-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  flex-wrap: nowrap;
+}
+
+.toggle-buttons button:hover {
+  background-color: var(--color-primary-hover);
+}
+
+/* For the selected button */
+.toggle-buttons[role="tablist"] button[aria-selected="true"] {
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary);
+  box-shadow: none;
+}
+
+/* Disabled state */
+.control-btn:disabled {
+  background-color: var(--color-disabled);
+  cursor: not-allowed;
+}

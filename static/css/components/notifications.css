@@ -1,0 +1,29 @@
+/* ===============================================
+   🔔 Notifications
+   =============================================== */
+.flash {
+  background-color: var(--color-surface);
+  border-left: 6px solid var(--color-primary);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  border-radius: var(--border-radius-md);
+  font-size: 1rem;
+  animation: fadeOut 0.5s ease-in-out forwards;
+  animation-delay: 2s;
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+    height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    padding-right: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: 0;
+    margin-right: 0;
+    overflow: hidden;
+  }
+}

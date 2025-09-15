@@ -1,0 +1,98 @@
+/* ===============================================
+   🔊 Global Volume Control
+   =============================================== */
+.global-volume-container {
+  background-color: var(--color-surface);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-md);
+  margin-bottom: var(--spacing-md);
+  box-shadow: var(--shadow-sm);
+  width: 100%;
+  box-sizing: border-box;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.volume-label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  font-weight: 600;
+}
+
+/* Special styling for global slider */
+#global-volume::-webkit-slider-runnable-track {
+  background: var(--color-bg);
+}
+
+#global-volume::-moz-range-track {
+  background: var(--color-bg);
+}
+
+/* ===============================================
+   🏗️ Main Layout Components
+   =============================================== */
+header {
+  text-align: center;
+  margin-bottom: var(--spacing-lg);
+}
+
+.app-content {
+  flex: 1;
+}
+
+.app-footer {
+  margin-top: var(--spacing-xl);
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--color-disabled);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-surface);
+}
+
+/* Logo styling */
+.logo-icon {
+  margin-right: var(--spacing-xs);
+}
+
+.logo-image {
+  width: 36px;
+  height: 36px;
+  vertical-align: text-top;
+  border-radius: 50%;
+}
+
+.logo-text {
+  background: linear-gradient(90deg, var(--color-primary), #4ae68a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Status bar with time and date */
+.status-bar {
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-xs);
+  font-size: 0.9rem;
+  color: var(--color-disabled);
+}
+
+.current-time {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+/* Flash messages container */
+.flash-container {
+  margin-bottom: var(--spacing-md);
+}
+
+/* Timer display volume info */
+.timer-display .volume-info {
+  font-size: 0.85rem;
+  font-weight: normal;
+  opacity: 0.8;
+  margin-left: 0.5rem;
+}

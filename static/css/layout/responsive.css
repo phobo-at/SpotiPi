@@ -1,0 +1,62 @@
+/* ===============================================
+   📱 Responsive Adjustments
+   =============================================== */
+@media (max-width: 480px) {
+  body {
+    padding: var(--spacing-md);
+  }
+  
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  .album-image {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .current-track .title {
+    font-size: 0.9rem;
+  }
+  
+  .current-track .artist {
+    font-size: 0.8rem;
+  }
+  
+  .toggle-buttons button {
+    flex-grow: 1;
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+  
+  .device-selection-modal {
+    width: 95%;
+    padding: var(--spacing-lg);
+  }
+  
+  .device-selection-modal h3 {
+    font-size: 1.1rem;
+  }
+}
+
+@media (max-width: 350px) {
+  .album-image {
+    width: 40px;
+    height: 40px;
+  }
+  
+  body {
+    padding: var(--spacing-sm);
+  }
+}
+
+/* Save feedback animation */
+@keyframes saveFeedback {
+  0% { border-color: var(--color-primary); background-color: rgba(29, 185, 84, 0.1); }
+  50% { border-color: var(--color-primary); background-color: rgba(29, 185, 84, 0.2); }
+  100% { border-color: var(--color-primary); background-color: rgba(29, 185, 84, 0.1); }
+}
+
+.timer-display.saved {
+  animation: saveFeedback 1s ease;
+}

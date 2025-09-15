@@ -1,0 +1,21 @@
+/* ===============================================
+   😴 Sleep-specific Styles
+   =============================================== */
+.timer-display {
+  font-weight: bold;
+  margin-bottom: var(--spacing-lg); /* Reduced from xl to lg */
+  font-size: 1.1rem;
+  text-align: center;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-xs);
+}
+
+.custom-duration-container {
+  margin-top: var(--spacing-xs);
+  display: none;
+}
+
+.custom-duration-container.active {
+  display: block;
+}

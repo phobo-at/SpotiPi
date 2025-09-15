@@ -1,0 +1,29 @@
+/* ===============================================
+   SpotiPi - Main CSS Orchestrator
+   Modular CSS Architecture
+   =============================================== */
+
+/* 1. Foundation (Core Variables & Base) */
+@import url('foundation/variables.css');
+@import url('foundation/base.css');
+@import url('foundation/utilities.css');
+
+/* 2. Components (Reusable UI Elements) */
+@import url('components/forms.css');
+@import url('components/buttons.css');
+@import url('components/toggles.css');
+@import url('components/sliders.css');
+@import url('components/notifications.css');
+@import url('components/tabs.css');
+
+/* 3. Layout (Structure & Responsive) */
+@import url('layout/main-layout.css');
+@import url('layout/responsive.css');
+@import url('layout/pwa.css');
+
+/* 4. Features (Page-specific Styles) */
+@import url('features/alarm.css');
+@import url('features/devices.css');
+@import url('features/music.css');
+@import url('features/playlists.css');
+@import url('features/sleep.css');

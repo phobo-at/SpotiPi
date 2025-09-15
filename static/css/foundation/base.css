@@ -1,0 +1,28 @@
+/* ===============================================
+   📄 Base Layout
+   =============================================== */
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-left: var(--spacing-xl);
+  padding-right: var(--spacing-xl);
+  padding-bottom: var(--spacing-xl);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.8rem;
+  margin-top: 0;
+  margin-bottom: var(--spacing-xxl);
+  margin-left: 0;
+  margin-right: 0;
+  text-align: center;
+  color: var(--color-primary);
+}
+
+.container {
+  max-width: 400px;
+  margin: 0 auto;
+}
