@@ -9,6 +9,7 @@ import { PlaylistSelector } from './modules/playlistSelector.js';
 import { saveAlarmSettings, activateSleepTimerDirect, deactivateSleepTimerDirect } from './modules/settings.js';
 import { initializeWeekdayBubbles } from './modules/weekdays.js';
 import { initializeDeviceManager } from './modules/deviceManager.js';
+import { loadMusicLibraryProgressively } from './modules/streamingLoader.js';
 import { t } from './modules/translation.js';
 
 /**
@@ -66,107 +67,115 @@ async function loadInitialData() {
     }
 }
 
-// Function to load music library for selectors
+// Function to load music library for selectors with progressive loading
 async function loadPlaylistsForSelectors() {
-    console.log('📋 Loading music library from API...');
+    console.log('⚡ Loading music library with progressive streaming...');
     
     try {
-      // Attempt to hydrate from LocalStorage first (fast path)
-      const meta = JSON.parse(localStorage.getItem('musicLibraryMeta') || 'null');
-      const cachedPartial = JSON.parse(localStorage.getItem('musicLibraryPartial') || 'null');
-      if (cachedPartial && meta?.hash) {
-        console.log('⚡ Using cached partial music library from LocalStorage');
-        if (window.playlistSelectors?.alarm) window.playlistSelectors.alarm.setMusicLibrary(cachedPartial);
-        if (window.playlistSelectors?.sleep) window.playlistSelectors.sleep.setMusicLibrary(cachedPartial);
-        if (window.playlistSelectors?.library) window.playlistSelectors.library.setMusicLibrary(cachedPartial);
-      }
-  
-      // Phase 1: fast partial load (playlists only) for quicker UI readiness, use basic field slimming
-    const resp = await fetchAPI('/api/music-library/sections?sections=playlists&fields=basic');
-      // Unwrap unified envelope
-      let data = resp;
-    if (resp?.data && (resp.data.playlists || resp.data.albums)) {
-        data = resp.data;
-      }
-  
-      if (resp?.success === false && !data.playlists && !data.albums) {
-        console.error('❌ Failed to load music library:', resp.error || resp.message || resp.error_code);
-        if (window.playlistSelectors?.alarm) window.playlistSelectors.alarm.setMusicLibrary({ error: true });
-        if (window.playlistSelectors?.sleep) window.playlistSelectors.sleep.setMusicLibrary({ error: true });
-        if (window.playlistSelectors?.library) window.playlistSelectors.library.setMusicLibrary({ error: true });
-        return;
-      }
-  
-      console.log('📋 Partial music library loaded (phase 1):', (data?.playlists?.length || 0), 'playlists');
-      
-      if (data && (data.playlists || data.albums)) {
-        // Update both selectors
-        if (window.playlistSelectors?.alarm) {
-          console.log('🔧 Setting music library for alarm selector...');
-          window.playlistSelectors.alarm.setMusicLibrary(data);
-          
-          // Load currently selected playlist from data attribute
-          const alarmContainer = document.getElementById('alarm-playlist-selector');
-          const currentUri = alarmContainer?.dataset?.currentPlaylistUri;
-          if (currentUri) {
-            console.log('🔄 Loading previously selected alarm playlist:', currentUri);
-            window.playlistSelectors.alarm.setSelected(currentUri);
-          }
-        }
+        // Initialize streaming loader automatically (lazy initialization)
         
-        if (window.playlistSelectors?.sleep) {
-          console.log('🔧 Setting music library for sleep selector...');
-          window.playlistSelectors.sleep.setMusicLibrary(data);
-          
-          // Load currently selected playlist from data attribute
-          const sleepContainer = document.getElementById('sleep-playlist-selector');
-          const currentUri = sleepContainer?.dataset?.currentSleepPlaylistUri;
-          if (currentUri) {
-            console.log('🔄 Loading previously selected sleep playlist:', currentUri);
-            window.playlistSelectors.sleep.setSelected(currentUri);
-          }
-        }
-  
-        if (window.playlistSelectors?.library) {
-          console.log('🔧 Setting music library for library selector...');
-          window.playlistSelectors.library.setMusicLibrary(data);
-        }
+        // Collect all selectors for updating
+        const selectors = {
+            alarm: window.playlistSelectors?.alarm,
+            sleep: window.playlistSelectors?.sleep, 
+            library: window.playlistSelectors?.library
+        };
         
-        console.log('✅ Music library selectors updated (phase 1)');
-        // Persist partial (playlists only) for reuse
-        try {
-          localStorage.setItem('musicLibraryPartial', JSON.stringify(data));
-          localStorage.setItem('musicLibraryMeta', JSON.stringify({ hash: data.hash, ts: Date.now(), fields: 'basic', phase: 1 }));
-        } catch (e) { console.debug('LocalStorage write failed (partial):', e); }
-      } else {
-        console.warn('⚠️ No music library data received');
-      }
-  
-      // Phase 2: load remaining sections in background (albums, tracks, artists) lazily; we'll only prefetch hash now
-      setTimeout(async () => {
-        try {
-          const fullResp = await fetchAPI('/api/music-library?fields=basic');
-          let fullData = fullResp;
-    if (fullResp?.data && (fullResp.data.albums || fullResp.data.tracks || fullResp.data.artists)) {
-            fullData = fullResp.data;
-          }
-          if (fullData?.albums || fullData?.tracks || fullData?.artists) {
-            // Merge by simply re-setting full library; selectors should re-render if open
-              if (window.playlistSelectors?.alarm) window.playlistSelectors.alarm.setMusicLibrary(fullData);
-              if (window.playlistSelectors?.sleep) window.playlistSelectors.sleep.setMusicLibrary(fullData);
-              if (window.playlistSelectors?.library) window.playlistSelectors.library.setMusicLibrary(fullData);
-              console.log('✅ Full music library loaded (phase 2)');
-              try {
-                localStorage.setItem('musicLibraryFull', JSON.stringify(fullResp)); // store with envelope for reuse
-                localStorage.setItem('musicLibraryMeta', JSON.stringify({ hash: fullData.hash, ts: Date.now(), fields: 'basic', phase: 2 }));
-              } catch (e) { console.debug('LocalStorage write failed (full):', e); }
-          }
-        } catch (e) {
-          console.warn('⚠️ Failed background full library load:', e);
-        }
-      }, 250); // slight delay to let UI settle
+        // Try fast LocalStorage hydration first (handled by streamingLoader)
+        // await loadFromLocalStorageFirst(selectors);
+        
+        // Load progressively with streaming API
+        await loadMusicLibraryProgressively(selectors, {
+            onProgress: (progress) => {
+                console.log(`⚡ Loading: ${progress.percentage.toFixed(1)}%`);
+            },
+            onComplete: () => {
+                console.log('⚡ Progressive music library loading completed!');
+                
+                // Load previously selected playlists
+                loadSelectedPlaylists();
+            }
+        });
+        
     } catch (error) {
-      console.error('❌ Failed to load music library:', error);
+        console.error('❌ Progressive loading failed, trying fallback:', error);
+        
+        // Fallback to old loading method
+        await loadPlaylistsFallback();
+    }
+}
+
+/**
+ * Fast LocalStorage hydration for instant UI
+ */
+async function loadFromLocalStorageFirst(selectors) {
+    // LocalStorage hydration is now handled by streamingLoader directly
+    console.log('💾 Cache hydration delegated to progressive loader');
+}
+
+/**
+ * Load previously selected playlists
+ */
+function loadSelectedPlaylists() {
+    // Load alarm playlist selection
+    const alarmContainer = document.getElementById('alarm-playlist-selector');
+    const currentAlarmUri = alarmContainer?.dataset?.currentPlaylistUri;
+    if (currentAlarmUri && window.playlistSelectors?.alarm) {
+        console.log('🔄 Restoring alarm playlist selection:', currentAlarmUri);
+        window.playlistSelectors.alarm.setSelected(currentAlarmUri);
+    }
+    
+    // Load sleep playlist selection  
+    const sleepContainer = document.getElementById('sleep-playlist-selector');
+    const currentSleepUri = sleepContainer?.dataset?.currentSleepPlaylistUri;
+    if (currentSleepUri && window.playlistSelectors?.sleep) {
+        console.log('🔄 Restoring sleep playlist selection:', currentSleepUri);
+        window.playlistSelectors.sleep.setSelected(currentSleepUri);
+    }
+}
+
+/**
+ * Fallback to traditional loading if progressive fails
+ */
+async function loadPlaylistsFallback() {
+    console.log('🔄 Using fallback loading method...');
+    
+    try {
+        // Use the traditional API endpoints
+        const resp = await fetchAPI('/api/music-library/sections?sections=playlists&fields=basic');
+        
+        let data = resp;
+        if (resp?.data && (resp.data.playlists || resp.data.albums)) {
+            data = resp.data;
+        }
+
+        if (resp?.success === false && !data.playlists && !data.albums) {
+            console.error('❌ Failed to load music library:', resp.error || resp.message || resp.error_code);
+            if (window.playlistSelectors?.alarm) window.playlistSelectors.alarm.setMusicLibrary({ error: true });
+            if (window.playlistSelectors?.sleep) window.playlistSelectors.sleep.setMusicLibrary({ error: true });
+            if (window.playlistSelectors?.library) window.playlistSelectors.library.setMusicLibrary({ error: true });
+            return;
+        }
+
+        console.log('📋 Fallback music library loaded:', (data?.playlists?.length || 0), 'playlists');
+        
+        if (data && (data.playlists || data.albums)) {
+            if (window.playlistSelectors?.alarm) {
+                window.playlistSelectors.alarm.setMusicLibrary(data);
+            }
+            if (window.playlistSelectors?.sleep) {
+                window.playlistSelectors.sleep.setMusicLibrary(data);
+            }
+            if (window.playlistSelectors?.library) {
+                window.playlistSelectors.library.setMusicLibrary(data);
+            }
+            
+            // Load selected playlists
+            loadSelectedPlaylists();
+        }
+        
+    } catch (error) {
+        console.error('❌ Fallback loading also failed:', error);
     }
 }
 

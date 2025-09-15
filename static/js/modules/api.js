@@ -38,41 +38,11 @@ export async function fetchAPI(url, options = {}) {
     if (typeof window.__API_BACKOFF_UNTIL === 'number' && Date.now() < window.__API_BACKOFF_UNTIL) {
       return { error: "Backoff", success: false, offline: true };
     }
-    // Attach If-None-Match header when we have a stored hash for music library endpoints
-    const headers = new Headers(options.headers || {});
-    if (url.startsWith('/api/music-library') && !headers.has('If-None-Match')) {
-      const cachedMeta = JSON.parse(localStorage.getItem('musicLibraryMeta') || 'null');
-      if (cachedMeta?.hash) {
-        headers.set('If-None-Match', cachedMeta.hash);
-      }
-    }
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(url, options);
 
     // If it's a POST request, return the response directly
     if (options.method === 'POST') {
       return response;
-    }
-
-    // Special handling: 304 Not Modified for music library endpoints should reuse cached data
-    if (response.status === 304 && url.startsWith('/api/music-library')) {
-      try {
-        const cachedFullRaw = localStorage.getItem('musicLibraryFull');
-        if (cachedFullRaw) {
-          const parsedFull = JSON.parse(cachedFullRaw);
-          console.log('♻️ Using cached FULL music library (304 Not Modified)');
-          return parsedFull; // envelope or data object as stored
-        }
-      } catch (e) { /* swallow */ }
-      try {
-        const cachedPartialRaw = localStorage.getItem('musicLibraryPartial');
-        if (cachedPartialRaw) {
-          const parsedPartial = JSON.parse(cachedPartialRaw);
-          console.log('♻️ Using cached PARTIAL music library (304 Not Modified)');
-          return parsedPartial; // plain data object
-        }
-      } catch (e) { /* swallow */ }
-      // No cached data available; treat as soft success with empty payload
-      return { success: true, data: {}, notModified: true };
     }
 
     // For non-successful responses, return a structured error object instead of throwing an error

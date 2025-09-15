@@ -155,10 +155,10 @@ class DeviceManager {
                 option.value = device.name;
                 option.textContent = `${device.name} (${device.type || '?'})`;
                 
-                // Mark active device
+                // Mark active device with text indicator (HTML doesn't work in <option> tags)
                 if (device.is_active) {
                     option.selected = true;
-                    option.textContent += ' ★';
+                    option.textContent += ' - active';
                 }
                 
                 selector.appendChild(option);

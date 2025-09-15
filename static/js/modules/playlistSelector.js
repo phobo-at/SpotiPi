@@ -83,7 +83,7 @@ export class PlaylistSelector {
       this.updateCurrentTab();
     }
     
-    setMusicLibrary(data) {
+    setMusicLibrary(data, options = {}) {
       if (!this.container) {
         console.warn('⚠️ PlaylistSelector: Cannot set music library, container not found');
         return;
@@ -101,10 +101,40 @@ export class PlaylistSelector {
           }
           return;
       }
-      this.playlists = data.playlists || [];
-      this.albums = data.albums || [];
-      this.tracks = data.tracks || [];
-      this.artists = data.artists || [];
+
+      // Support merge mode for progressive loading
+      if (options.merge) {
+          // Merge new data with existing data, but deduplicate by URI
+          if (data.playlists) {
+              const existingUris = new Set(this.playlists.map(p => p.uri));
+              const newPlaylists = data.playlists.filter(p => !existingUris.has(p.uri));
+              this.playlists = [...this.playlists, ...newPlaylists];
+          }
+          if (data.albums) {
+              const existingUris = new Set(this.albums.map(a => a.uri));
+              const newAlbums = data.albums.filter(a => !existingUris.has(a.uri));
+              this.albums = [...this.albums, ...newAlbums];
+          }
+          if (data.tracks) {
+              const existingUris = new Set(this.tracks.map(t => t.uri));
+              const newTracks = data.tracks.filter(t => !existingUris.has(t.uri));
+              this.tracks = [...this.tracks, ...newTracks];
+          }
+          if (data.artists) {
+              const existingUris = new Set(this.artists.map(a => a.uri));
+              const newArtists = data.artists.filter(a => !existingUris.has(a.uri));
+              this.artists = [...this.artists, ...newArtists];
+          }
+          
+          console.log(`🔄 Merged with deduplication: ${this.playlists.length} playlists, ${this.albums.length} albums, ${this.tracks.length} tracks, ${this.artists.length} artists`);
+      } else {
+          // Traditional replacement mode
+          this.playlists = data.playlists || [];
+          this.albums = data.albums || [];
+          this.tracks = data.tracks || [];
+          this.artists = data.artists || [];
+      }
+      
       if (this.playlists.length) this.loadedSections.add('playlists');
       if (this.albums.length) this.loadedSections.add('albums');
       if (this.tracks.length) this.loadedSections.add('tracks');
@@ -118,53 +148,45 @@ export class PlaylistSelector {
       
       const tabsContainer = this.container.querySelector('#playlist-tabs');
       if (!tabsContainer) return;
-      
-      const tabs = [];
-      
-      // Nur Tabs mit Inhalten anzeigen
-      if (this.playlists.length > 0) {
-        tabs.push({
+
+      // Always show all 4 tabs with loading indicators
+      const tabs = [
+        {
           id: 'playlists',
           icon: '',
           label: 'Playlists',
-          count: this.playlists.length
-        });
-      }
-      
-      if (this.albums.length > 0) {
-        tabs.push({
+          count: this.playlists.length,
+          isLoaded: this.loadedSections.has('playlists')
+        },
+        {
           id: 'albums', 
           icon: '',
           label: 'Alben',
-          count: this.albums.length
-        });
-      }
-      
-      if (this.tracks.length > 0) {
-        tabs.push({
+          count: this.albums.length,
+          isLoaded: this.loadedSections.has('albums')
+        },
+        {
           id: 'tracks',
           icon: '',
           label: 'Songs',
-          count: this.tracks.length
-        });
-      }
-      
-      if (this.artists.length > 0) {
-        tabs.push({
+          count: this.tracks.length,
+          isLoaded: this.loadedSections.has('tracks')
+        },
+        {
           id: 'artists',
           icon: '',
           label: t('artists') || 'Artists',
-          count: this.artists.length
-        });
+          count: this.artists.length,
+          isLoaded: this.loadedSections.has('artists')
+        }
+      ];
+      
+      // If current tab is not set, default to first tab
+      if (!this.currentTab) {
+        this.currentTab = 'playlists';
       }
       
-      // If current tab is no longer available, switch to first available
-      const availableTabIds = tabs.map(tab => tab.id);
-      if (!availableTabIds.includes(this.currentTab) && availableTabIds.length > 0) {
-        this.currentTab = availableTabIds[0];
-      }
-      
-      // Tabs HTML generieren
+      // Tabs HTML generieren - clean ohne Loading-Indikatoren
       tabsContainer.innerHTML = tabs.map(tab => `
         <button class="playlist-tab tab-button ${this.currentTab === tab.id ? 'active' : ''}" data-tab="${tab.id}">
           ${tab.label}
@@ -377,24 +399,35 @@ export class PlaylistSelector {
     updateModal() {
       const grid = this.container.querySelector('#playlist-grid');
       if (!grid) return;
+
+      // Check if current tab section is still loading
+      const currentTabLoaded = this.loadedSections.has(this.currentTab);
+      const hasItemsForCurrentTab = this.filteredItems.length > 0;
       
-      // Zeige Loader wenn noch keine Daten geladen sind
-      if (this.playlists.length === 0 && this.albums.length === 0 && this.tracks.length === 0 && this.artists.length === 0) {
+      // Show loading state for current tab if not loaded yet
+      if (!currentTabLoaded) {
+        const tabLabels = {
+          playlists: 'Playlists',
+          albums: 'Alben', 
+          tracks: 'Songs',
+          artists: 'Artists'
+        };
+        
         grid.innerHTML = `
           <div class="music-library-loader">
             <div class="music-library-spinner"></div>
-            <div class="music-library-loader-text">Musik-Bibliothek wird geladen...</div>
+            <div class="music-library-loader-text">${tabLabels[this.currentTab]} werden geladen...</div>
           </div>
         `;
         return;
       }
       
-      // Zeige "Keine Ergebnisse" wenn gefilterte Items leer sind
-      if (this.filteredItems.length === 0) {
+      // Show "no results" if tab is loaded but has no items
+      if (hasItemsForCurrentTab === 0 || this.filteredItems.length === 0) {
         const emptyText = this.currentTab === 'playlists' ? 
           (t('playlist_no_results') || 'Keine Playlists gefunden') : 
           this.currentTab === 'albums' ? (t('no_music_found') || 'Keine Alben gefunden') : 
-          this.currentTab === 'artists' ? (t('no_music_found') || 'No artists found') : (t('no_music_found') || 'No songs found');
+          this.currentTab === 'artists' ? (t('no_music_found') || 'Keine Artists gefunden') : (t('no_music_found') || 'Keine Songs gefunden');
         grid.innerHTML = `<div class="playlist-no-results">${emptyText}</div>`;
         return;
       }
@@ -648,46 +681,10 @@ export class PlaylistSelector {
         `;
       }
       
-      // Small delay for UI update, then load data
+      // Small delay for UI update
       setTimeout(() => {
         this.updateCurrentTab();
-        // Lazy fetch section if not loaded yet (excluding playlists which load early)
-        if (!this.loadedSections.has(tabName)) {
-          this.fetchSection(tabName);
-        }
       }, 50);
-    }
-  
-    async fetchSection(section) {
-      try {
-        const resp = await fetchAPI(`/api/music-library/sections?sections=${section}&fields=basic`);
-        let data = resp;
-        if (resp?.data) data = resp.data;
-        if (data && Array.isArray(data[section])) {
-          // Merge into existing collections
-          if (section === 'albums') this.albums = data.albums;
-          if (section === 'tracks') this.tracks = data.tracks;
-          if (section === 'artists') this.artists = data.artists;
-          this.loadedSections.add(section);
-          this.updateCurrentTab();
-          // Promote to global selectors localStorage full cache snapshot (basic fields)
-          try {
-            const meta = JSON.parse(localStorage.getItem('musicLibraryMeta') || 'null') || {}; 
-            const partial = JSON.parse(localStorage.getItem('musicLibraryPartial') || 'null') || {}; 
-            const merged = {
-              playlists: this.playlists,
-              albums: this.albums,
-              tracks: this.tracks,
-              artists: this.artists,
-              hash: data.hash || meta.hash || partial.hash || null
-            };
-              localStorage.setItem('musicLibraryFull', JSON.stringify({ data: merged, success: true }));
-              localStorage.setItem('musicLibraryMeta', JSON.stringify({ hash: merged.hash, ts: Date.now(), fields: 'basic', phase: 'lazy' }));
-          } catch (e) { /* ignore quota */ }
-        }
-      } catch (e) {
-        console.warn('⚠️ Failed to lazy-load section', section, e);
-      }
     }
     
     updateCurrentTab() {

@@ -1,9 +1,9 @@
 {
-  "enabled": true,
+  "enabled": false,
   "time": "07:30",
-  "playlist_uri": "",
-  "device_name": "",
-  "alarm_volume": 55,
+  "playlist_uri": "spotify:artist:0CqVW8NVc62ieVTxtvLnT0",
+  "device_name": "phobo",
+  "alarm_volume": 61,
   "fade_in": false,
   "shuffle": false,
   "weekdays": [
