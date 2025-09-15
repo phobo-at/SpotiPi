@@ -61,13 +61,8 @@ sudo cp scripts/spotipi.service /etc/systemd/system/
 sudo systemctl enable spotipi && sudo systemctl start spotipi
 ```
 
-## 📸 Screenshots (coming soon)
-
-*Mobile-optimized interface with dark theme support*
-
-| Alarm Setup | Sleep Timer | Music Library |
-|-------------|-------------|---------------|
-| Set wake-up times with weekday selection | Gradual volume fade-out | Browse your complete Spotify collection |
+## 📸 Screenshots
+![SpotiPi Interface](docs/images/spotipi.png)
 
 ## 🏗️ Architecture
 
