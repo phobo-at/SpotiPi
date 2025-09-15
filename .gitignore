@@ -81,3 +81,4 @@ yarn-error.log*
 # Documentation builds
 docs/_build/
 docs/build/
+prototyping/

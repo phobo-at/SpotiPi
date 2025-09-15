@@ -30,7 +30,7 @@ from .api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
     start_playback, stop_playback, resume_playback, toggle_playback, toggle_playback_fast,
     set_volume, get_current_track, get_current_spotify_volume,
-    get_playback_status, load_music_library_sections, get_combined_playback
+    get_playback_status, load_music_library_sections, get_combined_playback, _spotify_request
 )
 from .utils.token_cache import get_token_cache_info, log_token_cache_performance
 from .utils.thread_safety import get_config_stats, invalidate_config_cache
@@ -1123,6 +1123,36 @@ def api_spotify_devices():
     
     devices = get_devices(token)
     return api_response(True, data={"devices": devices if devices else []})
+
+@app.route("/api/devices/refresh")
+@api_error_handler
+def api_devices_refresh():
+    """Fast device refresh endpoint - bypasses cache for immediate updates."""
+    token = get_access_token()
+    if not token:
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
+    
+    try:
+        # Load devices directly from Spotify API (bypass cache)
+        import requests
+        r = _spotify_request(
+            'GET',
+            "https://api.spotify.com/v1/me/player/devices",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5  # Reduced timeout for fast response
+        )
+        
+        if r.status_code == 200:
+            devices = r.json().get("devices", [])
+            logging.info(f"🔄 Fast device refresh: {len(devices)} devices found")
+            return api_response(True, data={"devices": devices, "timestamp": time.time()})
+        else:
+            logging.warning(f"⚠️ Device refresh failed: {r.status_code} - {r.text}")
+            return api_response(False, message="Device refresh failed", status=503, error_code="device_refresh_failed")
+            
+    except Exception as e:
+        logging.error(f"❌ Error in device refresh: {e}")
+        return api_response(False, message=str(e), status=503, error_code="device_refresh_error")
 
 # =====================================
 # 🚀 Application Runner

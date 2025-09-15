@@ -288,3 +288,58 @@ export async function playMusic(uri, deviceName) {
       alert(t('playback_failed') || 'Wiedergabe fehlgeschlagen.');
     }
 }
+
+/**
+ * Fast device refresh - bypasses cache for immediate updates
+ * @returns {Promise<Array>} - Array of devices or empty array on error
+ */
+export async function refreshDevicesFast() {
+    try {
+        const response = await fetchAPI('/api/devices/refresh');
+        if (response?.success && response?.data?.devices) {
+            console.log(`🔄 Fast device refresh: ${response.data.devices.length} devices loaded`);
+            return response.data.devices;
+        } else {
+            console.warn('⚠️ Fast device refresh failed:', response?.error || response?.message);
+            return [];
+        }
+    } catch (error) {
+        console.error('❌ Error in fast device refresh:', error);
+        return [];
+    }
+}
+
+/**
+ * Device refresh with change detection
+ * @param {Array} currentDevices - Current device list for comparison
+ * @returns {Promise<{devices: Array, hasChanges: boolean}>}
+ */
+export async function refreshDevicesWithChangeDetection(currentDevices = []) {
+    try {
+        const newDevices = await refreshDevicesFast();
+        
+        // Simple change detection: compare device count and device IDs
+        const hasChanges = (
+            newDevices.length !== currentDevices.length ||
+            !newDevices.every(newDevice => 
+                currentDevices.some(currentDevice => 
+                    currentDevice.id === newDevice.id && 
+                    currentDevice.is_active === newDevice.is_active
+                )
+            )
+        );
+        
+        if (hasChanges) {
+            console.log('🔄 Device changes detected:', {
+                old: currentDevices.length,
+                new: newDevices.length,
+                devices: newDevices.map(d => `${d.name} (${d.is_active ? 'active' : 'inactive'})`)
+            });
+        }
+        
+        return { devices: newDevices, hasChanges };
+    } catch (error) {
+        console.error('❌ Error in device change detection:', error);
+        return { devices: currentDevices, hasChanges: false };
+    }
+}

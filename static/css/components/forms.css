@@ -51,6 +51,33 @@ select.form-input {
   border-color: var(--color-primary);
 }
 
+/* Device selector loading state */
+select.form-input.loading {
+  background-color: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+select.form-input.loading::after {
+  content: "";
+  position: absolute;
+  right: var(--spacing-sm);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-text-muted);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: translateY(-50%) rotate(0deg); }
+  100% { transform: translateY(-50%) rotate(360deg); }
+}
+
 .form-title {
   font-size: 1.3rem;
   color: var(--color-primary);

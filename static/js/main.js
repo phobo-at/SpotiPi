@@ -8,6 +8,7 @@ import { getPlaybackStatus, fetchAPI, playMusic } from './modules/api.js';
 import { PlaylistSelector } from './modules/playlistSelector.js';
 import { saveAlarmSettings, activateSleepTimerDirect, deactivateSleepTimerDirect } from './modules/settings.js';
 import { initializeWeekdayBubbles } from './modules/weekdays.js';
+import { initializeDeviceManager } from './modules/deviceManager.js';
 import { t } from './modules/translation.js';
 
 /**
@@ -33,28 +34,9 @@ async function loadInitialData() {
     console.log('🚀 Starting asynchronous data loading...');
     
     try {
-      // Fetch data in parallel (devices now returned via unified API envelope)
-      const [playback, devicesResp] = await Promise.all([
-        getPlaybackStatus(),
-        fetchAPI('/api/spotify/devices')
-      ]);
-  
-      // Unwrap devices response (supports both legacy array and new envelope)
-      let deviceList = [];
-      if (devicesResp) {
-        if (Array.isArray(devicesResp)) {
-          deviceList = devicesResp;
-        } else if (devicesResp.data && Array.isArray(devicesResp.data.devices)) {
-          deviceList = devicesResp.data.devices;
-        } else if (Array.isArray(devicesResp.devices)) { // defensive fallback
-          deviceList = devicesResp.devices;
-        } else if (devicesResp.error || devicesResp.success === false) {
-          console.warn('⚠️ Devices response indicates failure:', devicesResp.error || devicesResp.error_code);
-        }
-      }
-  
-      updateDevices(deviceList);
-  
+      // Get initial playback status (devices are now handled by DeviceManager)
+      const playback = await getPlaybackStatus();
+
       if (playback?.error) {
           console.warn('⚠️ Could not get playback status:', playback.error);
           handleNoActivePlayback(); // Set UI to default state
@@ -81,58 +63,6 @@ async function loadInitialData() {
     } catch (error) {
       console.error('❌ Failed during initial data load:', error);
       // Optionally, show an error message to the user
-    }
-}
-
-/**
- * Populates the device selectors with a list of devices.
- * @param {Array} devices - Array of device objects from the Spotify API.
- */
-function updateDevices(devices) {
-    // Allow passing API envelope directly
-    if (!Array.isArray(devices) && devices && Array.isArray(devices.devices)) {
-      devices = devices.devices;
-    }
-    if (!Array.isArray(devices)) {
-      devices = [];
-    }
-  
-    const selectors = document.querySelectorAll('select[name="device_name"]');
-    if (!selectors.length) {
-      // Silently ignore if not on a page with device selectors
-      return;
-    }
-  
-    selectors.forEach(selector => {
-      const currentValue = selector.value;
-      selector.innerHTML = '';
-  
-      if (devices.length === 0) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = t('no_devices_found') || 'No devices found';
-        selector.appendChild(option);
-        return;
-      }
-  
-      devices.forEach(device => {
-        if (!device || !device.name) return;
-        const option = document.createElement('option');
-        option.value = device.name;
-        option.textContent = `${device.name} (${device.type || '?'})`;
-        if (device.is_active) option.selected = true;
-        selector.appendChild(option);
-      });
-  
-      // Restore previous selection if still present
-      if (currentValue && Array.from(selector.options).some(o => o.value === currentValue)) {
-        selector.value = currentValue;
-      }
-    });
-    if (devices.length > 0) {
-      console.log(`✅ Device selectors updated (${devices.length} devices).`);
-    } else {
-      console.log('⚠️ No devices available to populate.');
     }
 }
 
@@ -355,7 +285,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             // If checked, do nothing (timer is already running)
         });
-    }    initializeWeekdayBubbles();
+    }
+    
+    initializeWeekdayBubbles();
+
+    // Initialize automatic device management
+    initializeDeviceManager();
 
     updateSleepTimer();
     updateAlarmStatus();
