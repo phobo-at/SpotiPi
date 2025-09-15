@@ -46,42 +46,61 @@ class ProgressiveMusicLoader {
         
         try {
             const sectionsToLoad = this.getSectionsByPriority(sections);
-            console.log(`⚡ Loading ${sectionsToLoad.length} sections progressively...`);
+            console.log(`⚡ Loading ${sectionsToLoad.length} sections in parallel...`);
             
-            for (let i = 0; i < sectionsToLoad.length; i++) {
-                const section = sectionsToLoad[i];
-                
+            // Create parallel promises for all sections
+            const sectionPromises = sectionsToLoad.map(async (section, index) => {
                 try {
-                    console.log(`📋 Loading ${section}...`);
+                    console.log(`📋 Starting ${section}...`);
                     const response = await fetchAPI(`/api/music-library?sections=${section}&fields=basic`);
                     
                     if (response?.success && response?.data?.[section]) {
                         console.log(`✅ Loaded ${section}: ${response.data[section].length} items`);
-                        
-                        if (onSectionLoaded) {
-                            onSectionLoaded(section, response.data[section], {
-                                hasMetadata: true,
-                                sectionIndex: i + 1,
-                                totalSections: sectionsToLoad.length
-                            });
-                        }
-                        
-                        if (onProgress) {
-                            onProgress({
-                                completed: i + 1,
-                                total: sectionsToLoad.length,
-                                percentage: ((i + 1) / sectionsToLoad.length) * 100
-                            });
-                        }
+                        return {
+                            section,
+                            data: response.data[section],
+                            index,
+                            success: true
+                        };
                     } else {
                         console.warn(`⚠️ No ${section} data received`);
+                        return { section, data: [], index, success: false };
                     }
                 } catch (error) {
                     console.error(`❌ Failed to load ${section}:`, error);
-                    // Continue with other sections
+                    return { section, data: [], index, success: false, error };
+                }
+            });
+            
+            // Process sections as they complete
+            const results = await Promise.allSettled(sectionPromises);
+            
+            // Sort by original priority order and call callbacks
+            const successfulResults = results
+                .map(result => result.status === 'fulfilled' ? result.value : null)
+                .filter(result => result && result.success)
+                .sort((a, b) => a.index - b.index);
+            
+            for (const result of successfulResults) {
+                if (onSectionLoaded) {
+                    onSectionLoaded(result.section, result.data, {
+                        hasMetadata: true,
+                        sectionIndex: result.index + 1,
+                        totalSections: sectionsToLoad.length,
+                        parallel: true
+                    });
+                }
+                
+                if (onProgress) {
+                    onProgress({
+                        completed: result.index + 1,
+                        total: sectionsToLoad.length,
+                        percentage: ((result.index + 1) / sectionsToLoad.length) * 100
+                    });
                 }
             }
             
+            console.log(`⚡ Parallel loading completed: ${successfulResults.length}/${sectionsToLoad.length} sections loaded`);
             if (onComplete) onComplete();
             
         } catch (error) {
