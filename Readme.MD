@@ -62,7 +62,7 @@ sudo systemctl enable spotipi && sudo systemctl start spotipi
 ```
 
 ## 📸 Screenshots
-<img src="docs/images/spotipi-interface.png" alt="SpotiPi Interface" width="50%">
+<img src="docs/images/spotipi.png" alt="SpotiPi Interface" width="50%">
 
 ## 🏗️ Architecture
 
