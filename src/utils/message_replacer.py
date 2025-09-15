@@ -51,5 +51,9 @@ def replace_messages_in_file(filepath):
         print(f"❌ Error processing {filepath}: {e}")
 
 if __name__ == "__main__":
-    filepath = "/Users/michi/spotipi-dev/spotify_wakeup/src/app.py"
+    # Path-agnostic: Use relative path from this file's location
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(current_dir))
+    filepath = os.path.join(project_root, "src", "app.py")
     replace_messages_in_file(filepath)

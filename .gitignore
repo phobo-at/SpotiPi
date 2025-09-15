@@ -104,3 +104,9 @@ docs/_build/
 docs/build/
 .gitignore-github
 deploy_to_pi.sh
+
+#scripts
+scripts/deploy_to_pi.sh # Deployment script
+scripts/verify_local.sh # Local verification script
+scripts/verify_migration
+scripts/*old* # Old scripts

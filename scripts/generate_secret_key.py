@@ -14,7 +14,9 @@ def generate_secret_key():
 
 def update_env_file():
     """Update or create .env file with secure secret key."""
-    env_path = Path.home() / ".spotify_wakeup" / ".env"
+    # Path-agnostic configuration directory
+    app_name = os.getenv("SPOTIPI_APP_NAME", "spotipi")
+    env_path = Path.home() / f".{app_name}" / ".env"
     
     # Ensure directory exists
     env_path.parent.mkdir(parents=True, exist_ok=True)

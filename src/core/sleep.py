@@ -26,8 +26,13 @@ from ..api.spotify import (
 )
 from ..config import load_config, save_config
 
-# Paths for status and log files
-LOG_DIR = os.path.expanduser("~/.spotify_wakeup")
+# Paths for status and log files - Path-agnostic
+def _get_app_data_dir():
+    """Get application data directory path-agnostically"""
+    app_name = os.getenv("SPOTIPI_APP_NAME", "spotipi")
+    return os.path.expanduser(f"~/.{app_name}")
+
+LOG_DIR = _get_app_data_dir()
 STATUS_PATH = os.path.join(LOG_DIR, "sleep_status.json")
 
 # Ensure log directory exists

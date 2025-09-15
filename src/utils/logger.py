@@ -41,11 +41,18 @@ else:
     MAX_LOG_SIZE = 10 * 1024 * 1024
     BACKUP_COUNT = 5
     ENABLE_SYSTEM_INFO = True
-    _env_log_dir = os.getenv('SPOTIPI_LOG_DIR')
-    if _env_log_dir:
-        LOG_DIR = Path(_env_log_dir)
-    else:
-        LOG_DIR = Path.home() / ".spotify_wakeup" / "logs"
+    
+    # Path-agnostic log directory detection
+    def _get_app_log_dir():
+        """Get application log directory path-agnostically"""
+        _env_log_dir = os.getenv('SPOTIPI_LOG_DIR')
+        if _env_log_dir:
+            return Path(_env_log_dir)
+        
+        app_name = os.getenv("SPOTIPI_APP_NAME", "spotipi")
+        return Path.home() / f".{app_name}" / "logs"
+    
+    LOG_DIR = _get_app_log_dir()
 
 # ---- Environment overrides (systemd friendly) ----
 _env_level = os.getenv('SPOTIPI_LOG_LEVEL')
@@ -59,7 +66,9 @@ if os.getenv('SPOTIPI_FORCE_FILE_LOG') == '1':
     ENABLE_FILE_LOGGING = True
     # Keep directory writable
     if 'LOG_DIR' not in globals():
-        LOG_DIR = Path.home() / ".spotify_wakeup" / "logs"
+        # Path-agnostic fallback
+        app_name = os.getenv("SPOTIPI_APP_NAME", "spotipi") 
+        LOG_DIR = Path.home() / f".{app_name}" / "logs"
 
 if os.getenv('SPOTIPI_DISABLE_DAILY_LOGS') == '1':
     ENABLE_DAILY_LOGS = False

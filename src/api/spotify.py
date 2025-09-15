@@ -38,8 +38,17 @@ __all__ = [
     "load_music_library_parallel", "spotify_network_health", "load_music_library_sections"
 ]
 
-# 🔧 File paths
-ENV_PATH = os.path.expanduser("~/.spotify_wakeup/.env")
+# 🔧 File paths - Use path-agnostic configuration
+def _get_app_config_dir():
+    """Get application configuration directory path-agnostically"""
+    app_name = os.getenv("SPOTIPI_APP_NAME", "spotipi")
+    return os.path.expanduser(f"~/.{app_name}")
+
+def _get_env_path():
+    """Get environment file path dynamically"""
+    return os.path.join(_get_app_config_dir(), ".env")
+
+ENV_PATH = _get_env_path()
 
 # ⏱️ Network timeout configuration
 # Increased timeout for better reliability with unstable connections

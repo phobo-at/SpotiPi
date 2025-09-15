@@ -1,13 +1,12 @@
 #!/bin/bash
 #
-# toggle_logging.sh – Enable or disable detailed SpotiPi logging on the Raspberry Pi - Path-Agnostic Version
+# toggle_logging.sh – Enable or disable detailed SpotiPi logging on the Raspberry Pi
 #
 # Features:
 #   * Creates / removes a systemd override for spotify-web.service
 #   * Sets environment variables understood by our logger (see src/utils/logger.py)
 #   * Ensures log directory exists when enabling
 #   * Provides status output
-#   * Path-agnostic: Auto-detects app name and paths
 #
 # Usage:
 #   ./scripts/toggle_logging.sh on                # Enable detailed logging (keeps production.json as-is)
@@ -15,21 +14,33 @@
 #   ./scripts/toggle_logging.sh off               # Disable (revert override, leave production.json as-is)
 #   ./scripts/toggle_logging.sh off --restore-debug  # Disable and set "debug": false IF we previously enabled it
 #   ./scripts/toggle_logging.sh status            # Show current mode & effective env vars
+#
+# What "on" does:
+#   - Creates /etc/systemd/system/spotify-web.service.d/override.conf with:
+#       SPOTIPI_DEV=1
+#       SPOTIPI_LOG_LEVEL=INFO  (could change to DEBUG if needed)
+#       SPOTIPI_FORCE_FILE_LOG=1
+#       SPOTIPI_LOG_DIR=/home/pi/spotipi_logs
+#   - Restarts service
+#   - If --with-debug übergeben: setzt config/production.json "debug": true (merkt sich Änderung)
+#   - Wenn config/production.json bereits "debug": true war, wird kein Marker gesetzt
+#
+# What "off" does:
+#   - systemctl revert spotify-web.service (removes override)
+#   - Restarts service
+#   - Mit --restore-debug: setzt "debug": false NUR wenn dieses Skript es vorher aktiviert hat
+#
+# NOTE: To get *even more* detail you could set SPOTIPI_LOG_LEVEL=DEBUG or also set
+#       "debug": true in production.json for alarm evaluation traces.
 
 set -euo pipefail
 
-# 🔧 Path-agnostic configuration
-APP_NAME="${SPOTIPI_APP_NAME:-spotipi}"
-SERVICE_NAME="${SPOTIPI_SERVICE_NAME:-spotify-web.service}"
-APP_PATH="${SPOTIPI_APP_PATH:-/home/pi/$APP_NAME}"
-CONFIG_FILE="$APP_PATH/config/production.json"
-LOG_DIR="${SPOTIPI_LOG_DIR:-/home/pi/${APP_NAME}_logs}"
-
-SERVICE="$SERVICE_NAME"
+SERVICE="spotify-web.service"
 OVERRIDE_DIR="/etc/systemd/system/${SERVICE}.d"
 OVERRIDE_FILE="${OVERRIDE_DIR}/override.conf"
+LOG_DIR="/home/pi/spotipi_logs"
+CONFIG_FILE="/home/pi/spotify_wakeup/config/production.json"
 DEBUG_MARKER="${LOG_DIR}/.debug_enabled_by_toggle"
-
 have_jq() { command -v jq >/dev/null 2>&1; }
 
 modify_debug_flag() {
@@ -76,6 +87,7 @@ PY
   fi
 }
 
+
 need_root() {
   if [ "${EUID}" -ne 0 ]; then
     echo "🔐 Re-running with sudo..." >&2
@@ -86,10 +98,6 @@ need_root() {
 
 cmd_status() {
   echo "📌 Service: ${SERVICE}" 
-  echo "📁 App Path: ${APP_PATH}"
-  echo "📋 Config: ${CONFIG_FILE}"
-  echo "📂 Log Dir: ${LOG_DIR}"
-  
   if systemctl is-active --quiet "${SERVICE}"; then
     echo "   Status: active"
   else
@@ -113,9 +121,6 @@ enable_logging() {
   local with_debug="$1" # yes / no
   need_root enable "$@"
   echo "🚀 Enabling detailed logging..."
-  echo "📁 Using app path: $APP_PATH"
-  echo "📂 Using log dir: $LOG_DIR"
-  
   mkdir -p "${OVERRIDE_DIR}" 
   mkdir -p "${LOG_DIR}"
   chown pi:pi "${LOG_DIR}" || true
@@ -126,7 +131,6 @@ Environment=SPOTIPI_DEV=1
 Environment=SPOTIPI_LOG_LEVEL=INFO
 Environment=SPOTIPI_FORCE_FILE_LOG=1
 Environment=SPOTIPI_LOG_DIR=${LOG_DIR}
-Environment=SPOTIPI_APP_NAME=${APP_NAME}
 # Uncomment for ultra verbose:
 # Environment=SPOTIPI_LOG_LEVEL=DEBUG
 EOF
@@ -168,13 +172,6 @@ usage() {
   grep '^# ' "$0" | sed 's/^# //'
   exit 1
 }
-
-# Validate paths before proceeding
-if [ ! -d "$APP_PATH" ]; then
-  echo "❌ App directory not found: $APP_PATH" >&2
-  echo "💡 Set SPOTIPI_APP_PATH environment variable or check app name" >&2
-  exit 1
-fi
 
 ACTION="${1:-}"
 shift || true
