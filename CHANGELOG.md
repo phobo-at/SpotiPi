@@ -5,6 +5,49 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2025-09-15
+
+### ✨ Enhancement - Immediate Volume Control & Icon Updates
+
+This patch release significantly improves the user experience for volume control and updates visual icons for better clarity.
+
+### 🚀 Added
+
+**Immediate Volume Control:**
+- Real-time volume control with throttled Spotify API calls (150ms during dragging, 50ms on release)
+- Instant visual feedback during volume slider interaction
+- Separate volume logic: Global volume (Spotify only) vs Alarm volume (Config + Spotify)
+
+**Enhanced Icons:**
+- Speaker/Device selection now uses Spotify icon (`fa-brands fa-spotify`)
+- Alarm volume control now shows volume icon (`fas fa-volume-high`)
+
+### 🔧 Improved
+
+**Volume System Architecture:**
+- Global volume slider: Direct Spotify control without config saving
+- Alarm volume slider: Independent config storage for alarm-specific volume
+- Removed redundant `volume` field from config (only `alarm_volume` needed)
+
+**UI/UX Improvements:**
+- Global volume changes no longer affect alarm/sleep volume settings
+- Prevented volume slider interference between different controls
+- Optimized volume API calls with smart throttling
+
+### 🐛 Fixed
+
+**Config Cleanup:**
+- Removed unused `volume` field from all config files
+- Updated alarm execution to use only `alarm_volume`
+- Cleaned up volume endpoint to focus on Spotify-only control
+
+### 📋 Migration Notes
+
+Existing configs will automatically migrate:
+- `volume` field is no longer used/saved
+- `alarm_volume` remains unchanged and continues to work
+- No user action required for existing installations
+
 ## [1.2.1] - 2025-09-15
 
 ### 🐛 Critical Bugfix - Rate Limiting

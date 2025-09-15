@@ -678,7 +678,7 @@ def toggle_play_pause():
 @app.route("/volume", methods=["POST"])
 @api_error_handler
 def volume_endpoint():
-    """Unified volume endpoint - sets Spotify volume and optionally saves to config"""
+    """Volume endpoint - only sets Spotify volume (no config save)"""
     token = get_access_token()
     if not token:
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
@@ -687,30 +687,14 @@ def volume_endpoint():
         # Validate volume input
         volume = validate_volume_only(request.form)
         
-        # Always set Spotify volume first
+        # Set Spotify volume
         spotify_success = set_volume(token, volume)
         
-        # Check if we should also save to config 
-        save_to_config = request.form.get('save_config', 'false').lower() == 'true'
-        config_success = True
-        
-        if save_to_config:
-            config = load_config()
-            config["volume"] = volume
-            config_success = save_config(config)
-        
-        if spotify_success and config_success:
-            message = t_api("volume_set_saved", request, volume=volume) if save_to_config else f"Volume set to {volume}"
-            return api_response(True, data={"volume": volume}, message=message)
+        if spotify_success:
+            return api_response(True, data={"volume": volume}, message=f"Volume set to {volume}")
         else:
-            error_parts = []
-            if not spotify_success:
-                error_parts.append(t_api("volume_set_failed", request))
-            if not config_success:
-                error_parts.append(t_api("failed_save_volume", request))
-            
-            return api_response(False, message=t_api("volume_operation_failed", request), status=500, 
-                              error_code="volume_operation_failed")
+            return api_response(False, message=t_api("volume_set_failed", request), status=500, 
+                              error_code="volume_set_failed")
             
     except ValidationError as e:
         logging.warning(f"Volume validation error: {e.field_name} - {e.message}")

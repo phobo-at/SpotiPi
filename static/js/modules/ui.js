@@ -65,20 +65,17 @@ export function updateVolumeSlider(percent) {
   
   const elements = DOM.getElements({
     globalSlider: '#global-volume',
-    globalLabel: '#volume-display',
-    alarmVolume: '#volume',
-    sleepVolume: '#sleep-volume'
+    globalLabel: '#volume-display'
   });
 
-  // Update global slider and label
+  // Update global slider and label only
   if (elements.globalSlider && elements.globalLabel) {
     elements.globalSlider.value = percent;
     elements.globalLabel.innerText = percent;
   }
 
-  // Update hidden input fields
-  if (elements.alarmVolume) elements.alarmVolume.value = percent;
-  if (elements.sleepVolume) elements.sleepVolume.value = percent;
+  // Note: Alarm volume (#alarm_volume_slider) and sleep volume are independent
+  // and should not be updated by global volume changes
 }
 
 /**
@@ -88,18 +85,14 @@ export function updateVolumeSlider(percent) {
 export function updateLocalVolumeDisplay(value) {
   const elements = DOM.getElements({
     globalSlider: '#global-volume',
-    globalLabel: '#volume-display',
-    alarmVolume: '#volume',
-    sleepVolume: '#sleep-volume'
+    globalLabel: '#volume-display'
   });
 
-  // Update global label and slider
+  // Update global label and slider only
   if (elements.globalLabel) elements.globalLabel.innerText = value;
   if (elements.globalSlider) elements.globalSlider.value = value;
 
-  // Update hidden input fields
-  if (elements.alarmVolume) elements.alarmVolume.value = value;
-  if (elements.sleepVolume) elements.sleepVolume.value = value;
+  // Note: Alarm and sleep volume controls are independent of global volume
 }
 
 /**

@@ -169,6 +169,47 @@ export async function setVolumeAndSave(value) {
 }
 
 /**
+ * Sets the volume immediately (without saving to config)
+ * @param {number} value - Volume value (0-100)
+ */
+export async function setVolumeImmediate(value) {
+  try {
+    // Use unified volume endpoint without save_config for immediate response
+    await fetchAPI("/volume", {
+      method: "POST", 
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `volume=${value}`
+    });
+  } catch (error) {
+    console.error('Failed to set immediate volume:', error);
+  }
+}
+
+// Throttling for immediate volume changes
+let volumeThrottleTimer = null;
+let lastVolumeValue = null;
+
+/**
+ * Throttled version of setVolumeImmediate - prevents API spam during slider dragging
+ * @param {number} value - Volume value (0-100)
+ * @param {number} delay - Throttle delay in ms (default: 200ms)
+ */
+export function setVolumeImmediateThrottled(value, delay = 200) {
+  lastVolumeValue = value;
+  
+  if (volumeThrottleTimer) {
+    clearTimeout(volumeThrottleTimer);
+  }
+  
+  volumeThrottleTimer = setTimeout(async () => {
+    if (lastVolumeValue !== null) {
+      await setVolumeImmediate(lastVolumeValue);
+      lastVolumeValue = null;
+    }
+  }, delay);
+}
+
+/**
  * Toggles playback state (Play <-> Pause)
  */
 export async function togglePlayPause() {

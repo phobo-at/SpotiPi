@@ -21,7 +21,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'alarm_time_help': 'Uhrzeit, zu der der Wecker klingeln soll',
         'playlist_label': '<i class="fas fa-list-music"></i> Playlist',
         'playlist_help': 'Musik, die beim Wecken abgespielt wird',
-        'device_label': '<i class="fas fa-volume-high"></i> Lautsprecher',
+        'device_label': '<i class="fa-brands fa-spotify"></i> Lautsprecher',
         'device_help': 'Gerät, auf dem die Musik abgespielt wird',
         'further_options': 'Weitere Optionen',
         'fade_in': 'Fade-In',
@@ -83,7 +83,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'speaker_error': 'Fehler beim Laden der Lautsprecher',
         
         # Volume Controls
-        'alarm_volume': 'Wecker-Lautstärke',
+        'alarm_volume': '<i class="fas fa-volume-high"></i> Wecker-Lautstärke',
         'alarm_volume_help': 'Lautstärke nur für den Wecker (hat keine Auswirkung auf die aktuelle Wiedergabe)',
         
         # Status Messages
@@ -198,7 +198,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'alarm_time_help': 'Time when the alarm should ring',
         'playlist_label': '<i class="fas fa-list-music"></i> Playlist',
         'playlist_help': 'Music to play when waking up',
-        'device_label': '<i class="fas fa-volume-high"></i> Speaker',
+        'device_label': '<i class="fa-brands fa-spotify"></i> Speaker',
         'device_help': 'Device to play music on',
         'further_options': 'Additional Options',
         'fade_in': 'Fade-In',
@@ -260,7 +260,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'speaker_error': 'Error loading speakers',
         
         # Volume Controls
-        'alarm_volume': 'Alarm Volume',
+        'alarm_volume': '<i class="fas fa-volume-high"></i> Alarm Volume',
         'alarm_volume_help': 'Volume for alarm only (does not affect current playback)',
         
         # Status Messages

@@ -2,9 +2,8 @@
   "enabled": false,
   "time": "10:43",
   "playlist_uri": "spotify:playlist:4I33WFTJXYssFCJzfL1YY1",
-  "device_name": "Forte",
-  "volume": 50,
-  "alarm_volume": 30,
+  "device_name": "phobo",
+  "alarm_volume": 23,
   "fade_in": false,
   "shuffle": false,
   "weekdays": [],
@@ -18,5 +17,6 @@
   "sleep_shuffle": true,
   "port": 5001,
   "host": "127.0.0.1",
-  "test_volume": 44
+  "test_volume": 44,
+  "volume": 50
 }

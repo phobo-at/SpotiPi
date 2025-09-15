@@ -142,7 +142,7 @@ def execute_alarm() -> bool:
             log(f"❌ Device '{device_name}' not found.")
             return False
 
-        target_volume = config.get("alarm_volume", config.get("volume", 50))
+        target_volume = config.get("alarm_volume", 50)
         fade_in = config.get("fade_in", False)
         shuffle = config.get("shuffle", False)
         log(f"🎚️ Alarm volume: {target_volume}%, Fade-In: {fade_in}, Shuffle: {shuffle}")

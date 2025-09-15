@@ -76,7 +76,7 @@
 
   <!-- Alarm Volume Control -->
   <div class="form-group">
-    <label for="alarm_volume_slider">{{ t('alarm_volume') }}</label>
+    <label for="alarm_volume_slider">{{ t('alarm_volume')|safe }}</label>
     <div class="volume-control">
       <input 
         type="range" 
@@ -93,9 +93,6 @@
     <small id="alarm-volume-help" class="form-help">{{ t('alarm_volume_help') }}</small>
   </div>
 
-  <!-- Hidden field for volume (legacy compatibility) -->
-  <input type="hidden" id="volume" name="volume" value="{{ config.volume or 50 }}">
-  
   <!-- Hidden field for playlist URI -->
   <input type="hidden" id="playlist_uri" name="playlist_uri" value="{{ config.get('playlist_uri', '') }}">
   

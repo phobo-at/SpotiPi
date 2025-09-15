@@ -97,7 +97,6 @@ class ConfigManager:
             "enabled": False,
             "playlist_uri": "",
             "device_name": "",
-            "volume": 50,
             "alarm_volume": 50,
             "fade_in": False,
             "shuffle": False,
@@ -112,10 +111,8 @@ class ConfigManager:
         
         # Validate types and ranges
         try:
-            config["volume"] = max(0, min(100, int(config.get("volume", 50))))
             config["alarm_volume"] = max(0, min(100, int(config.get("alarm_volume", 50))))
         except (ValueError, TypeError):
-            config["volume"] = 50
             config["alarm_volume"] = 50
         
         # Validate weekdays
