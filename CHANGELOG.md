@@ -38,7 +38,7 @@ This patch release fixes a critical production issue where alarm settings couldn
 
 The original rate limiting configuration was designed for multi-tenant systems but was too restrictive for single-user local installations. This update optimizes the limits while maintaining protection against API abuse and respecting external service constraints.
 
-## [1.2.0] - 2025-01-16
+## [1.2.0] - 2025-09-14
 
 ### 🚀 Major Frontend Architecture Refactoring
 
