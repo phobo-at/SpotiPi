@@ -776,6 +776,62 @@ def toggle_playback(token: str) -> Dict[str, Union[bool, str]]:
         print(f"❌ Error toggling playback: {e}")
         return {"success": False, "error": str(e)}
 
+
+def toggle_playback_fast(token: str) -> Dict[str, Union[bool, str]]:
+    """Fast toggle - tries pause first, then play if that fails.
+    Optimized for immediate response without status check.
+    
+    Args:
+        token: Spotify access token
+        
+    Returns:
+        Dict[str, Union[bool, str]]: Result dictionary with action and success status
+    """
+    try:
+        # Try pause first (most common case when music is playing)
+        try:
+            pause_resp = _spotify_request(
+                'PUT',
+                "https://api.spotify.com/v1/me/player/pause",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5
+            )
+            if pause_resp.status_code == 204:
+                return {"action": "paused", "success": True}
+            elif pause_resp.status_code == 403:
+                # 403 means no active device or already paused - try play
+                play_resp = _spotify_request(
+                    'PUT',
+                    "https://api.spotify.com/v1/me/player/play", 
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=5
+                )
+                if play_resp.status_code == 204:
+                    return {"action": "playing", "success": True}
+                else:
+                    return {"success": False, "error": f"Play failed: {play_resp.status_code}"}
+            else:
+                return {"success": False, "error": f"Pause failed: {pause_resp.status_code}"}
+        except Exception as e:
+            # If pause fails, try play
+            try:
+                play_resp = _spotify_request(
+                    'PUT',
+                    "https://api.spotify.com/v1/me/player/play",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=5
+                )
+                if play_resp.status_code == 204:
+                    return {"action": "playing", "success": True}
+                else:
+                    return {"success": False, "error": f"Play fallback failed: {play_resp.status_code}"}
+            except Exception as play_error:
+                return {"success": False, "error": f"Both pause and play failed: {e}, {play_error}"}
+                
+    except Exception as e:
+        print(f"❌ Error in fast toggle playback: {e}")
+        return {"success": False, "error": str(e)}
+
 #  Exportable functions - Updated for new config system
 __all__ = [
     "refresh_access_token", 

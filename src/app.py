@@ -28,7 +28,7 @@ from .utils.library_utils import compute_library_hash, prepare_library_payload, 
 from .constants import ALARM_TRIGGER_WINDOW_MINUTES
 from .api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
-    start_playback, stop_playback, resume_playback, toggle_playback,
+    start_playback, stop_playback, resume_playback, toggle_playback, toggle_playback_fast,
     set_volume, get_current_track, get_current_spotify_volume,
     get_playback_status, load_music_library_sections, get_combined_playback
 )
@@ -667,12 +667,12 @@ def metrics():
 @app.route("/toggle_play_pause", methods=["POST"])
 @api_error_handler
 def toggle_play_pause():
-    """Toggle Spotify play/pause"""
+    """Toggle Spotify play/pause - optimized for immediate response"""
     token = get_access_token()
     if not token:
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
-    result = toggle_playback(token)
+    result = toggle_playback_fast(token)
     return api_response(True, data=result) if isinstance(result, dict) else api_response(True, data={"result": result})
 
 @app.route("/volume", methods=["POST"])

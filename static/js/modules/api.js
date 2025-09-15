@@ -210,11 +210,42 @@ export function setVolumeImmediateThrottled(value, delay = 200) {
 }
 
 /**
- * Toggles playback state (Play <-> Pause)
+ * Toggles playback state (Play <-> Pause) with immediate UI feedback
  */
 export async function togglePlayPause() {
     try {
-      await fetchAPI("/toggle_play_pause", { method: "POST" });
+      // Get current play/pause button to provide immediate feedback
+      const playPauseBtn = document.getElementById('playPauseBtn');
+      if (!playPauseBtn) {
+        console.warn('Play/Pause button not found');
+        return;
+      }
+      
+      const wasPlaying = playPauseBtn.innerHTML?.includes('fa-pause');
+      
+      // Immediate UI feedback - toggle the button state
+      if (wasPlaying) {
+        playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+        playPauseBtn.setAttribute('aria-label', 'Play');
+      } else {
+        playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';  
+        playPauseBtn.setAttribute('aria-label', 'Pause');
+      }
+      
+      // Fire and forget API call - don't wait for response
+      fetchAPI("/toggle_play_pause", { method: "POST" }).catch(error => {
+        console.error('Failed to toggle play/pause:', error);
+        
+        // Revert UI change on error
+        if (wasPlaying) {
+          playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
+          playPauseBtn.setAttribute('aria-label', 'Pause');
+        } else {
+          playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+          playPauseBtn.setAttribute('aria-label', 'Play');
+        }
+      });
+      
     } catch (error) {
       console.error('Failed to toggle play/pause:', error);
     }
