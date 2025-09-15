@@ -1,27 +1,27 @@
 # SpotiPi Configuration Management - Roadmap
 
-*Web-basierte Spotify-Konfiguration und erweiterte Einstellungen*
+*Web-based Spotify configuration and advanced settings*
 
 ## 🎯 **Vision: Self-Service Setup**
 
-Benutzer sollen SpotiPi komplett über das Web-Interface einrichten können, ohne SSH oder Dateisystem-Zugriff. One-Click Setup vom ersten Start bis zur funktionsfähigen Installation.
+Users should be able to set up SpotiPi completely through the web interface, without SSH or filesystem access. One-click setup from first start to functional installation.
 
-## 🚀 **Phase 1: Spotify Connection Setup (4-6 Wochen)**
+## 🚀 **Phase 1: Spotify Connection Setup (4-6 weeks)**
 
 ### Core Features
-- [ ] **Setup Wizard**: Geführte Ersteinrichtung beim ersten Start
-- [ ] **Spotify App Registration**: Schritt-für-Schritt Anleitung + Links
-- [ ] **Token Generation**: Integrierter OAuth-Flow ohne externe Tools
-- [ ] **Connection Testing**: Automatische Validierung der Spotify-Verbindung
+- [ ] **Setup Wizard**: Guided initial setup on first start
+- [ ] **Spotify App Registration**: Step-by-step guide + links
+- [ ] **Token Generation**: Integrated OAuth flow without external tools
+- [ ] **Connection Testing**: Automatic validation of Spotify connection
 
 ### Technical Implementation
 ```
 /config-wizard/
-├── step-1-welcome.html        # Willkommen + Übersicht
-├── step-2-spotify-app.html    # Spotify App erstellen
-├── step-3-oauth.html          # OAuth Flow
-├── step-4-test.html           # Verbindung testen
-└── step-5-complete.html       # Setup abgeschlossen
+├── step-1-welcome.html        # Welcome + overview
+├── step-2-spotify-app.html    # Create Spotify app
+├── step-3-oauth.html          # OAuth flow
+├── step-4-test.html           # Test connection
+└── step-5-complete.html       # Setup complete
 ```
 
 ### Backend Components
@@ -29,24 +29,24 @@ Benutzer sollen SpotiPi komplett über das Web-Interface einrichten können, ohn
 # src/blueprints/config.py
 @app.route("/setup/spotify/oauth")
 def spotify_oauth_start():
-    # OAuth Flow initiieren
+    # Initialize OAuth flow
     
 @app.route("/setup/spotify/callback") 
 def spotify_oauth_callback():
-    # Token empfangen und speichern
+    # Receive and save token
     
 @app.route("/setup/test-connection")
 def test_spotify_connection():
-    # Verbindung validieren
+    # Validate connection
 ```
 
-## 🔧 **Phase 2: Advanced Configuration UI (2-3 Wochen)**
+## 🔧 **Phase 2: Advanced Configuration UI (2-3 weeks)**
 
 ### Settings Categories
-- [ ] **Spotify Settings**: Token-Management, API-Limits, Retry-Verhalten
-- [ ] **Network Settings**: CORS, Rate Limiting, mDNS-Name
-- [ ] **System Settings**: Logging-Level, Cache-Größen, Auto-Updates
-- [ ] **Alarm Settings**: Standard-Volumes, Fade-Zeiten, Device-Präferenzen
+- [ ] **Spotify Settings**: Token management, API limits, retry behavior
+- [ ] **Network Settings**: CORS, rate limiting, mDNS name
+- [ ] **System Settings**: Logging level, cache sizes, auto-updates
+- [ ] **Alarm Settings**: Default volumes, fade times, device preferences
 
 ### UI Components
 ```typescript
@@ -67,36 +67,36 @@ interface ConfigSetting {
 ```
 
 ### Advanced Features
-- [ ] **Config Import/Export**: JSON-basierte Konfigurationssicherung
-- [ ] **Environment Detection**: Automatische Pi vs. Development Settings
-- [ ] **Backup System**: Automatische Config-Backups vor Änderungen
-- [ ] **Reset Options**: Factory Reset + Selective Reset
+- [ ] **Config Import/Export**: JSON-based configuration backup
+- [ ] **Environment Detection**: Automatic Pi vs. development settings
+- [ ] **Backup System**: Automatic config backups before changes
+- [ ] **Reset Options**: Factory reset + selective reset
 
-## 🌐 **Phase 3: OAuth Integration & Security (3-4 Wochen)**
+## 🌐 **Phase 3: OAuth Integration & Security (3-4 weeks)**
 
 ### Spotify OAuth Flow
 ```mermaid
 graph LR
-    A[User öffnet Setup] --> B[Spotify App Anleitung]
-    B --> C[Client ID/Secret eingeben]
-    C --> D[OAuth Flow starten]
-    D --> E[Spotify Autorisierung]
-    E --> F[Token empfangen]
-    F --> G[Automatische Validierung]
-    G --> H[Setup komplett]
+    A[User opens setup] --> B[Spotify app guide]
+    B --> C[Enter client ID/secret]
+    C --> D[Start OAuth flow]
+    D --> E[Spotify authorization]
+    E --> F[Receive token]
+    F --> G[Automatic validation]
+    G --> H[Setup complete]
 ```
 
 ### Security Implementation
-- [ ] **Secure Token Storage**: Verschlüsselte `.env` Files
-- [ ] **PKCE OAuth Flow**: Sicherheitsbest-Practice für öffentliche Clients
-- [ ] **Token Rotation**: Automatische Refresh-Token Erneuerung
-- [ ] **Config Encryption**: Sensible Daten verschlüsselt speichern
+- [ ] **Secure Token Storage**: Encrypted `.env` files
+- [ ] **PKCE OAuth Flow**: Security best practice for public clients
+- [ ] **Token Rotation**: Automatic refresh token renewal
+- [ ] **Config Encryption**: Store sensitive data encrypted
 
 ### User Experience
-- [ ] **Guided Tutorial**: Screenshots + Video-Links für Spotify App Setup
-- [ ] **Error Recovery**: Detaillierte Fehlerdiagnose bei OAuth-Problemen
-- [ ] **Status Dashboard**: Live-Status der Spotify-Verbindung
-- [ ] **Re-Authorization**: Einfache Token-Erneuerung ohne komplettes Setup
+- [ ] **Guided Tutorial**: Screenshots + video links for Spotify app setup
+- [ ] **Error Recovery**: Detailed error diagnosis for OAuth problems
+- [ ] **Status Dashboard**: Live status of Spotify connection
+- [ ] **Re-Authorization**: Simple token renewal without complete setup
 
 ## 📱 **Phase 4: Mobile-Optimized Config (2 Wochen)**
 

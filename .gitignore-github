@@ -4,15 +4,21 @@ config.json
 spotify_credentials.json
 *.token
 *_credentials.json
-.spotify_cache*
-*.cache
 
-# Runtime files
+# User configuration directories
+/home/pi/.spotify_wakeup/
+.spotify_wakeup/
+
+# Runtime status files
 sleep_status.json
+
+# Development Server
+dev_server.pid
 *.pid
+
+# Logs
 *.log
 logs/
-cache/
 
 # Python
 venv/
@@ -72,6 +78,19 @@ Thumbs.db
 *.temp
 *.zip
 
+# Test files
+test_*
+*_test.py
+pytest.ini
+.pytest_cache/
+
+# Development artifacts & notes
+ideen/
+notes.txt
+todo.md
+debug.*
+ROADMAP.md
+
 # Node.js (if any frontend tools are added later)
 node_modules/
 npm-debug.log*
@@ -81,3 +100,7 @@ yarn-error.log*
 # Documentation builds
 docs/_build/
 docs/build/
+docs/DEPLOYMENT.md
+docs/GITHOOKS.md
+
+deploy_to_pi.sh

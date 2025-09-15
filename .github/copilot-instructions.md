@@ -10,7 +10,7 @@ SpotiPi is a Raspberry Pi-optimized Spotify alarm clock with Flask web interface
 - **Service Layer**: `src/services/` - Business logic with standardized `ServiceResult` pattern
 - **Core Logic**: `src/core/` - Alarm execution, scheduling, sleep timer
 - **API Layer**: `src/api/spotify.py` - Spotify Web API integration with token caching
-- **Utilities**: `src/utils/` - Thread safety, validation, caching, logging
+- **Utilities**: `src/utils/` - Thread safety, validation, caching, logging, library utilities
 
 ### Service Manager Pattern
 All business logic flows through `ServiceManager` (`src/services/service_manager.py`):
@@ -39,6 +39,7 @@ python run.py  # Development server on :5001
 ./scripts/run_tests.sh  # Handles venv, PYTHONPATH, dependencies
 pytest tests/          # Direct pytest (ensure PYTHONPATH includes src/)
 ```
+- Remember to update testes when applying changes to business logic or API contracts.
 
 ### Deployment to Pi
 ```bash
@@ -84,6 +85,7 @@ return ServiceResult(
 - **Rate Limiting**: Built-in retry logic with exponential backoff
 - **Parallel Loading**: Uses ThreadPoolExecutor for music library loading
 - **Network Health**: `spotify_network_health()` for diagnostics
+- **Performance Optimization**: `toggle_playback_fast()` for immediate UI response
 
 ### Alarm Scheduling (`src/core/alarm_scheduler.py`)
 - **Weekday Logic**: Monday=0, Sunday=6 (Python datetime standard)
@@ -96,9 +98,10 @@ return ServiceResult(
 - **Service Mode**: Systemd integration via deployment scripts
 
 ## Testing Strategy
-- **API Contract Tests**: `@pytest.mark.contract` for external API validation
+- **API Contract Tests**: Unified response format validation in `tests/test_api_contract.py`
 - **Service Layer Tests**: Mock external dependencies, test business logic
 - **Thread Safety Tests**: Concurrent access validation in `tests/`
+- **Rate Limiting Tests**: Decorator and throttling validation
 
 ## Flask Route Patterns
 
@@ -144,7 +147,7 @@ cache_layer.set_legacy_app_cache(data, expiry_hours=2)
 ```
 
 ### Cache Types & Storage
-- **Music Library**: Persistent file-based cache in `logs/music_library_cache.json`
+- **Music Library**: Persistent file-based cache in `cache/music_library_cache.json`
 - **Token Cache**: Thread-safe token storage with auto-refresh
 - **Config Cache**: Thread-local caching for performance
 - **Migration Stats**: Tracks legacy vs unified cache usage
@@ -168,16 +171,15 @@ Complete PWA implementation with `static/manifest.json`:
 - **No Offline Mode**: Requires active internet for Spotify API functionality
 
 ### Mobile-First CSS Architecture
-Organized CSS with clear structure (`static/css/style.css`):
+Modular CSS architecture with main orchestrator (`static/css/main.css`):
 ```css
-/* PWA iOS status bar handling */
-@media (display-mode: standalone) {
-  body::before {
-    height: env(safe-area-inset-top);
-  }
-}
+/* Modular structure with @import */
+@import url('foundation/variables.css');    /* CSS Custom Properties */
+@import url('foundation/base.css');         /* Base styles & PWA */
+@import url('components/forms.css');        /* UI Components */
+@import url('layout/main-layout.css');      /* Layout & responsive */
 
-/* CSS Custom Properties for theming */
+/* CSS Custom Properties in foundation/variables.css */
 :root {
   --color-primary: #1db954;
   --color-bg: #1e1e1e;
@@ -186,7 +188,8 @@ Organized CSS with clear structure (`static/css/style.css`):
 ```
 
 ### JavaScript Patterns
-Client-side code (`static/js/script.js`) follows specific patterns:
+Client-side code (`static/js/main.js`) follows specific patterns:
+- **Modular Architecture**: ES6 modules with clear separation (`modules/api.js`, `modules/ui.js`, etc.)
 - **DOM Caching**: Central `DOM.getElement()` system for performance
 - **API Polling**: Smart backoff with configurable intervals
 - **Cache-First**: Uses `If-None-Match` headers for 304 responses
@@ -198,7 +201,7 @@ Client-side code (`static/js/script.js`) follows specific patterns:
 ```bash
 ./scripts/deploy_to_pi.sh  # Complete deployment workflow:
 # 1. Rsync with --delete (removes orphaned files)  
-# 2. Excludes: .git, .env, venv/, __pycache__, logs/, tests/
+# 2. Excludes: .git, .env, venv/, __pycache__, logs/, cache/, tests/
 # 3. Automatic systemd service restart
 # 4. Health checks and rollback on failure
 ```
@@ -229,5 +232,5 @@ manager.restart()  # Zero-downtime restart
 - **Config Updates**: Use `config_transaction()` for atomic config changes  
 - **Service Access**: Get services via `get_service_manager().service_name`
 - **Background Tasks**: Use Flask's thread-safe patterns for alarm scheduling
-- **Language**: Project language is English. Make sure that all comments, logs are in English.
+- **Language**: Project language is English. Make sure that all comments, logs and .md files are creted in English.
 - **Translations**: make sure that user-facing strings are translatable using the `t_api` function.

@@ -49,7 +49,7 @@ class AlarmService(BaseService):
             if config.get("enabled") and config.get("time"):
                 weekdays = config.get("weekdays", [])
                 if weekdays:
-                    next_alarm = self.scheduler.get_next_alarm_datetime(
+                    next_alarm = self.scheduler.get_next_alarm_date(
                         config["time"], weekdays
                     )
                     is_scheduled = True
@@ -191,8 +191,8 @@ class AlarmService(BaseService):
                 weekday = check_date.strftime('%A').lower()
                 
                 if weekday in weekdays:
-                    alarm_datetime = self.scheduler.get_next_alarm_datetime(
-                        config["time"], [weekday], check_date
+                    alarm_datetime = self.scheduler.get_next_alarm_date(
+                        config["time"], [weekday]
                     )
                     if alarm_datetime:
                         next_alarms.append({

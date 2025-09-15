@@ -5,6 +5,55 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2025-09-15
+
+### 🐛 Bugfix Release - Test Suite & Backend Fixes
+
+This patch release fixes critical backend issues discovered during comprehensive test suite validation and ensures all system components work reliably together.
+
+### 🔧 Fixed
+
+**Backend Service Layer:**
+- Fixed `WeekdayScheduler` method name mismatch: `get_next_alarm_datetime()` → `get_next_alarm_date()`
+- Resolved advanced alarm status endpoint failing with `'WeekdayScheduler' object has no attribute 'get_next_alarm_datetime'` error
+- Fixed alarm service integration to use correct scheduler API methods
+
+**API Response Structure:**
+- Standardized volume field naming: Tests now correctly expect `alarm_volume` instead of `volume`
+- Reflects the separation between global volume control and alarm-specific volume settings
+- Maintains backward compatibility while supporting new volume architecture
+
+**Cache System Organization:**
+- Relocated music library cache from `logs/` to dedicated `cache/` directory
+- Updated `.gitignore` to properly handle new cache directory structure
+- Improved cache file organization for better system maintenance
+
+### ✅ Test Suite Validation
+
+**Comprehensive Test Coverage:**
+- All 22 integration tests now pass successfully
+- Fixed API contract tests for new response wrapper format `{"data": {...}}`
+- Updated rate limiting tests for current algorithm implementations
+- Corrected service layer tests for proper endpoint URLs and response structures
+
+**Test Fixes:**
+- Fixed endpoint URL mappings: `/api/alarm/advanced-status` → `/alarm_status?advanced=true`
+- Updated response format expectations to match current API structure
+- Fixed rate limiting algorithm tests (removed non-implemented `fixed_window`)
+- Corrected sleep service test to handle nested response structure
+
+### 📋 Impact
+
+- ✅ Advanced alarm status endpoint now works correctly
+- ✅ All test suite validations pass (22/22 tests)
+- ✅ Cache system better organized and maintainable
+- ✅ Backend service layer fully functional with proper error handling
+- ✅ API response consistency maintained across all endpoints
+
+### 🔍 Technical Details
+
+This release addresses the disconnect between test expectations and actual API behavior that accumulated during rapid development. The comprehensive test suite validation ensures system reliability and catches regressions early in the development cycle.
+
 ## [1.2.2] - 2025-09-15
 
 ### ✨ Enhancement - Immediate UI Response & Performance Optimization

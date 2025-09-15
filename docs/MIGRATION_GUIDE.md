@@ -2,46 +2,46 @@
 
 ## 📋 Migration Overview
 
-Diese Anleitung führt Sie durch die sichere Umbenennung des Arbeitsverzeichnisses von `spotify_wakeup` zu `spotipi`, sowohl lokal als auch auf dem Raspberry Pi.
+This guide walks you through the safe renaming of the working directory from `spotify_wakeup` to `spotipi`, both locally and on the Raspberry Pi.
 
-### ✨ **Path-Independence Verbesserungen**
-Alle hardcoded Pfade wurden durch umgebungsvariable-gesteuerte, path-agnostische Lösungen ersetzt:
+### ✨ **Path-Independence Improvements**
+All hardcoded paths have been replaced by environment variable-controlled, path-agnostic solutions:
 - **Environment Variable**: `SPOTIPI_APP_NAME` (default: "spotipi")
 - **Config Directory**: `~/.${SPOTIPI_APP_NAME}/` (default: `~/.spotipi/`)
 - **Pi App Directory**: `/home/pi/${SPOTIPI_APP_NAME}/` (default: `/home/pi/spotipi/`)
 
-### 🎯 **Ziele der Migration**
-1. **Konsistente Namensgebung**: Projekt, Verzeichnisse und Services heißen alle "spotipi"
-2. **Path-Independence**: Keine hardcoded Pfade mehr
-3. **Rückwärtskompatibilität**: Datenmigration ohne Verlust
-4. **Saubere Struktur**: Alte Verzeichnisse werden bereinigt
+### 🎯 **Migration Goals**
+1. **Consistent Naming**: Project, directories and services all named "spotipi"
+2. **Path-Independence**: No more hardcoded paths
+3. **Backward Compatibility**: Data migration without loss
+4. **Clean Structure**: Old directories will be cleaned up
 
-## 🚀 **Schritt-für-Schritt Migration**
+## 🚀 **Step-by-Step Migration**
 
-### **Phase 1: Lokale Migration**
+### **Phase 1: Local Migration**
 
-#### 1.1 Backup erstellen
+#### 1.1 Create Backup
 ```bash
 cd /Users/michi/spotipi-dev/
 cp -r spotify_wakeup spotify_wakeup_backup_$(date +%Y%m%d)
 ```
 
-#### 1.2 Repository lokal umbenennen  
+#### 1.2 Rename Repository Locally  
 ```bash
 cd /Users/michi/spotipi-dev/
 mv spotify_wakeup spotipi
 cd spotipi
 ```
 
-#### 1.3 Git Remote aktualisieren (falls erforderlich)
+#### 1.3 Update Git Remote (if required)
 ```bash
-# Falls Repository-URL geändert werden soll
+# If repository URL needs to be changed
 git remote set-url origin git@github.com:phobo-at/spotipi.git
 ```
 
-#### 1.4 Neue path-agnostic Scripts aktivieren
+#### 1.4 Activate New Path-Agnostic Scripts
 ```bash
-# Alte Scripts als Backup beibehalten, neue verwenden
+# Keep old scripts as backup, use new ones
 mv scripts/deploy_to_pi.sh scripts/deploy_to_pi_old.sh
 mv scripts/deploy_to_pi_new.sh scripts/deploy_to_pi.sh
 chmod +x scripts/deploy_to_pi.sh
@@ -51,20 +51,20 @@ mv scripts/toggle_logging_new.sh scripts/toggle_logging.sh
 chmod +x scripts/toggle_logging.sh
 ```
 
-### **Phase 2: Raspberry Pi Vorbereitung**
+### **Phase 2: Raspberry Pi Preparation**
 
-#### 2.1 Service stoppen
+#### 2.1 Stop Service
 ```bash
 ssh pi@spotipi.local "sudo systemctl stop spotify-web.service"
 ```
 
-#### 2.2 Config/Cache Migration auf Pi
+#### 2.2 Config/Cache Migration on Pi
 ```bash
 ssh pi@spotipi.local "
-# Backup erstellen
+# Create backup
 sudo cp -r ~/.spotify_wakeup ~/.spotify_wakeup_backup_$(date +%Y%m%d) 2>/dev/null || true
 
-# Neues Verzeichnis erstellen und Daten migrieren
+# Create new directory and migrate data
 mkdir -p ~/.spotipi
 if [ -d ~/.spotify_wakeup ]; then
   cp -r ~/.spotify_wakeup/* ~/.spotipi/ 2>/dev/null || true
@@ -72,17 +72,17 @@ fi
 "
 ```
 
-#### 2.3 Hauptverzeichnis Migration auf Pi
+#### 2.3 Main Directory Migration on Pi
 ```bash
 ssh pi@spotipi.local "
-# Backup des Hauptverzeichnisses  
+# Backup main directory  
 sudo cp -r /home/pi/spotify_wakeup /home/pi/spotify_wakeup_backup_$(date +%Y%m%d) 2>/dev/null || true
 
-# Neues Verzeichnis erstellen
+# Create new directory
 sudo mkdir -p /home/pi/spotipi
 sudo chown pi:pi /home/pi/spotipi
 
-# Code migrieren (außer venv - das wird neu erstellt)
+# Migrate code (excluding venv - will be recreated)
 if [ -d /home/pi/spotify_wakeup ]; then
   rsync -av --exclude='venv/' --exclude='*.log' --exclude='logs/' /home/pi/spotify_wakeup/ /home/pi/spotipi/
 fi
@@ -91,13 +91,13 @@ fi
 
 ### **Phase 3: Systemd Service Update**
 
-#### 3.1 Neuen Service erstellen
+#### 3.1 Create New Service
 ```bash
 ssh pi@spotipi.local "
-# Backup alten Service
+# Backup old service
 sudo cp /etc/systemd/system/spotify-web.service /etc/systemd/system/spotify-web.service.backup
 
-# Neuen path-agnostic Service erstellen
+# Create new path-agnostic service
 sudo tee /etc/systemd/system/spotify-web.service > /dev/null << 'EOF'
 [Unit]
 Description=SpotiPi Web Interface
@@ -125,7 +125,7 @@ sudo systemctl daemon-reload
 
 ### **Phase 4: Python Environment Setup**
 
-#### 4.1 Virtual Environment auf Pi neu erstellen
+#### 4.1 Recreate Virtual Environment on Pi
 ```bash
 ssh pi@spotipi.local "
 cd /home/pi/spotipi
@@ -135,15 +135,15 @@ pip install -r requirements.txt
 "
 ```
 
-#### 4.2 .env Datei migrieren
+#### 4.2 Migrate .env File
 ```bash
 ssh pi@spotipi.local "
-# .env aus altem Verzeichnis kopieren falls vorhanden
+# Copy .env from old directory if available
 if [ -f /home/pi/spotify_wakeup/.env ]; then
   cp /home/pi/spotify_wakeup/.env /home/pi/spotipi/.env
 fi
 
-# .env aus Config-Verzeichnis kopieren falls vorhanden  
+# Copy .env from config directory if available  
 if [ -f ~/.spotipi/.env ]; then
   cp ~/.spotipi/.env /home/pi/spotipi/.env
 fi
@@ -152,19 +152,19 @@ fi
 
 ### **Phase 5: Deployment Test**
 
-#### 5.1 Erstes Deployment vom neuen lokalen Verzeichnis
+#### 5.1 First Deployment from New Local Directory
 ```bash
 cd /Users/michi/spotipi-dev/spotipi
 
-# Environment Variables setzen für Migration
+# Set environment variables for migration
 export SPOTIPI_APP_NAME="spotipi"
 export SPOTIPI_PI_PATH="/home/pi/spotipi"
 
-# Deployment ausführen  
+# Execute deployment  
 ./scripts/deploy_to_pi.sh
 ```
 
-#### 5.2 Service Status prüfen
+#### 5.2 Check Service Status
 ```bash
 ssh pi@spotipi.local "
 sudo systemctl status spotify-web.service
@@ -172,35 +172,35 @@ sudo journalctl -u spotify-web.service -n 20
 "
 ```
 
-#### 5.3 Web Interface testen
+#### 5.3 Test Web Interface
 ```bash
-# Browser öffnen oder curl Test
+# Open browser or curl test
 curl -s -o /dev/null -w "%{http_code}" http://spotipi.local:5000
 ```
 
-### **Phase 6: Cleanup (nach erfolgreicher Migration)**
+### **Phase 6: Cleanup (after successful migration)**
 
-#### 6.1 Alte Verzeichnisse auf Pi bereinigen
+#### 6.1 Clean up Old Directories on Pi
 ```bash
 ssh pi@spotipi.local "
-# Nach erfolgreichem Test - alte Verzeichnisse löschen
+# After successful test - delete old directories
 sudo rm -rf /home/pi/spotify_wakeup
 rm -rf ~/.spotify_wakeup
 
-# Backup-Verzeichnisse können nach einigen Tagen gelöscht werden
+# Backup directories can be deleted after a few days
 # sudo rm -rf /home/pi/spotify_wakeup_backup_*
 # rm -rf ~/.spotify_wakeup_backup_*
 "
 ```
 
-#### 6.2 Lokale Bereinigung
+#### 6.2 Local Cleanup
 ```bash
 cd /Users/michi/spotipi-dev/
-# Nach erfolgreichem Test
+# After successful test
 rm -rf spotify_wakeup_backup_*
 ```
 
-## 🔧 **Environment Variables für Anpassungen**
+## 🔧 **Environment Variables for Customization**
 
 ### **Deployment Configuration**
 ```bash
@@ -221,7 +221,7 @@ export SPOTIPI_ENV="production"            # Environment mode
 
 ## 🛡️ **Rollback Plan**
 
-Falls Probleme auftreten:
+If problems occur:
 
 ### **Service Rollback**
 ```bash
@@ -245,113 +245,113 @@ mv ~/.spotify_wakeup_backup_* ~/.spotify_wakeup
 
 ## ✅ **Migration Checklist**
 
-- [ ] **Phase 1**: Lokales Backup erstellt
-- [ ] **Phase 1**: Repository lokal umbenannt zu `spotipi`
-- [ ] **Phase 1**: Neue path-agnostic Scripts aktiviert  
-- [ ] **Phase 2**: Service auf Pi gestoppt
-- [ ] **Phase 2**: Config-Verzeichnis migriert (`~/.spotify_wakeup` → `~/.spotipi`)
-- [ ] **Phase 2**: Hauptverzeichnis migriert (`/home/pi/spotify_wakeup` → `/home/pi/spotipi`)
-- [ ] **Phase 3**: Systemd Service aktualisiert
-- [ ] **Phase 4**: Python venv neu erstellt
-- [ ] **Phase 4**: .env Datei migriert
-- [ ] **Phase 5**: Deployment getestet
-- [ ] **Phase 5**: Web Interface funktioniert
-- [ ] **Phase 6**: Alte Verzeichnisse bereinigt
+- [ ] **Phase 1**: Local backup created
+- [ ] **Phase 1**: Repository renamed locally to `spotipi`
+- [ ] **Phase 1**: New path-agnostic scripts activated  
+- [ ] **Phase 2**: Service stopped on Pi
+- [ ] **Phase 2**: Config directory migrated (`~/.spotify_wakeup` → `~/.spotipi`)
+- [ ] **Phase 2**: Main directory migrated (`/home/pi/spotify_wakeup` → `/home/pi/spotipi`)
+- [ ] **Phase 3**: Systemd service updated
+- [ ] **Phase 4**: Python venv recreated
+- [ ] **Phase 4**: .env file migrated
+- [ ] **Phase 5**: Deployment tested
+- [ ] **Phase 5**: Web interface working
+- [ ] **Phase 6**: Old directories cleaned up
 
 ## 🔍 **Migration Verification**
 
-Nach der Migration sollten Sie die erfolgreiche Durchführung verifizieren:
+After migration you should verify successful completion:
 
-### **Automatische Verifikation**
+### **Automatic Verification**
 
-#### **Schnelle lokale Überprüfung:**
+#### **Quick local verification:**
 ```bash
 ./scripts/verify_local.sh
 ```
 
-#### **Vollständige Migration-Verifikation:**
+#### **Complete migration verification:**
 ```bash
 ./scripts/verify_migration.sh
 ```
 
-### **Manuelle Verifikation Checklist**
+### **Manual Verification Checklist**
 
-#### **Lokale Environment:**
-- [ ] Arbeitsverzeichnis heißt `spotipi`
-- [ ] Alte Scripts sind als `_old.sh` gesichert
-- [ ] Neue Scripts sind ausführbar
-- [ ] Git Remote zeigt auf korrekte URL (falls geändert)
+#### **Local Environment:**
+- [ ] Working directory named `spotipi`
+- [ ] Old scripts backed up as `_old.sh`
+- [ ] New scripts are executable
+- [ ] Git remote points to correct URL (if changed)
 
 #### **Raspberry Pi Environment:**
-- [ ] SSH Verbindung funktioniert: `ssh pi@spotipi.local`
-- [ ] Neues Hauptverzeichnis existiert: `/home/pi/spotipi/`
-- [ ] Neues Config-Verzeichnis existiert: `~/.spotipi/`
-- [ ] Alte Verzeichnisse sind bereinigt oder als Backup markiert
+- [ ] SSH connection works: `ssh pi@spotipi.local`
+- [ ] New main directory exists: `/home/pi/spotipi/`
+- [ ] New config directory exists: `~/.spotipi/`
+- [ ] Old directories cleaned up or marked as backup
 
 #### **System Service:**
 ```bash
 ssh pi@spotipi.local "sudo systemctl status spotify-web.service"
 ```
-- [ ] Service ist `active (running)`
-- [ ] Service ist `enabled` für Autostart
-- [ ] Keine Fehler in den Logs
+- [ ] Service is `active (running)`
+- [ ] Service is `enabled` for autostart
+- [ ] No errors in logs
 
 #### **Web Interface:**
-- [ ] Web Interface erreichbar: `http://spotipi.local:5000`
-- [ ] Hauptseite lädt (HTTP 200)
-- [ ] API Endpoints antworten: `/api/alarm_status`, `/api/spotify/library_status`
+- [ ] Web interface accessible: `http://spotipi.local:5000`
+- [ ] Main page loads (HTTP 200)
+- [ ] API endpoints respond: `/api/alarm_status`, `/api/spotify/library_status`
 
 #### **Python Environment:**
 ```bash
 ssh pi@spotipi.local "cd /home/pi/spotipi && ./venv/bin/python --version"
 ```
-- [ ] Virtual Environment funktioniert
-- [ ] Alle Requirements installiert
-- [ ] App kann importiert werden
+- [ ] Virtual environment working
+- [ ] All requirements installed
+- [ ] App can be imported
 
 #### **Configuration:**
 ```bash
 ssh pi@spotipi.local "cd /home/pi/spotipi && ./venv/bin/python -c 'from src.config import load_config; print(load_config())'"
 ```
-- [ ] Config lädt erfolgreich
-- [ ] .env Datei ist vorhanden (falls benötigt)
-- [ ] Spotify Credentials funktionieren
+- [ ] Config loads successfully
+- [ ] .env file is present (if needed)
+- [ ] Spotify credentials working
 
-### **Verifikation Output Codes**
+### **Verification Output Codes**
 
-Die `verify_migration.sh` Script liefert diese Exit Codes:
-- **0**: Vollständig erfolgreich (grün)
-- **1**: Erfolgreich mit Warnungen (gelb) 
-- **2**: Fehlgeschlagen (rot)
+The `verify_migration.sh` script returns these exit codes:
+- **0**: Completely successful (green)
+- **1**: Successful with warnings (yellow) 
+- **2**: Failed (red)
 
 ### **Troubleshooting Migration Issues**
 
-#### **Service startet nicht:**
+#### **Service won't start:**
 ```bash
 ssh pi@spotipi.local "sudo journalctl -u spotify-web.service -n 50"
 ```
 
-#### **Web Interface nicht erreichbar:**
+#### **Web interface not accessible:**
 ```bash
 ssh pi@spotipi.local "netstat -tlnp | grep :5000"
 ```
 
-#### **Python Import Fehler:**
+#### **Python import errors:**
 ```bash
 ssh pi@spotipi.local "cd /home/pi/spotipi && ./venv/bin/python -c 'import sys; print(sys.path)'"
 ```
 
-#### **Config Problems:**
+#### **Config problems:**
 ```bash
 ssh pi@spotipi.local "ls -la ~/.spotipi/ /home/pi/spotipi/config/"
 ```
 
 ## 🎯 **Post-Migration Benefits**
 
-Nach der erfolgreichen Migration haben Sie:
-- ✅ **Path-Independence**: Keine hardcoded Pfade mehr
-- ✅ **Konsistente Namensgebung**: Alles heißt "spotipi"  
-- ✅ **Flexible Konfiguration**: Über Environment Variables anpassbar
-- ✅ **Saubere Struktur**: Alte Verzeichnisse bereinigt
-- ✅ **Future-Proof**: Einfache Migration für zukünftige Änderungen
-- ✅ **Automatische Verifikation**: Scripts für Validierung der Migration
+After successful migration you have:
+- ✅ **Path-Independence**: No more hardcoded paths
+- ✅ **Consistent Naming**: Everything named "spotipi"  
+- ✅ **Flexible Configuration**: Customizable via environment variables
+- ✅ **Clean Structure**: Old directories cleaned up
+- ✅ **Future-Proof**: Easy migration for future changes
+- ✅ **Automatic Verification**: Scripts for migration validation

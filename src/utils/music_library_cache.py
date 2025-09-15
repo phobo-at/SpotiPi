@@ -82,9 +82,9 @@ class MusicLibraryCache:
         
         # Paths for persistent cache
         if project_root:
-            self.cache_dir = project_root / "logs"
+            self.cache_dir = project_root / "cache"
         else:
-            self.cache_dir = Path(__file__).parent.parent.parent / "logs"
+            self.cache_dir = Path(__file__).parent.parent.parent / "cache"
         self.cache_dir.mkdir(exist_ok=True)
         
         # TTL configuration (seconds)

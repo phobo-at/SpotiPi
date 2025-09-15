@@ -1,12 +1,16 @@
 {
-  "enabled": false,
-  "time": "10:43",
-  "playlist_uri": "spotify:playlist:4I33WFTJXYssFCJzfL1YY1",
-  "device_name": "phobo",
-  "alarm_volume": 23,
+  "enabled": true,
+  "time": "07:30",
+  "playlist_uri": "",
+  "device_name": "",
+  "alarm_volume": 55,
   "fade_in": false,
   "shuffle": false,
-  "weekdays": [],
+  "weekdays": [
+    1,
+    2,
+    3
+  ],
   "sleep_volume": 25,
   "sleep_default_duration": 15,
   "sleep_playlist_uri": "",
