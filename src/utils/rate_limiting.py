@@ -140,56 +140,56 @@ class RateLimiter:
     def _register_default_rules(self) -> None:
         """Register default rate limiting rules."""
         
-        # General API protection
+        # General API protection - generous for single user
         self.add_rule(RateLimitRule(
             name="api_general",
-            requests_per_window=100,
+            requests_per_window=300,  # Much higher for local use
             window_seconds=60,
             limit_type=RateLimitType.SLIDING_WINDOW,
-            block_duration_seconds=60
+            block_duration_seconds=30  # Quick recovery
         ))
         
-        # Strict limit for sensitive endpoints
+        # Strict limit for sensitive endpoints (still some protection)
         self.add_rule(RateLimitRule(
             name="api_strict",
-            requests_per_window=20,
+            requests_per_window=50,  # Higher but still controlled
             window_seconds=60,
             limit_type=RateLimitType.SLIDING_WINDOW,
-            block_duration_seconds=300  # 5 minutes block
+            block_duration_seconds=120  # Shorter block time
         ))
         
-        # Very strict for config changes
+        # Relaxed for single-user local installation
         self.add_rule(RateLimitRule(
             name="config_changes",
-            requests_per_window=10,
-            window_seconds=60,
-            limit_type=RateLimitType.FIXED_WINDOW,
-            block_duration_seconds=600  # 10 minutes block
-        ))
-        
-        # Burst-tolerant for music library
-        self.add_rule(RateLimitRule(
-            name="music_library", 
-            requests_per_window=30,
-            window_seconds=60,
-            limit_type=RateLimitType.TOKEN_BUCKET,
-            burst_allowance=10,  # Allow 10 extra requests in burst
-            block_duration_seconds=120
-        ))
-        
-        # Spotify API protection (very conservative)
-        self.add_rule(RateLimitRule(
-            name="spotify_api",
-            requests_per_window=50,  # Spotify allows ~100/minute
+            requests_per_window=100,  # Much higher for local use
             window_seconds=60,
             limit_type=RateLimitType.SLIDING_WINDOW,
-            block_duration_seconds=300
+            block_duration_seconds=30  # Short block time
         ))
         
-        # Frequent status checks allowed
+        # Generous for music library browsing 
+        self.add_rule(RateLimitRule(
+            name="music_library", 
+            requests_per_window=100,  # Higher for smooth browsing
+            window_seconds=60,
+            limit_type=RateLimitType.TOKEN_BUCKET,
+            burst_allowance=20,  # More burst capacity
+            block_duration_seconds=60  # Shorter block
+        ))
+        
+        # Spotify API protection (respects their limits but generous for local use)
+        self.add_rule(RateLimitRule(
+            name="spotify_api",
+            requests_per_window=80,  # Spotify allows ~100/minute, keep some buffer
+            window_seconds=60,
+            limit_type=RateLimitType.SLIDING_WINDOW,
+            block_duration_seconds=120  # Shorter recovery time
+        ))
+        
+        # Very frequent status checks allowed for responsive UI
         self.add_rule(RateLimitRule(
             name="status_check",
-            requests_per_window=200,
+            requests_per_window=500,  # Much higher for responsive UI
             window_seconds=60,
             limit_type=RateLimitType.SLIDING_WINDOW,
             block_duration_seconds=30

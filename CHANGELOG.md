@@ -5,7 +5,40 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] - 2025-09-15
+## [1.2.1] - 2025-09-15
+
+### 🐛 Critical Bugfix - Rate Limiting
+
+This patch release fixes a critical production issue where alarm settings couldn't be saved due to overly restrictive rate limiting for single-user installations.
+
+### 🔧 Fixed
+
+**Rate Limiting Optimization for Single-User Installation:**
+- Increased `config_changes` limit from 10/min to 100/min
+- Increased `api_general` limit from 100/min to 300/min  
+- Increased `spotify_api` limit from 50/min to 80/min (respects Spotify's 100/min limit)
+- Increased `music_library` limit from 30/min to 100/min
+- Increased `status_check` limit from 200/min to 500/min
+- Increased `api_strict` limit from 20/min to 50/min
+
+**Reduced Recovery Times:**
+- Config changes block time: 10min → 30s
+- API general block time: 1min → 30s
+- Spotify API block time: 5min → 2min
+- Music library block time: 2min → 1min
+
+### 📋 Impact
+
+- ✅ Alarm settings can now be saved without rate limiting errors
+- ✅ Smooth UI interactions and responsive interface
+- ✅ Better user experience for single-user Raspberry Pi installations
+- ✅ Still respects Spotify API limits to prevent service blocking
+
+### 🔍 Technical Details
+
+The original rate limiting configuration was designed for multi-tenant systems but was too restrictive for single-user local installations. This update optimizes the limits while maintaining protection against API abuse and respecting external service constraints.
+
+## [1.2.0] - 2025-01-16
 
 ### 🚀 Major Frontend Architecture Refactoring
 
@@ -193,4 +226,3 @@ Future releases will follow semantic versioning:
 - **MAJOR** versions for breaking changes
 - **MINOR** versions for new features (backward compatible)
 - **PATCH** versions for bug fixes (backward compatible)# Test Hook Commit Fri Aug 15 00:59:29 CEST 2025
-# Vollautomatisches Hook System Test Fri Aug 15 01:02:03 CEST 2025

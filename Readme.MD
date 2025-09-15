@@ -61,7 +61,7 @@ sudo cp scripts/spotipi.service /etc/systemd/system/
 sudo systemctl enable spotipi && sudo systemctl start spotipi
 ```
 
-## 📱 Screenshots
+## 📸 Screenshots (coming soon)
 
 *Mobile-optimized interface with dark theme support*
 
@@ -93,6 +93,11 @@ SpotiPi automatically configures itself:
 ## 📄 License
 
 MIT License - feel free to use and modify!
+
+## 🤖 Development Story
+
+This app was 100% vibe-coded with GitHub Copilot and an unhealthy amount of ☕ coffee. 
+If you find any bugs, blame the caffeine dependency, not the AI! 😄
 
 ## 🙏 Credits
 
