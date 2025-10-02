@@ -22,7 +22,8 @@ class AlarmInfo:
     """Structured alarm information."""
     enabled: bool
     time: Optional[str]
-    weekdays: List[str]
+    weekdays: List[int]
+    device_name: Optional[str]
     device_id: Optional[str]
     playlist_uri: Optional[str]
     volume: int
@@ -58,6 +59,7 @@ class AlarmService(BaseService):
                 enabled=config.get("enabled", False),
                 time=config.get("time"),
                 weekdays=config.get("weekdays", []),
+                device_name=config.get("device_name"),
                 device_id=config.get("device_id"),
                 playlist_uri=config.get("playlist_uri"),
                 volume=config.get("volume", 50),
@@ -115,7 +117,7 @@ class AlarmService(BaseService):
         try:
             config = load_config()
             
-            if not config.get("device_id") or not config.get("playlist_uri"):
+            if not (config.get("device_name") or config.get("device_id")) or not config.get("playlist_uri"):
                 return self._error_result(
                     "Alarm not fully configured. Missing device or playlist.",
                     error_code="INCOMPLETE_CONFIG"
@@ -188,16 +190,16 @@ class AlarmService(BaseService):
             
             for i in range(days):
                 check_date = current_date + timedelta(days=i)
-                weekday = check_date.strftime('%A').lower()
-                
-                if weekday in weekdays:
+                weekday_index = check_date.weekday()
+
+                if weekday_index in weekdays:
                     alarm_datetime = self.scheduler.get_next_alarm_date(
-                        config["time"], [weekday]
+                        config["time"], [weekday_index]
                     )
                     if alarm_datetime:
                         next_alarms.append({
                             "date": check_date.isoformat(),
-                            "weekday": weekday.title(),
+                            "weekday": WeekdayScheduler.get_weekday_name(weekday_index),
                             "time": config["time"],
                             "datetime": alarm_datetime.isoformat()
                         })
@@ -242,7 +244,7 @@ class AlarmService(BaseService):
                     error_code="MISSING_WEEKDAYS"
                 )
             
-            if not config.get("device_id"):
+            if not (config.get("device_name") or config.get("device_id")):
                 return self._error_result(
                     "Cannot enable alarm: No Spotify device selected",
                     error_code="MISSING_DEVICE"

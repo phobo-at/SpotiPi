@@ -547,13 +547,6 @@ def api_music_library_sections():
     except Exception as e:
         logging.exception("Error loading partial music library")
         return api_response(False, message=str(e), status=500, error_code="music_library_partial_error")
-        resp.headers['ETag'] = hash_val
-        if want_fields == 'basic':
-            resp.headers['X-Data-Fields'] = 'basic'
-        return resp
-    except Exception as e:
-        logging.exception("Error loading partial music library")
-        return api_response(False, message=str(e), status=500, error_code="music_library_partial_error")
 
 @app.route("/api/artist-top-tracks/<artist_id>")
 @api_error_handler
@@ -906,7 +899,7 @@ def play_endpoint():
                     break
             
             if not target_device:
-                return api_response(False, message=t_api("device_not_found", request, name=r"{device_name}"), status=404, error_code="device_not_found")
+                return api_response(False, message=t_api("device_not_found", request, name=device_name), status=404, error_code="device_not_found")
             
             # Start playback with found device_id
             success = start_playback(token, target_device['id'], context_uri)

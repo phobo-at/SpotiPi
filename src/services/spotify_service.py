@@ -117,11 +117,10 @@ class SpotifyService(BaseService):
                 enhanced_playlists.append({
                     "uri": playlist.get("uri"),
                     "name": playlist.get("name"),
-                    "description": playlist.get("description", ""),
-                    "track_count": playlist.get("tracks", {}).get("total", 0),
-                    "public": playlist.get("public", False),
-                    "owner": playlist.get("owner", {}).get("display_name", "Unknown"),
-                    "images": playlist.get("images", [])
+                    "track_count": playlist.get("track_count", 0),
+                    "owner": playlist.get("artist"),
+                    "image_url": playlist.get("image_url"),
+                    "type": playlist.get("type", "playlist")
                 })
             
             return self._success_result(
@@ -144,14 +143,16 @@ class SpotifyService(BaseService):
             # Get playlists and user library
             playlists = get_playlists(token)
             user_library = get_user_library(token)
-            
+
             library_data = {
                 "playlists": playlists or [],
                 "saved_albums": user_library.get("albums", []) if user_library else [],
                 "saved_tracks": user_library.get("tracks", []) if user_library else [],
+                "saved_artists": user_library.get("artists", []) if user_library else [],
                 "total_playlists": len(playlists) if playlists else 0,
                 "total_saved_albums": len(user_library.get("albums", [])) if user_library else 0,
-                "total_saved_tracks": len(user_library.get("tracks", [])) if user_library else 0
+                "total_saved_tracks": len(user_library.get("tracks", [])) if user_library else 0,
+                "total_saved_artists": len(user_library.get("artists", [])) if user_library else 0
             }
             
             return self._success_result(

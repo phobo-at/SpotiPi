@@ -53,12 +53,36 @@ def get_sleep_status() -> Dict[str, Any]:
                 data = json.load(f)
                 if data.get("active", False):
                     end_time = data.get("end", 0)
-                    remaining = int(end_time - time.time())
+                    start_time = data.get("start")
+                    duration_minutes = data.get("duration_minutes")
+                    total_seconds = data.get("total_seconds")
+
+                    if duration_minutes is not None and total_seconds is None:
+                        try:
+                            total_seconds = int(duration_minutes) * 60
+                        except (TypeError, ValueError):
+                            total_seconds = None
+
+                    if start_time is None and end_time and total_seconds:
+                        start_time = end_time - total_seconds
+
+                    remaining = max(0, int(end_time - time.time())) if end_time else 0
+                    progress_percent = 0.0
+                    if total_seconds and total_seconds > 0:
+                        elapsed = total_seconds - remaining
+                        elapsed = max(0, min(total_seconds, elapsed))
+                        progress_percent = (elapsed / total_seconds) * 100
+
                     return {
                         "active": True,
                         "remaining_seconds": remaining,
-                        "remaining_minutes": remaining // 60,
-                        "end_time": end_time
+                        "remaining_minutes": remaining // 60 if remaining else 0,
+                        "remaining_time": remaining,
+                        "total_duration_seconds": total_seconds,
+                        "total_duration_minutes": duration_minutes,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "progress_percent": progress_percent
                     }
         return {"active": False}
     except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
@@ -87,14 +111,17 @@ def start_sleep_timer(duration_minutes: int, playlist_uri: str = "", device_name
             logger.warning("Invalid duration for sleep timer")
             return False
             
-        end_timestamp = time.time() + duration_minutes * 60
+        start_timestamp = time.time()
+        end_timestamp = start_timestamp + duration_minutes * 60
         print(f"🔥 DEBUG: End timestamp calculated: {end_timestamp}")
         
         # Save sleep status
         sleep_data = {
             "active": True, 
             "end": end_timestamp,
+            "start": start_timestamp,
             "duration_minutes": duration_minutes,
+            "total_seconds": duration_minutes * 60,
             "playlist_uri": playlist_uri,
             "device_name": device_name,
             "volume": volume

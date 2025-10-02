@@ -22,6 +22,7 @@ class SleepService(BaseService):
     def __init__(self):
         super().__init__("sleep")
         self._timer_start_time = None
+        self._service_start_time = datetime.now()
     
     def get_sleep_status(self) -> ServiceResult:
         """Get current sleep timer status."""
@@ -29,19 +30,41 @@ class SleepService(BaseService):
             status = get_sleep_status()
             
             # Enhance status with additional information
+            remaining_seconds = status.get("remaining_seconds")
+            if remaining_seconds is None:
+                remaining_seconds = status.get("remaining_time", 0)
+            if remaining_seconds is None:
+                remaining_seconds = 0
+            try:
+                remaining_seconds = int(remaining_seconds)
+            except (TypeError, ValueError):
+                remaining_seconds = 0
+
+            total_duration = status.get("total_duration_seconds")
+            if total_duration is None:
+                total_duration = status.get("total_duration", 0)
+            if total_duration is None:
+                total_duration = 0
+
+            start_time = status.get("start_time")
+            end_time = status.get("end_time")
+
+            progress_percent = status.get("progress_percent", 0)
+            if progress_percent == 0 and status.get("active") and total_duration:
+                elapsed = total_duration - remaining_seconds
+                if total_duration > 0:
+                    progress_percent = max(0.0, min(100.0, (elapsed / total_duration) * 100))
+
             enhanced_status = {
                 "active": status.get("active", False),
-                "remaining_time": status.get("remaining_time", 0),
-                "total_duration": status.get("total_duration", 0),
-                "start_time": status.get("start_time"),
-                "end_time": status.get("end_time"),
-                "progress_percent": 0
+                "remaining_time": remaining_seconds,
+                "total_duration": total_duration,
+                "start_time": start_time,
+                "end_time": end_time,
+                "progress_percent": progress_percent,
+                "remaining_seconds": remaining_seconds,
+                "total_duration_seconds": total_duration
             }
-            
-            # Calculate progress percentage
-            if enhanced_status["active"] and enhanced_status["total_duration"] > 0:
-                elapsed = enhanced_status["total_duration"] - enhanced_status["remaining_time"]
-                enhanced_status["progress_percent"] = (elapsed / enhanced_status["total_duration"]) * 100
             
             return self._success_result(
                 data=enhanced_status,
@@ -66,14 +89,14 @@ class SleepService(BaseService):
             validated_data = validate_sleep_config(form_data)
             
             # Business logic validation
-            duration = validated_data.get("duration", 0)
-            if duration < 1:
+            duration_minutes = validated_data.get("duration_minutes", 0)
+            if duration_minutes < 1:
                 return self._error_result(
                     "Sleep timer duration must be at least 1 minute",
                     error_code="INVALID_DURATION"
                 )
             
-            if duration > 480:  # 8 hours
+            if duration_minutes > 480:  # 8 hours
                 return self._error_result(
                     "Sleep timer duration cannot exceed 8 hours (480 minutes)",
                     error_code="DURATION_TOO_LONG"
@@ -90,7 +113,7 @@ class SleepService(BaseService):
                 
                 return self._success_result(
                     data=status_result.data if status_result.success else None,
-                    message=f"Sleep timer started for {duration} minutes"
+                    message=f"Sleep timer started for {duration_minutes} minutes"
                 )
             else:
                 return self._error_result(
@@ -180,7 +203,7 @@ class SleepService(BaseService):
             
             stats = {
                 "session_start": self._timer_start_time.isoformat() if self._timer_start_time else None,
-                "service_uptime": (datetime.now() - datetime.now()).total_seconds(),  # Placeholder
+                "service_uptime": (datetime.now() - self._service_start_time).total_seconds(),
                 "timers_started_today": 0,  # Would be tracked in real implementation
                 "total_sleep_minutes_today": 0,  # Would be tracked in real implementation
                 "most_common_duration": 30,  # Would be calculated from history
