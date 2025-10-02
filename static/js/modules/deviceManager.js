@@ -178,12 +178,17 @@ class DeviceManager {
      * @param {boolean} isLoading - Whether devices are being loaded
      */
     setLoadingState(isLoading) {
+        const activeElement = document.activeElement;
+
         this.deviceSelectors.forEach(selector => {
             if (isLoading) {
                 selector.classList.add('loading');
-                selector.disabled = true;
-                
-                // Show loading option if selector is empty
+
+                // Keep the actively used selector enabled so mobile dropdowns stay open
+                const shouldDisable = selector !== activeElement;
+                selector.disabled = shouldDisable;
+
+                // Show loading indicator while options are being fetched
                 if (selector.children.length === 0) {
                     const option = document.createElement('option');
                     option.value = '';

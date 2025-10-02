@@ -46,63 +46,48 @@ class ProgressiveMusicLoader {
         
         try {
             const sectionsToLoad = this.getSectionsByPriority(sections);
-            console.log(`⚡ Loading ${sectionsToLoad.length} sections in parallel...`);
-            
-            // Create parallel promises for all sections
-            const sectionPromises = sectionsToLoad.map(async (section, index) => {
+            console.log(`⚡ Loading ${sectionsToLoad.length} sections sequentially...`);
+
+            let completed = 0;
+
+            for (const section of sectionsToLoad) {
                 try {
                     console.log(`📋 Starting ${section}...`);
                     const response = await fetchAPI(`/api/music-library?sections=${section}&fields=basic`);
-                    
+
                     if (response?.success && response?.data?.[section]) {
-                        console.log(`✅ Loaded ${section}: ${response.data[section].length} items`);
-                        return {
-                            section,
-                            data: response.data[section],
-                            index,
-                            success: true
-                        };
+                        const data = response.data[section];
+                        console.log(`✅ Loaded ${section}: ${data.length} items`);
+
+                        if (onSectionLoaded) {
+                            onSectionLoaded(section, data, {
+                                hasMetadata: true,
+                                sectionIndex: completed + 1,
+                                totalSections: sectionsToLoad.length,
+                                parallel: false
+                            });
+                        }
                     } else {
                         console.warn(`⚠️ No ${section} data received`);
-                        return { section, data: [], index, success: false };
                     }
                 } catch (error) {
                     console.error(`❌ Failed to load ${section}:`, error);
-                    return { section, data: [], index, success: false, error };
                 }
-            });
-            
-            // Process sections as they complete
-            const results = await Promise.allSettled(sectionPromises);
-            
-            // Sort by original priority order and call callbacks
-            const successfulResults = results
-                .map(result => result.status === 'fulfilled' ? result.value : null)
-                .filter(result => result && result.success)
-                .sort((a, b) => a.index - b.index);
-            
-            for (const result of successfulResults) {
-                if (onSectionLoaded) {
-                    onSectionLoaded(result.section, result.data, {
-                        hasMetadata: true,
-                        sectionIndex: result.index + 1,
-                        totalSections: sectionsToLoad.length,
-                        parallel: true
-                    });
-                }
-                
+
+                completed += 1;
+
                 if (onProgress) {
                     onProgress({
-                        completed: result.index + 1,
+                        completed,
                         total: sectionsToLoad.length,
-                        percentage: ((result.index + 1) / sectionsToLoad.length) * 100
+                        percentage: (completed / sectionsToLoad.length) * 100
                     });
                 }
             }
-            
-            console.log(`⚡ Parallel loading completed: ${successfulResults.length}/${sectionsToLoad.length} sections loaded`);
+
+            console.log(`⚡ Sequential loading completed: ${completed}/${sectionsToLoad.length} sections loaded`);
             if (onComplete) onComplete();
-            
+
         } catch (error) {
             console.error('❌ Progressive loading failed:', error);
             if (onError) onError(error);

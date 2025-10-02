@@ -60,6 +60,22 @@ CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("SPOTIFY_REFRESH_TOKEN")
 USERNAME = os.getenv("SPOTIFY_USERNAME")
+_LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+
+
+def _get_library_worker_limit() -> int:
+    """Determine how many worker threads to use for library fetches."""
+    override = os.getenv('SPOTIPI_LIBRARY_WORKERS')
+    if override:
+        try:
+            value = max(1, int(override))
+            return value
+        except ValueError:
+            logging.getLogger('spotify').warning(
+                "Invalid SPOTIPI_LIBRARY_WORKERS=%s; falling back to default",
+                override
+            )
+    return 2 if _LOW_POWER_MODE else 4
 
 # 🔑 Token function
 def refresh_access_token() -> Optional[str]:
@@ -1003,20 +1019,21 @@ def load_music_library_parallel(token: str) -> Dict[str, Any]:
             logger.error(f"❌ Error loading {name}: {e}")
             return []
     
-    # Use ThreadPoolExecutor to load all data in parallel
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        # Submit all tasks
+    section_funcs = {
+        'playlists': (get_playlists, "Playlists"),
+        'albums': (get_saved_albums, "Albums"),
+        'tracks': (get_user_saved_tracks, "Saved Tracks"),
+        'artists': (get_followed_artists, "Followed Artists")
+    }
+    max_workers = max(1, min(len(section_funcs), _get_library_worker_limit()))
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            'playlists': executor.submit(load_with_error_handling, get_playlists, "Playlists"),
-            'albums': executor.submit(load_with_error_handling, get_saved_albums, "Albums"),
-            'tracks': executor.submit(load_with_error_handling, get_user_saved_tracks, "Saved Tracks"),
-            'artists': executor.submit(load_with_error_handling, get_followed_artists, "Followed Artists")
+            name: executor.submit(load_with_error_handling, func, label)
+            for name, (func, label) in section_funcs.items()
         }
-        
-        # Collect results
-        results = {}
-        for key, future in futures.items():
-            results[key] = future.result()
+
+        results = {key: future.result() for key, future in futures.items()}
     
     end_time = time.time()
     total_items = sum(len(data) for data in results.values())
@@ -1085,7 +1102,8 @@ def load_music_library_sections(token: str, sections: List[str], force_refresh: 
             return cache['data'] or []
 
     # Load requested sections (in parallel to retain performance)
-    with ThreadPoolExecutor(max_workers=min(len(wanted), 4)) as executor:
+    max_workers = max(1, min(len(wanted), _get_library_worker_limit()))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_map = {sec: executor.submit(load_if_needed, sec) for sec in wanted}
         for sec, fut in future_map.items():
             results[sec] = fut.result()
@@ -1106,20 +1124,27 @@ def load_music_library_sections(token: str, sections: List[str], force_refresh: 
 
 # Additional functions for the new modular app.py
 
-def set_volume(token: str, volume_percent: int) -> bool:
+def set_volume(token: str, volume_percent: int, device_id: Optional[str] = None) -> bool:
     """Set Spotify volume.
     
     Args:
         token: Spotify access token
         volume_percent: Volume level (0-100)
+        device_id: Optional specific device ID to target
         
     Returns:
         bool: True if successful, False otherwise
     """
     try:
-        response = requests.put(
-            f"https://api.spotify.com/v1/me/player/volume?volume_percent={volume_percent}",
+        params: Dict[str, Any] = {"volume_percent": int(volume_percent)}
+        if device_id:
+            params["device_id"] = device_id
+
+        response = _spotify_request(
+            'PUT',
+            "https://api.spotify.com/v1/me/player/volume",
             headers={"Authorization": f"Bearer {token}"},
+            params=params,
             timeout=10
         )
         

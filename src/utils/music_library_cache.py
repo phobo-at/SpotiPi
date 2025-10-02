@@ -32,6 +32,21 @@ from enum import Enum
 
 from .simple_cache import write_json_cache, read_json_cache
 
+LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+
+
+def _get_worker_limit() -> int:
+    override = os.getenv('SPOTIPI_LIBRARY_WORKERS')
+    if override:
+        try:
+            return max(1, int(override))
+        except ValueError:
+            logging.getLogger('music_cache').warning(
+                "Invalid SPOTIPI_LIBRARY_WORKERS=%s; using default",
+                override
+            )
+    return 2 if LOW_POWER_MODE else 4
+
 
 class CacheType(Enum):
     """Types of cacheable music library data."""
@@ -253,7 +268,8 @@ class MusicLibraryCache:
                 return []
         
         # Load sections in parallel
-        with ThreadPoolExecutor(max_workers=min(len(wanted), 4)) as executor:
+        max_workers = max(1, min(len(wanted), _get_worker_limit()))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_map = {sec: executor.submit(load_section, sec) for sec in wanted}
             for sec, future in future_map.items():
                 results[sec] = future.result()

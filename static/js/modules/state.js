@@ -15,6 +15,7 @@ export const CONFIG = {
 // Mutable state variables
 export let userIsDragging = false;
 export let lastUserInteraction = 0;
+let activeDeviceInfo = { id: null, name: null, type: null };
 
 export function setUserIsDragging(value) {
     userIsDragging = value;
@@ -22,6 +23,22 @@ export function setUserIsDragging(value) {
 
 export function setLastUserInteraction(value) {
     lastUserInteraction = value;
+}
+
+export function setActiveDevice(device) {
+    if (device && typeof device === 'object') {
+        activeDeviceInfo = {
+            id: device.id || null,
+            name: device.name || null,
+            type: device.type || null
+        };
+    } else {
+        activeDeviceInfo = { id: null, name: null, type: null };
+    }
+}
+
+export function getActiveDevice() {
+    return activeDeviceInfo;
 }
 
 

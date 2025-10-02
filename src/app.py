@@ -30,7 +30,8 @@ from .api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
     start_playback, stop_playback, resume_playback, toggle_playback, toggle_playback_fast,
     set_volume, get_current_track, get_current_spotify_volume,
-    get_playback_status, load_music_library_sections, get_combined_playback, _spotify_request
+    get_playback_status, load_music_library_sections, get_combined_playback, _spotify_request,
+    get_saved_albums, get_user_saved_tracks, get_followed_artists
 )
 from .utils.token_cache import get_token_cache_info, log_token_cache_performance
 from .utils.thread_safety import get_config_stats, invalidate_config_cache
@@ -47,14 +48,19 @@ project_root = Path(__file__).parent.parent  # Go up from src/ to project root
 template_dir = project_root / "templates"
 static_dir = project_root / "static"
 
-app = Flask(__name__, 
-           template_folder=str(template_dir), 
-           static_folder=str(static_dir),
-           static_url_path='/static')
+app = Flask(
+    __name__,
+    template_folder=str(template_dir),
+    static_folder=str(static_dir),
+    static_url_path='/static'
+)
 
 # Secure secret key generation
 import secrets
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
+
+# Detect low power mode (e.g. Pi Zero) to tailor runtime features
+LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
 
 # Setup logging
 setup_logging()
@@ -87,7 +93,10 @@ def after_request(response: Response):
 
     # ---- Optional gzip compression ----
     try:
-        enable_compress = os.getenv('SPOTIPI_ENABLE_GZIP', '1') in ('1', 'true', 'yes')
+        enable_compress = (
+            not LOW_POWER_MODE and
+            os.getenv('SPOTIPI_ENABLE_GZIP', '1') in ('1', 'true', 'yes')
+        )
         accept_encoding = request.headers.get('Accept-Encoding', '')
         already_encoded = response.headers.get('Content-Encoding')
         is_json = response.mimetype == 'application/json'
@@ -366,13 +375,36 @@ def api_music_library():
     try:
         want_fields = request.args.get('fields')  # "basic" -> slim lists
         if_modified = request.headers.get('If-None-Match')  # ETag header
+        raw_sections = request.args.get('sections')
+        valid_sections = {"playlists", "albums", "tracks", "artists"}
+        requested_sections = []
+        if raw_sections is not None:
+            requested_sections = [s.strip() for s in raw_sections.split(',') if s.strip()]
+            requested_sections = [s for s in requested_sections if s in valid_sections]
+            if not requested_sections:
+                requested_sections = ['playlists']
 
-        # Use unified cache system instead of legacy _cache attribute
-        library_data = cache_migration.get_full_library_cached(
-            token=token, 
-            loader_func=get_user_library, 
-            force_refresh=force_refresh
-        )
+        if requested_sections:
+            section_loaders = {
+                'playlists': get_playlists,
+                'albums': get_saved_albums,
+                'tracks': get_user_saved_tracks,
+                'artists': get_followed_artists
+            }
+
+            library_data = cache_migration.get_library_sections_cached(
+                token=token,
+                sections=requested_sections,
+                section_loaders=section_loaders,
+                force_refresh=force_refresh
+            )
+        else:
+            # Use unified cache system instead of legacy _cache attribute
+            library_data = cache_migration.get_full_library_cached(
+                token=token,
+                loader_func=get_user_library,
+                force_refresh=force_refresh
+            )
 
         # Compute hash for ETag/conditional requests
         hash_val = compute_library_hash(library_data)
@@ -385,18 +417,28 @@ def api_music_library():
             return resp
 
         # Prepare response payload
-        resp_data = prepare_library_payload(library_data, basic=want_fields=='basic')
-        is_cached = library_data.get("cached", False)
+        resp_data = prepare_library_payload(library_data, basic=want_fields == 'basic')
         is_offline = library_data.get("offline_mode", False)
+
+        if requested_sections:
+            resp_data['partial'] = True
+            resp_data['sections'] = library_data.get('sections', requested_sections)
+            resp_data['cached_sections'] = library_data.get('cached', {})
+            cached_flags = library_data.get('cached', {})
+            is_cached = all(cached_flags.get(sec, False) for sec in requested_sections)
+        else:
+            is_cached = library_data.get("cached", False)
         
         # Determine response message
         if is_offline:
             message = "ok (offline cache)"
+        elif requested_sections and not is_cached:
+            message = t_api("ok_partial", request)
         elif is_cached:
             message = "ok (cached)"
         else:
             message = "ok (fresh)"
-        
+
         resp = api_response(True, data=resp_data, message=message)
         resp.headers['X-MusicLibrary-Hash'] = hash_val
         resp.headers['ETag'] = hash_val
@@ -739,7 +781,9 @@ def volume_endpoint():
         volume = validate_volume_only(request.form)
         
         # Set Spotify volume
-        spotify_success = set_volume(token, volume)
+        device_id = request.form.get('device_id') or None
+
+        spotify_success = set_volume(token, volume, device_id)
         
         if spotify_success:
             return api_response(True, data={"volume": volume}, message=f"Volume set to {volume}")

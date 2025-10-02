@@ -5,6 +5,29 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2025-10-02
+
+### 🚀 Pi Zero Performance & UX Enhancements
+
+This release focuses on squeezing maximum responsiveness out of the Raspberry Pi Zero deployment while smoothing out a few usability papercuts.
+
+### Added
+
+- **Low Power Mode:** New `SPOTIPI_LOW_POWER=1` toggle disables expensive gzip compression, right-sizes thread pools, and keeps section caching lean for constrained hardware.
+- **Section-Aware Library Endpoint:** `/api/music-library` now honours the `sections` query string and skips unnecessary payload work, dramatically cutting CPU usage when the frontend requests slices.
+
+### Changed
+
+- **Frontend Loader:** Progressive loader switches to sequential section fetches aligned with the new backend behaviour, preventing request bursts that overwhelmed the Pi Zero.
+- **Global Volume Control:** Slider dispatch now targets the active Spotify device directly and flushes the throttler instantly on release, removing the perceived lag between UI interaction and speaker volume changes.
+
+### Fixed
+
+- **iOS Device Selector:** Focused dropdowns stay enabled during refresh, so the speaker list no longer closes immediately on iPhone.
+- **Volume Endpoint:** Backend accepts optional `device_id`, ensuring volume updates reach the intended player even when multiple devices are visible.
+
+---
+
 ## [1.2.4] - 2025-09-15
 
 ### ⚡ Performance & Code Quality Release - Major Frontend Cleanup

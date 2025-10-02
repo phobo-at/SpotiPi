@@ -2,7 +2,7 @@
 // Centralizes all event listeners
 import { DOM, setLastUserInteraction, setUserIsDragging } from './state.js';
 import { updateLocalVolumeDisplay, handleDurationChange, showInterface, updateTime, updatePlaybackInfo } from './ui.js';
-import { setVolumeImmediateThrottled, togglePlayPause, fetchAPI } from './api.js';
+import { setVolumeImmediateThrottled, flushVolumeThrottle, togglePlayPause, fetchAPI } from './api.js';
 import { saveAlarmSettings } from './settings.js';
 
 console.log("eventListeners.js loaded");
@@ -64,7 +64,7 @@ export function initializeEventListeners() {
         elements.globalVolume.addEventListener('input', (e) => {
             updateLocalVolumeDisplay(e.target.value);
             // Set volume immediately with throttling during dragging
-            setVolumeImmediateThrottled(e.target.value, 150);
+            setVolumeImmediateThrottled(e.target.value);
         });
         
         elements.globalVolume.addEventListener('mousedown', () => setUserIsDragging(true));
@@ -74,12 +74,12 @@ export function initializeEventListeners() {
         elements.globalVolume.addEventListener('mouseup', (e) => {
             setUserIsDragging(false);
             // Global volume only sets Spotify, doesn't save to config
-            setVolumeImmediateThrottled(e.target.value, 50);
+            flushVolumeThrottle(e.target.value);
         });
         elements.globalVolume.addEventListener('touchend', (e) => {
             setUserIsDragging(false);
             // Global volume only sets Spotify, doesn't save to config
-            setVolumeImmediateThrottled(e.target.value, 50);
+            flushVolumeThrottle(e.target.value);
         });
     }
 

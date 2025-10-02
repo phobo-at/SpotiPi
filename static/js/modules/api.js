@@ -1,6 +1,7 @@
 // /static/js/modules/api.js
 // Handles all communication with the backend API
 import { t } from './translation.js';
+import { getActiveDevice } from './state.js';
 
 console.log("api.js loaded");
 
@@ -145,10 +146,18 @@ export async function setVolumeAndSave(value) {
 export async function setVolumeImmediate(value) {
   try {
     // Use unified volume endpoint without save_config for immediate response
+    const params = new URLSearchParams();
+    params.set('volume', value);
+
+    const activeDevice = getActiveDevice();
+    if (activeDevice && activeDevice.id) {
+      params.set('device_id', activeDevice.id);
+    }
+
     await fetchAPI("/volume", {
       method: "POST", 
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `volume=${value}`
+      body: params.toString()
     });
   } catch (error) {
     console.error('Failed to set immediate volume:', error);
@@ -159,24 +168,62 @@ export async function setVolumeImmediate(value) {
 let volumeThrottleTimer = null;
 let lastVolumeValue = null;
 
+function dispatchImmediateVolume(value) {
+  if (value === null || value === undefined) {
+    return;
+  }
+
+  try {
+    const promise = setVolumeImmediate(value);
+    if (promise && typeof promise.catch === 'function') {
+      promise.catch(error => {
+        console.error('Failed to set immediate volume:', error);
+      });
+    }
+  } catch (error) {
+    console.error('Failed to dispatch immediate volume:', error);
+  }
+}
+
 /**
  * Throttled version of setVolumeImmediate - prevents API spam during slider dragging
  * @param {number} value - Volume value (0-100)
  * @param {number} delay - Throttle delay in ms (default: 200ms)
  */
-export function setVolumeImmediateThrottled(value, delay = 200) {
+export function setVolumeImmediateThrottled(value, delay = 120) {
   lastVolumeValue = value;
-  
+
   if (volumeThrottleTimer) {
     clearTimeout(volumeThrottleTimer);
   }
-  
-  volumeThrottleTimer = setTimeout(async () => {
-    if (lastVolumeValue !== null) {
-      await setVolumeImmediate(lastVolumeValue);
-      lastVolumeValue = null;
-    }
-  }, delay);
+
+  volumeThrottleTimer = setTimeout(() => {
+    const valueToSend = lastVolumeValue;
+    lastVolumeValue = null;
+    volumeThrottleTimer = null;
+    dispatchImmediateVolume(valueToSend);
+  }, Math.max(0, delay));
+}
+
+/**
+ * Flush any pending throttled volume update immediately.
+ * @param {number|null} valueOverride - Optional value to send right away
+ */
+export function flushVolumeThrottle(valueOverride = null) {
+  if (volumeThrottleTimer) {
+    clearTimeout(volumeThrottleTimer);
+    volumeThrottleTimer = null;
+  }
+
+  if (valueOverride !== null) {
+    lastVolumeValue = valueOverride;
+  }
+
+  if (lastVolumeValue !== null) {
+    const valueToSend = lastVolumeValue;
+    lastVolumeValue = null;
+    dispatchImmediateVolume(valueToSend);
+  }
 }
 
 /**

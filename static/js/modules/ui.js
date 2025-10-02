@@ -1,6 +1,6 @@
 // /static/js/modules/ui.js
 // Manages all DOM manipulations and UI updates
-import { DOM, CONFIG, userIsDragging, lastUserInteraction } from './state.js';
+import { DOM, CONFIG, userIsDragging, lastUserInteraction, setActiveDevice } from './state.js';
 import { t } from './translation.js';
 import { getPlaybackStatus, getSleepStatus, fetchAPI } from './api.js';
 import { setUserIsDragging } from './state.js';
@@ -27,6 +27,12 @@ export async function updatePlaybackInfo(updateVolume = true) {
         updatePlayPauseButtonText(data.is_playing);
       }
       
+      if (data?.device) {
+        setActiveDevice(data.device);
+      } else {
+        setActiveDevice(null);
+      }
+
       if (updateVolume && data?.device?.volume_percent !== undefined) {
         updateVolumeSlider(data.device.volume_percent);
       }
