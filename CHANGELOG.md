@@ -5,6 +5,24 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.7] - 2025-10-02
+
+### 🔄 Deployment & Runtime Cleanup
+
+- Deployment script now ships only runtime-critical files via allowlist `rsync`, keeping Pi deployments lean.
+- Added optional `SPOTIPI_PURGE_UNUSED=1` flag to remove legacy assets from existing Raspberry Pi installs.
+
+### 🖥️ Frontend Polish
+
+- Music library loader batches sections more efficiently to minimize HTTP requests on mobile.
+- Device manager explicitly initialises focus timers, preventing stray refresh state.
+
+### 📚 Documentation & Tooling
+
+- README and Copilot guide updated with low-power mode, streamlined testing steps, and new deployment workflow.
+
+---
+
 ## [1.2.6] - 2025-10-02
 
 ### ✅ Highlights

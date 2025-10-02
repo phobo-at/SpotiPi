@@ -156,7 +156,7 @@ class ProgressiveMusicLoader {
         const queue = [...sections];
         
         while (queue.length > 0) {
-            if (queue.length >= 3) {
+            if (queue.length >= 2) {
                 batches.push(queue.splice(0, 2));
             } else {
                 batches.push([queue.shift()]);

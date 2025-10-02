@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-# 🚀 Deploy SpotiPi to Raspberry Pi - Path-Agnostic Version
-# Synchronizes local code changes to the Pi with detailed logging
-# 
+# 🚀 Deploy SpotiPi to Raspberry Pi - Minimal Runtime Sync
+# Synchronizes only runtime-required files from the development machine to the Pi.
+#
 # Features:
 # - Auto-detects local and remote paths
 # - Configurable via environment variables
-# - Maintains backward compatibility
+# - Transfers only the files the Pi needs to run SpotiPi
 
 # 🔧 Configuration with smart defaults
 PI_HOST="${SPOTIPI_PI_HOST:-pi@spotipi.local}"
@@ -19,133 +19,177 @@ DEFAULT_LOCAL_PATH="$(dirname "$SCRIPT_DIR")"
 # Allow override via environment
 LOCAL_PATH="${SPOTIPI_LOCAL_PATH:-$DEFAULT_LOCAL_PATH}"
 
-# Auto-detect remote path  
+# Auto-detect remote path
 PI_PATH="${SPOTIPI_PI_PATH:-/home/pi/$APP_NAME}"
 
-echo "🚀 Deploying SpotiPi to Raspberry Pi..."
-echo "📁 Local path: $LOCAL_PATH"
-echo "🌐 Remote: $PI_HOST:$PI_PATH"
+# Service name (systemd)
+SERVICE_NAME="${SPOTIPI_SERVICE_NAME:-spotify-web.service}"
+
+REQUIRED_PATHS=(
+  "run.py"
+  "requirements.txt"
+  "src"
+  "static"
+  "templates"
+  "config"
+)
+
+OPTIONAL_PATHS=(
+  "pyproject.toml"
+  "scripts/spotipi.service"
+)
+
+cat <<INFO
+🚀 Deploying SpotiPi to Raspberry Pi
+📁 Local path: $LOCAL_PATH
+🌐 Remote: $PI_HOST:$PI_PATH
+INFO
 
 # Verify local path exists
 if [ ! -d "$LOCAL_PATH" ]; then
-    echo "❌ Local path does not exist: $LOCAL_PATH"
-    echo "💡 Set SPOTIPI_LOCAL_PATH environment variable or run from correct location"
-    exit 1
+  echo "❌ Local path does not exist: $LOCAL_PATH"
+  echo "💡 Set SPOTIPI_LOCAL_PATH environment variable or run from the project root"
+  exit 1
 fi
 
-# Verify we have the expected SpotiPi structure
-if [ ! -f "$LOCAL_PATH/run.py" ] || [ ! -d "$LOCAL_PATH/src" ]; then
-    echo "❌ This doesn't look like a SpotiPi project directory: $LOCAL_PATH"
-    echo "💡 Expected run.py and src/ directory"
-    exit 1
+# Check that required files exist
+MISSING=()
+for item in "${REQUIRED_PATHS[@]}"; do
+  if [ ! -e "$LOCAL_PATH/$item" ]; then
+    MISSING+=("$item")
+  fi
+done
+
+if [ ${#MISSING[@]} -ne 0 ]; then
+  echo "❌ Missing required files/directories:"
+  for item in "${MISSING[@]}"; do
+    echo "   - $item"
+  done
+  exit 1
 fi
 
-# Sync code with detailed logging
-echo "📋 Synchronizing files to Pi..."
+# Build rsync include/exclude rules (allowlist)
+RSYNC_ARGS=(
+  -av
+  --delete
+  --prune-empty-dirs
+  --itemize-changes
+  --exclude='*.pyc'
+  --exclude='__pycache__/'
+  --exclude='.DS_Store'
+  --exclude='logs/'
+  --exclude='*.log'
+)
 
-# First, check what would be deleted with a dry run
-echo "🔍 Checking for deletions..."
-rsync -av \
-  --delete \
-  --dry-run \
-  --itemize-changes \
-  --exclude='.git' \
-  --exclude='.env' \
-  --exclude='venv/' \
-  --exclude='__pycache__/' \
-  --exclude='*.pyc' \
-  --exclude='.DS_Store' \
-  --exclude='node_modules/' \
-  --exclude='logs/' \
-  --exclude='*.log' \
-  --exclude='tests/' \
-  --exclude='docs/' \
-  --exclude='.pytest_cache/' \
-  --exclude='*.egg-info/' \
-  "$LOCAL_PATH/" "$PI_HOST:$PI_PATH/" 2>&1 | grep "deleting\|*deleting" > /tmp/rsync_deletions.log
+# Include rules for required paths
+ALL_PATHS=("${REQUIRED_PATHS[@]}" "${OPTIONAL_PATHS[@]}")
 
-# Now do the actual sync
-rsync -av \
-  --delete \
-  --exclude='.git' \
-  --exclude='.env' \
-  --exclude='venv/' \
-  --exclude='__pycache__/' \
-  --exclude='*.pyc' \
-  --exclude='.DS_Store' \
-  --exclude='node_modules/' \
-  --exclude='logs/' \
-  --exclude='*.log' \
-  --exclude='tests/' \
-  --exclude='docs/' \
-  --exclude='.pytest_cache/' \
-  --exclude='*.egg-info/' \
-  "$LOCAL_PATH/" "$PI_HOST:$PI_PATH/" 2>&1 | tee /tmp/rsync_output.log
+for path in "${ALL_PATHS[@]}"; do
+  if [ -e "$LOCAL_PATH/$path" ]; then
+    RSYNC_ARGS+=("--include=$path")
+    if [ -d "$LOCAL_PATH/$path" ]; then
+      RSYNC_ARGS+=("--include=$path/***")
+    fi
+  fi
+done
 
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "📊 Deployment Summary:"
-    echo "======================"
-    
-    # Parse the output for changes
-    TRANSFERRED=$(grep -A 1000 "Transfer starting" /tmp/rsync_output.log | grep -v "Transfer starting" | grep -v "sent\|received\|total size\|speedup" | grep -E "^[^d].*" | grep -v "/$" | wc -l | tr -d ' ')
-    DELETED=$(wc -l < /tmp/rsync_deletions.log | tr -d ' ')
-    
-    echo "📁 Files transferred: $TRANSFERRED"
-    echo "🗑️  Files deleted: $DELETED"
-    
-    # Show deleted files
-    if [ "$DELETED" -gt 0 ]; then
-        echo ""
-        echo "🗑️  Deleted from Pi:"
-        cat /tmp/rsync_deletions.log | sed 's/.*deleting /   ❌ /'
-    fi
-    
-    # Show transferred files (limit to avoid spam)
-    if [ "$TRANSFERRED" -gt 0 ]; then
-        echo ""
-        echo "📁 Transferred to Pi:"
-        grep -A 1000 "Transfer starting" /tmp/rsync_output.log | \
-            grep -v "Transfer starting" | \
-            grep -v "sent\|received\|total size\|speedup" | \
-            grep -E "^[^d].*" | \
-            grep -v "/$" | \
-            head -10 | \
-            sed 's/^/   ✅ /'
-        
-        if [ "$TRANSFERRED" -gt 10 ]; then
-            echo "   ... and $(($TRANSFERRED - 10)) more files"
-        fi
-    fi
-    
-    # Clean up
-    rm -f /tmp/rsync_output.log /tmp/rsync_deletions.log
-    
-    echo ""
-    echo "✅ Code synchronized successfully"
-    
-    # Restart service on Pi (path-agnostic)
-    SERVICE_NAME="${SPOTIPI_SERVICE_NAME:-spotify-web.service}"
-    echo "🔄 Restarting service: $SERVICE_NAME"
-    ssh "$PI_HOST" "sudo systemctl restart $SERVICE_NAME"
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Service restarted successfully"
-        echo "🎵 SpotiPi deployment complete!"
-        echo "🌐 Access: http://spotipi.local:5000"
-        
-        # Optional: Show service status
-        if [ "${SPOTIPI_SHOW_STATUS:-}" = "1" ]; then
-            echo ""
-            echo "📊 Service Status:"
-            ssh "$PI_HOST" "sudo systemctl status $SERVICE_NAME --no-pager -l"
-        fi
-    else
-        echo "❌ Failed to restart service"
-        echo "💡 Check service status: ssh $PI_HOST 'sudo systemctl status $SERVICE_NAME'"
-    fi
+# Exclude everything else
+RSYNC_ARGS+=("--exclude=*")
+
+SYNC_CMD=(rsync "${RSYNC_ARGS[@]}" "$LOCAL_PATH/" "$PI_HOST:$PI_PATH/")
+
+echo "📋 Synchronizing runtime files to Pi..."
+
+# Run rsync and capture output
+TMP_OUTPUT="$(mktemp)"
+TMP_DELETIONS="$(mktemp)"
+
+# Dry-run to capture deletions
+RSYNC_DRY_RUN=("${SYNC_CMD[@]}")
+RSYNC_DRY_RUN+=(--dry-run)
+"${RSYNC_DRY_RUN[@]}" > "$TMP_OUTPUT"
+grep "deleting " "$TMP_OUTPUT" > "$TMP_DELETIONS" || true
+
+# Actual sync
+"${SYNC_CMD[@]}" > "$TMP_OUTPUT"
+RSYNC_STATUS=$?
+
+if [ $RSYNC_STATUS -ne 0 ]; then
+  echo "❌ Failed to sync code"
+  cat "$TMP_OUTPUT"
+  rm -f "$TMP_OUTPUT" "$TMP_DELETIONS"
+  exit 1
+fi
+
+# Prepare summary data
+TRANSFERS=$(grep -E "^>f" "$TMP_OUTPUT" | wc -l | tr -d ' ')
+DELETED=$(wc -l < "$TMP_DELETIONS" | tr -d ' ')
+
+cat <<SUMMARY
+
+📊 Deployment Summary
+=====================
+📁 Files transferred: $TRANSFERS
+🗑️  Files deleted: $DELETED
+SUMMARY
+
+if [ "$DELETED" -gt 0 ]; then
+  echo "🗑️  Deleted from Pi:"
+  sed 's/.*deleting /   ❌ /' "$TMP_DELETIONS"
+fi
+
+if [ "$TRANSFERS" -gt 0 ]; then
+  echo "📁 Sample of transferred files:"
+  grep -E "^>f" "$TMP_OUTPUT" | head -10 | sed 's/^>f...... /   ✅ /'
+  if [ "$TRANSFERS" -gt 10 ]; then
+    echo "   ... and $(($TRANSFERS - 10)) more files"
+  fi
 else
-    echo "❌ Failed to sync code"
-    rm -f /tmp/rsync_output.log /tmp/rsync_deletions.log
+  echo "📁 No file changes detected"
+fi
+
+rm -f "$TMP_OUTPUT" "$TMP_DELETIONS"
+
+echo "✅ Code synchronized successfully"
+
+# Optional cleanup of unused files on the Pi (one-time purge)
+if [ "${SPOTIPI_PURGE_UNUSED:-}" = "1" ]; then
+  echo "🧹 Removing unused files from Pi..."
+  UNUSED_PATHS=(
+    "$PI_PATH/.git"
+    "$PI_PATH/.github"
+    "$PI_PATH/tests"
+    "$PI_PATH/docs"
+    "$PI_PATH/prototyping"
+    "$PI_PATH/logs"
+    "$PI_PATH/.pytest_cache"
+    "$PI_PATH/node_modules"
+    "$PI_PATH/.pre-commit-config.yaml"
+    "$PI_PATH/.editorconfig"
+    "$PI_PATH/.pylintrc"
+    "$PI_PATH/CHANGELOG.md"
+    "$PI_PATH/Readme.MD"
+  )
+
+  ssh "$PI_HOST" "for path in ${UNUSED_PATHS[*]}; do if [ -e \"\$path\" ]; then sudo rm -rf \"\$path\"; fi; done" && echo "✅ Unused files removed" || echo "⚠️  Cleanup step failed"
+fi
+
+# Restart service on Pi
+if [ -n "$SERVICE_NAME" ]; then
+  echo "🔄 Restarting service: $SERVICE_NAME"
+  if ssh "$PI_HOST" "sudo systemctl restart $SERVICE_NAME"; then
+    echo "✅ Service restarted successfully"
+  else
+    echo "❌ Failed to restart service"
+    echo "💡 Check status: ssh $PI_HOST 'sudo systemctl status $SERVICE_NAME'"
     exit 1
+  fi
+fi
+
+echo "🎵 SpotiPi deployment complete!"
+echo "🌐 Access: http://spotipi.local:5000"
+
+if [ "${SPOTIPI_SHOW_STATUS:-}" = "1" ]; then
+  echo "\n📊 Service Status"
+  ssh "$PI_HOST" "sudo systemctl status $SERVICE_NAME --no-pager -l"
 fi

@@ -44,6 +44,9 @@ Create `.env` file:
 SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret  
 SPOTIFY_USERNAME=your_username
+
+# Optional: Pi Zero / low-power mode optimisations
+SPOTIPI_LOW_POWER=1
 ```
 
 Everything else is auto-configured with smart defaults.
@@ -60,6 +63,17 @@ pip install -r requirements.txt && python generate_token.py
 sudo cp scripts/spotipi.service /etc/systemd/system/
 sudo systemctl enable spotipi && sudo systemctl start spotipi
 ```
+
+## 🚀 Deployment Workflow
+
+```bash
+# Sync runtime files to the Pi and restart the systemd service
+./scripts/deploy_to_pi.sh
+
+# Optional one-time cleanup of previously deployed unused files
+SPOTIPI_PURGE_UNUSED=1 ./scripts/deploy_to_pi.sh
+```
+The deploy script uses an allowlist `rsync` (run.py, requirements, `src/`, `static/`, `templates/`, `config/`), keeping the Raspberry Pi installation minimal.
 
 ## 📸 Screenshots
 <img src="docs/images/spotipi.png" alt="SpotiPi Interface" width="50%">
@@ -82,8 +96,17 @@ SpotiPi automatically configures itself:
 
 1. Fork the repository
 2. Create feature branch: `git checkout -b feature/name`
-3. Follow the [Contributing Guide](CONTRIBUTING.md)
-4. Submit pull request
+3. Install tooling (`pip install pre-commit`) and run `pre-commit install`
+4. Run the formatter/linter locally: `pre-commit run --all-files`
+5. Execute the test suite: `pytest`
+6. Follow the [Contributing Guide](CONTRIBUTING.md)
+7. Submit pull request
+
+## 🧪 Development Workflow
+
+- **Tooling**: Formatting and linting are managed via `pre-commit` (Black, Ruff, Prettier). Install once with `pre-commit install`.
+- **Tests**: Run `pytest` to execute the in-process API/service suites—no external server required.
+- **CI**: GitHub Actions runs the same checks (pre-commit + pytest) on every push/PR.
 
 ## 📄 License
 

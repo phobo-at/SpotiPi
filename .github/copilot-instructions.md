@@ -36,20 +36,22 @@ python run.py  # Development server on :5001
 
 ### Testing
 ```bash
-./scripts/run_tests.sh  # Handles venv, PYTHONPATH, dependencies
-pytest tests/          # Direct pytest (ensure PYTHONPATH includes src/)
+pytest
 ```
-- Remember to update testes when applying changes to business logic or API contracts.
+- The suite runs against the Flask test client—no external server needed.
+- Update tests alongside any changes to business logic or API contracts.
 
 ### Deployment to Pi
 ```bash
-./scripts/deploy_to_pi.sh  # Rsync deployment with --delete
+./scripts/deploy_to_pi.sh
+SPOTIPI_PURGE_UNUSED=1 ./scripts/deploy_to_pi.sh  # optional cleanup of legacy files
 ```
 
 ## Project-Specific Conventions
 
 ### Configuration Management
 - **Environment Detection**: Auto-detects Pi vs development (`src/config.py`)
+- **Low-Power Mode**: `SPOTIPI_LOW_POWER=1` toggles gzip off and limits worker pools (Pi Zero)
 - **Thread-Safe Config**: Use `load_config()`/`save_config()` with transaction support
 - **Environment Files**: `.env` for Spotify credentials (not synced to Pi)
 
@@ -83,9 +85,10 @@ return ServiceResult(
 ### Spotify API (`src/api/spotify.py`)
 - **Token Management**: Auto-refresh with caching in `src/utils/token_cache.py`
 - **Rate Limiting**: Built-in retry logic with exponential backoff
-- **Parallel Loading**: Uses ThreadPoolExecutor for music library loading
+- **Parallel Loading**: Worker limits via `_get_library_worker_limit()` (respects low-power mode)
 - **Network Health**: `spotify_network_health()` for diagnostics
 - **Performance Optimization**: `toggle_playback_fast()` for immediate UI response
+- **Targeted Volume Control**: Volume endpoint accepts `device_id` to hit the active player
 
 ### Alarm Scheduling (`src/core/alarm_scheduler.py`)
 - **Weekday Logic**: Monday=0, Sunday=6 (Python datetime standard)
@@ -199,11 +202,8 @@ Client-side code (`static/js/main.js`) follows specific patterns:
 
 ### Production Deployment Pipeline
 ```bash
-./scripts/deploy_to_pi.sh  # Complete deployment workflow:
-# 1. Rsync with --delete (removes orphaned files)  
-# 2. Excludes: .git, .env, venv/, __pycache__, logs/, cache/, tests/
-# 3. Automatic systemd service restart
-# 4. Health checks and rollback on failure
+./scripts/deploy_to_pi.sh                    # Allowlist rsync + systemd restart
+SPOTIPI_PURGE_UNUSED=1 ./scripts/deploy_to_pi.sh  # Optional one-time purge of legacy assets
 ```
 
 ### Systemd Integration
@@ -223,14 +223,16 @@ manager.restart()  # Zero-downtime restart
 ```
 
 ### Pi-Specific Optimizations
+- **Low Power Mode**: `SPOTIPI_LOW_POWER=1` disables gzip and caps worker pools for Pi Zero
 - **SD Card Protection**: Minimal logging in production to prevent wear
 - **Hardware Detection**: Auto-detects Pi vs development environment
 - **Service Health**: Built-in health checks and automatic recovery
 
 ## Common Patterns
+- **Tooling**: Run `pre-commit install`, `pre-commit run --all-files`, and `pytest` before submitting PRs
 - **Error Handling**: Always return structured responses, never bare exceptions
 - **Config Updates**: Use `config_transaction()` for atomic config changes  
 - **Service Access**: Get services via `get_service_manager().service_name`
 - **Background Tasks**: Use Flask's thread-safe patterns for alarm scheduling
-- **Language**: Project language is English. Make sure that all comments, logs and .md files are creted in English.
-- **Translations**: make sure that user-facing strings are translatable using the `t_api` function.
+- **Language**: Project language is English. Make sure that all comments, logs and .md files are created in English.
+- **Translations**: Make sure that user-facing strings are translatable using the `t_api` function.

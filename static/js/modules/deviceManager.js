@@ -12,6 +12,7 @@ class DeviceManager {
         this.refreshInterval = null;
         this.refreshIntervalMs = 45000; // 45 seconds
         this.fastRefreshOnFocus = true;
+        this._focusRefreshTimer = null;
         
         // Track device selectors for updates
         this.deviceSelectors = [];
