@@ -35,7 +35,7 @@ __all__ = [
     "get_current_playback", "get_current_track", "get_current_spotify_volume", 
     "get_saved_albums", "get_user_saved_tracks", "get_followed_artists",
     "set_volume", "get_playback_status", "get_user_library", "get_combined_playback",
-    "load_music_library_parallel", "spotify_network_health", "load_music_library_sections"
+    "load_music_library_parallel", "spotify_network_health"
 ]
 
 # 🔧 File paths - Use path-agnostic configuration
@@ -1045,81 +1045,6 @@ def load_music_library_parallel(token: str) -> Dict[str, Any]:
         "tracks": results['tracks'],
         "artists": results['artists'],
         "total": total_items
-    }
-
-# ------------------------------
-# ⚡ Incremental / Section-based loading with per-section cache
-# ------------------------------
-
-# In-process cache for individual sections to accelerate partial requests.
-_LIB_SECTION_CACHE: Dict[str, Dict[str, Any]] = {}
-
-def _get_section_cache(name: str) -> Dict[str, Any]:
-    if name not in _LIB_SECTION_CACHE:
-        _LIB_SECTION_CACHE[name] = {"ts": 0.0, "data": []}
-    return _LIB_SECTION_CACHE[name]
-
-def load_music_library_sections(token: str, sections: List[str], force_refresh: bool = False) -> Dict[str, Any]:
-    """Load only the requested music library sections with caching.
-
-    Args:
-        token: Spotify access token
-        sections: List of section names to load (playlists, albums, tracks, artists)
-        force_refresh: Bypass cache when True
-
-    Returns:
-        Dict[str, Any]: Partial library containing only requested sections (others empty)
-    """
-    valid_sections = {"playlists", "albums", "tracks", "artists"}
-    wanted = [s for s in sections if s in valid_sections]
-    if not wanted:
-        wanted = ["playlists"]  # sensible default
-
-    ttl = int(os.getenv('SPOTIPI_LIBRARY_SECTION_TTL', '600'))
-    now = time.time()
-
-    # Mapping from section name to loader function
-    loaders = {
-        "playlists": get_playlists,
-        "albums": get_saved_albums,
-        "tracks": get_user_saved_tracks,
-        "artists": get_followed_artists,
-    }
-
-    results: Dict[str, List[Dict[str, Any]]] = {s: [] for s in valid_sections}
-
-    def load_if_needed(name: str):
-        cache = _get_section_cache(name)
-        if (not force_refresh) and cache['data'] and (now - cache['ts'] < ttl):
-            return cache['data']
-        try:
-            data = loaders[name](token)
-            cache['data'] = data
-            cache['ts'] = now
-            return data
-        except Exception as e:
-            logging.getLogger('app').warning(f"⚠️ Failed loading section {name}: {e}")
-            return cache['data'] or []
-
-    # Load requested sections (in parallel to retain performance)
-    max_workers = max(1, min(len(wanted), _get_library_worker_limit()))
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_map = {sec: executor.submit(load_if_needed, sec) for sec in wanted}
-        for sec, fut in future_map.items():
-            results[sec] = fut.result()
-
-    # Compose partial result with total count for only loaded sections
-    total_loaded = sum(len(results[s]) for s in wanted)
-
-    return {
-        "playlists": results["playlists"],
-        "albums": results["albums"],
-        "tracks": results["tracks"],
-        "artists": results["artists"],
-        "total": total_loaded,
-        "partial": True,
-        "sections": wanted,
-        "cached": {s: (now - _get_section_cache(s)['ts'] < ttl) for s in wanted}
     }
 
 # Additional functions for the new modular app.py

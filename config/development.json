@@ -1,15 +1,17 @@
 {
   "enabled": true,
-  "time": "07:30",
+  "time": "07:00",
   "playlist_uri": "",
   "device_name": "",
-  "alarm_volume": 55,
+  "alarm_volume": 50,
   "fade_in": false,
   "shuffle": false,
   "weekdays": [
     1,
     2,
-    3
+    3,
+    4,
+    5
   ],
   "sleep_volume": 25,
   "sleep_default_duration": 15,

@@ -51,12 +51,26 @@ class DeviceManager {
         this.deviceSelectors = Array.from(selectors);
         console.log(`🔍 Found ${this.deviceSelectors.length} device selectors`);
         
-        // Add focus listeners to refresh devices when user opens selector
+        // Add focus listeners; defer refresh slightly to avoid closing native pickers
         this.deviceSelectors.forEach(selector => {
             selector.addEventListener('focus', () => {
-                console.log('🔄 Device selector focused, refreshing devices');
-                this.refreshDevices();
-            });
+                console.log('🔄 Device selector focused, scheduling device refresh');
+                if (this._focusRefreshTimer) {
+                    clearTimeout(this._focusRefreshTimer);
+                }
+                this._focusRefreshTimer = setTimeout(() => {
+                    this.refreshDevices();
+                    this._focusRefreshTimer = null;
+                }, 200);
+            }, { passive: true });
+
+            selector.addEventListener('blur', () => {
+                if (this._focusRefreshTimer) {
+                    clearTimeout(this._focusRefreshTimer);
+                    this._focusRefreshTimer = null;
+                    this.refreshDevices();
+                }
+            }, { passive: true });
             
             // Add loading state support
             if (!selector.dataset.deviceManagerReady) {

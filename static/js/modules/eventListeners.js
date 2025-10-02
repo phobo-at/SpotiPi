@@ -63,21 +63,30 @@ export function initializeEventListeners() {
         // Update display immediately during input
         elements.globalVolume.addEventListener('input', (e) => {
             updateLocalVolumeDisplay(e.target.value);
+            setLastUserInteraction(Date.now());
             // Set volume immediately with throttling during dragging
             setVolumeImmediateThrottled(e.target.value);
         });
         
-        elements.globalVolume.addEventListener('mousedown', () => setUserIsDragging(true));
-        elements.globalVolume.addEventListener('touchstart', () => setUserIsDragging(true));
+        elements.globalVolume.addEventListener('mousedown', () => {
+            setUserIsDragging(true);
+            setLastUserInteraction(Date.now());
+        });
+        elements.globalVolume.addEventListener('touchstart', () => {
+            setUserIsDragging(true);
+            setLastUserInteraction(Date.now());
+        });
         
         // Final volume set (no config save for global volume)
         elements.globalVolume.addEventListener('mouseup', (e) => {
             setUserIsDragging(false);
+            setLastUserInteraction(Date.now());
             // Global volume only sets Spotify, doesn't save to config
             flushVolumeThrottle(e.target.value);
         });
         elements.globalVolume.addEventListener('touchend', (e) => {
             setUserIsDragging(false);
+            setLastUserInteraction(Date.now());
             // Global volume only sets Spotify, doesn't save to config
             flushVolumeThrottle(e.target.value);
         });

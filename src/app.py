@@ -30,7 +30,7 @@ from .api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
     start_playback, stop_playback, resume_playback, toggle_playback, toggle_playback_fast,
     set_volume, get_current_track, get_current_spotify_volume,
-    get_playback_status, load_music_library_sections, get_combined_playback, _spotify_request,
+    get_playback_status, get_combined_playback, _spotify_request,
     get_saved_albums, get_user_saved_tracks, get_followed_artists
 )
 from .utils.token_cache import get_token_cache_info, log_token_cache_performance
@@ -462,57 +462,6 @@ def api_music_library():
             return resp
         
         return api_response(False, message=t_api("spotify_unavailable", request), status=503, error_code="spotify_unavailable")
-
-@app.route("/api/music-library/stream")
-@api_error_handler
-@rate_limit("spotify_api")
-def api_music_library_stream():
-    """⚡ Streaming music library endpoint for instant loading."""
-    token = get_access_token()
-    if not token:
-        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
-    
-    try:
-        from .utils.streaming_api import create_streaming_music_library_response, handle_network_error
-        
-        # Parse sections parameter
-        raw_sections = request.args.get('sections', 'playlists,albums,tracks,artists')
-        sections = [s.strip() for s in raw_sections.split(',') if s.strip()]
-        
-        # Return streaming response
-        return create_streaming_music_library_response(token, sections)
-        
-    except Exception as e:
-        logging.error(f"❌ Streaming API error: {e}")
-        from .utils.streaming_api import handle_network_error
-        error_response = handle_network_error(e)
-        return api_response(False, data=error_response, status=503, error_code=error_response.get('error_code', 'streaming_error'))
-
-@app.route("/api/music-library/core")
-@api_error_handler  
-@rate_limit("spotify_api")
-def api_music_library_core():
-    """⚡ Ultra-fast core music library data for instant UI rendering."""
-    token = get_access_token()
-    if not token:
-        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
-    
-    try:
-        from .utils.streaming_api import create_core_music_library_response, handle_network_error
-        
-        # Parse sections (default to playlists only for speed)
-        raw_sections = request.args.get('sections', 'playlists')
-        sections = [s.strip() for s in raw_sections.split(',') if s.strip()]
-        
-        # Get core data
-        core_data = create_core_music_library_response(token, sections)
-        return api_response(True, data=core_data, message="Core library loaded")
-        
-    except Exception as e:
-        logging.error(f"❌ Core API error: {e}")
-        from .utils.streaming_api import handle_network_error
-        error_response = handle_network_error(e)
-        return api_response(False, data=error_response, status=503, error_code=error_response.get('error_code', 'core_api_error'))
 
 @app.route("/api/music-library/sections")
 @api_error_handler

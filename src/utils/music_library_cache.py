@@ -267,12 +267,18 @@ class MusicLibraryCache:
                 self.logger.error(f"❌ Failed loading section {section_name}: {e}")
                 return []
         
-        # Load sections in parallel
-        max_workers = max(1, min(len(wanted), _get_worker_limit()))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_map = {sec: executor.submit(load_section, sec) for sec in wanted}
-            for sec, future in future_map.items():
-                results[sec] = future.result()
+        # Load sections; skip thread overhead when only one section or worker limit is 1
+        worker_limit = _get_worker_limit()
+        max_workers = max(1, min(len(wanted), worker_limit))
+
+        if max_workers == 1 or len(wanted) == 1:
+            for sec in wanted:
+                results[sec] = load_section(sec)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_map = {sec: executor.submit(load_section, sec) for sec in wanted}
+                for sec, future in future_map.items():
+                    results[sec] = future.result()
         
         # Fill in empty sections
         for section in valid_sections:

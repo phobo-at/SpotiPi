@@ -46,46 +46,51 @@ class ProgressiveMusicLoader {
         
         try {
             const sectionsToLoad = this.getSectionsByPriority(sections);
-            console.log(`⚡ Loading ${sectionsToLoad.length} sections sequentially...`);
+            console.log(`⚡ Loading ${sectionsToLoad.length} sections in batches...`);
 
+            const batches = this.createBatches(sectionsToLoad);
             let completed = 0;
 
-            for (const section of sectionsToLoad) {
+            for (const batch of batches) {
+                const query = batch.join(',');
+                console.log(`📋 Loading batch: ${query}`);
+
                 try {
-                    console.log(`📋 Starting ${section}...`);
-                    const response = await fetchAPI(`/api/music-library?sections=${section}&fields=basic`);
+                    const response = await fetchAPI(`/api/music-library?sections=${encodeURIComponent(query)}&fields=basic`);
 
-                    if (response?.success && response?.data?.[section]) {
-                        const data = response.data[section];
-                        console.log(`✅ Loaded ${section}: ${data.length} items`);
+                    if (response?.success && response?.data) {
+                        batch.forEach((section, index) => {
+                            const sectionData = response.data[section] || [];
+                            console.log(`✅ Loaded ${section}: ${sectionData.length} items`);
 
-                        if (onSectionLoaded) {
-                            onSectionLoaded(section, data, {
-                                hasMetadata: true,
-                                sectionIndex: completed + 1,
-                                totalSections: sectionsToLoad.length,
-                                parallel: false
-                            });
-                        }
+                            if (onSectionLoaded) {
+                                onSectionLoaded(section, sectionData, {
+                                    hasMetadata: true,
+                                    sectionIndex: completed + index + 1,
+                                    totalSections: sectionsToLoad.length,
+                                    parallel: batch.length > 1
+                                });
+                            }
+
+                            if (onProgress) {
+                                onProgress({
+                                    completed: completed + index + 1,
+                                    total: sectionsToLoad.length,
+                                    percentage: ((completed + index + 1) / sectionsToLoad.length) * 100
+                                });
+                            }
+                        });
                     } else {
-                        console.warn(`⚠️ No ${section} data received`);
+                        console.warn(`⚠️ No data received for batch ${query}`);
                     }
                 } catch (error) {
-                    console.error(`❌ Failed to load ${section}:`, error);
+                    console.error(`❌ Failed to load batch ${query}:`, error);
                 }
 
-                completed += 1;
-
-                if (onProgress) {
-                    onProgress({
-                        completed,
-                        total: sectionsToLoad.length,
-                        percentage: (completed / sectionsToLoad.length) * 100
-                    });
-                }
+                completed += batch.length;
             }
 
-            console.log(`⚡ Sequential loading completed: ${completed}/${sectionsToLoad.length} sections loaded`);
+            console.log(`⚡ Batched loading completed: ${completed}/${sectionsToLoad.length} sections loaded`);
             if (onComplete) onComplete();
 
         } catch (error) {
@@ -137,6 +142,29 @@ class ProgressiveMusicLoader {
         
         return orderedSections;
     }
+
+    /**
+     * Create batched groups of sections to reduce HTTP round trips
+     */
+    createBatches(sections) {
+        if (!Array.isArray(sections) || sections.length === 0) {
+            return [];
+        }
+
+        // Heuristic: if more than 2 sections remain, fetch them two at a time; otherwise as singletons
+        const batches = [];
+        const queue = [...sections];
+        
+        while (queue.length > 0) {
+            if (queue.length >= 3) {
+                batches.push(queue.splice(0, 2));
+            } else {
+                batches.push([queue.shift()]);
+            }
+        }
+
+        return batches;
+    }
 }
 
 // Global loader instance
@@ -183,18 +211,6 @@ export async function loadMusicLibraryProgressively(selectors = {}, options = {}
                     selector.setMusicLibrary(sectionData, { merge: true, source: 'progressive' });
                 }
             });
-            
-            // Simple localStorage caching
-            try {
-                const storageKey = `musicSection_${section}`;
-                const storageData = {
-                    data: data,
-                    timestamp: Date.now()
-                };
-                localStorage.setItem(storageKey, JSON.stringify(storageData));
-            } catch (e) {
-                console.debug('LocalStorage write failed:', e);
-            }
         },
         
         onProgress: options.onProgress,

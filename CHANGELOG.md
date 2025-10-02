@@ -5,6 +5,21 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.6] - 2025-10-02
+
+### ✅ Highlights
+
+- **Lean Backend:** Removed the unused streaming music library endpoints and helper module, and tightened section loaders so Pi Zero deployments avoid unnecessary thread pools for single-section requests.
+- **Snappier UI:** Debounced device refresh on focus, tracked volume-slider interaction timestamps, and batched music-library requests to cut mobile latency without stressing the Pi.
+- **CI-Friendly Tests:** Reworked rate-limiting and service-layer suites to use Flask's test client; all 22 tests now execute (no more skipped integration cases).
+- **Housekeeping:** Dropped redundant LocalStorage writes and cleaned exports so the Spotify API module only exposes active functions.
+
+### 🧪 Testing
+
+- `pytest` (22 tests, all passing).
+
+---
+
 ## [1.2.5] - 2025-10-02
 
 ### 🚀 Pi Zero Performance & UX Enhancements
