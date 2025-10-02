@@ -74,6 +74,8 @@ RSYNC_ARGS=(
   --delete
   --prune-empty-dirs
   --itemize-changes
+  --checksum
+  --stats
   --exclude='*.pyc'
   --exclude='__pycache__/'
   --exclude='.DS_Store'
@@ -86,9 +88,11 @@ ALL_PATHS=("${REQUIRED_PATHS[@]}" "${OPTIONAL_PATHS[@]}")
 
 for path in "${ALL_PATHS[@]}"; do
   if [ -e "$LOCAL_PATH/$path" ]; then
-    RSYNC_ARGS+=("--include=$path")
     if [ -d "$LOCAL_PATH/$path" ]; then
+      RSYNC_ARGS+=("--include=$path/")
       RSYNC_ARGS+=("--include=$path/***")
+    else
+      RSYNC_ARGS+=("--include=$path")
     fi
   fi
 done
@@ -121,16 +125,26 @@ if [ $RSYNC_STATUS -ne 0 ]; then
   exit 1
 fi
 
-# Prepare summary data
-TRANSFERS=$(grep -E "^>f" "$TMP_OUTPUT" | wc -l | tr -d ' ')
+# Prepare summary data from itemized output
+UPDATED=$(awk '$1 ~ /^>f/ {count++} END {print count+0}' "$TMP_OUTPUT")
+NEW_FILES=$(awk '$1 ~ /^>f\++/ {count++} END {print count+0}' "$TMP_OUTPUT")
+
+EXISTING_UPDATED=$((UPDATED - NEW_FILES))
+if [ $EXISTING_UPDATED -lt 0 ]; then EXISTING_UPDATED=0; fi
+
 DELETED=$(wc -l < "$TMP_DELETIONS" | tr -d ' ')
+BYTES_TRANSFERRED=$(grep -E "Total transferred file size" "$TMP_OUTPUT" | cut -d':' -f2 | xargs)
+[ -z "$BYTES_TRANSFERRED" ] && BYTES_TRANSFERRED="0 bytes"
+
 
 cat <<SUMMARY
 
 📊 Deployment Summary
 =====================
-📁 Files transferred: $TRANSFERS
+📁 Files updated: $EXISTING_UPDATED
+📁 Files created: $NEW_FILES
 🗑️  Files deleted: $DELETED
+📦 Data transferred: $BYTES_TRANSFERRED
 SUMMARY
 
 if [ "$DELETED" -gt 0 ]; then
@@ -138,14 +152,18 @@ if [ "$DELETED" -gt 0 ]; then
   sed 's/.*deleting /   ❌ /' "$TMP_DELETIONS"
 fi
 
-if [ "$TRANSFERS" -gt 0 ]; then
-  echo "📁 Sample of transferred files:"
-  grep -E "^>f" "$TMP_OUTPUT" | head -10 | sed 's/^>f...... /   ✅ /'
-  if [ "$TRANSFERS" -gt 10 ]; then
-    echo "   ... and $(($TRANSFERS - 10)) more files"
+echo ""
+if [ "$UPDATED" -gt 0 ]; then
+  echo "📁 Updated files:"
+  grep -E "^>f" "$TMP_OUTPUT" | head -10 | sed 's/^>f.* \(.*\)$/   ✅ \1/'
+  if [ "$UPDATED" -gt 10 ]; then
+    echo "   ... and $(($UPDATED - 10)) more files"
+  fi
+  if [ "$NEW_FILES" -gt 0 ]; then
+    echo "📁 New files created: $NEW_FILES"
   fi
 else
-  echo "📁 No file changes detected"
+  echo "📁 No file content changes detected"
 fi
 
 rm -f "$TMP_OUTPUT" "$TMP_DELETIONS"
