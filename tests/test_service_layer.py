@@ -133,3 +133,38 @@ def test_service_error_handling(client):
         data = response.get_json()
         assert 'success' in data
         assert 'timestamp' in data
+
+
+def test_toggle_play_pause_failure_propagates(client, monkeypatch):
+    monkeypatch.setattr('src.app.get_access_token', lambda: 'token')
+
+    def _fake_toggle(token):
+        assert token == 'token'
+        return {'success': False, 'error': 'No active device'}
+
+    monkeypatch.setattr('src.app.toggle_playback_fast', _fake_toggle)
+
+    response = client.post('/toggle_play_pause')
+    assert response.status_code == 503
+
+    data = response.get_json()
+    assert data['success'] is False
+    assert data.get('error_code') == 'playback_toggle_failed'
+    assert data.get('message') == 'No active device'
+
+
+def test_dashboard_status_endpoint(client, monkeypatch):
+    # Force predictable responses
+    monkeypatch.setattr('src.app.get_access_token', lambda: None)
+
+    response = client.get('/api/dashboard/status')
+    assert response.status_code == 200
+
+    payload = response.get_json()
+    assert payload['success'] is True
+
+    data = payload['data']
+    assert isinstance(data, dict)
+    assert 'alarm' in data
+    assert 'sleep' in data
+    assert 'playback' in data

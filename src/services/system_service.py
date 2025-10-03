@@ -20,6 +20,8 @@ from ..utils.token_cache import get_token_cache_info
 from ..utils.thread_safety import get_config_stats
 from ..utils.rate_limiting import get_rate_limiter
 
+LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+
 class SystemService(BaseService):
     """Service for system-wide management and monitoring."""
     
@@ -29,6 +31,8 @@ class SystemService(BaseService):
         self.spotify_service = SpotifyService()
         self.sleep_service = SleepService()
         self.start_time = datetime.now()
+        self._resource_cache: Dict[str, Any] | None = None
+        self._resource_cache_ts: float = 0.0
         
         # Initialize all services
         self._initialize_services()
@@ -95,17 +99,21 @@ class SystemService(BaseService):
     def _get_system_resources(self) -> Dict[str, Any]:
         """Get system resource usage."""
         try:
+            if LOW_POWER_MODE and self._resource_cache and (time.time() - self._resource_cache_ts) < 60:
+                return self._resource_cache
+
             # Memory usage
             memory = psutil.virtual_memory()
             
-            # CPU usage
-            cpu_percent = psutil.cpu_percent(interval=0.1)
+            # CPU usage (avoid blocking interval on low power devices)
+            cpu_sample_interval = None if LOW_POWER_MODE else 0.1
+            cpu_percent = psutil.cpu_percent(interval=cpu_sample_interval)
             
             # Process info
             process = psutil.Process()
             process_memory = process.memory_info()
             
-            return {
+            stats = {
                 "memory": {
                     "total_gb": round(memory.total / (1024**3), 2),
                     "available_gb": round(memory.available / (1024**3), 2),
@@ -123,6 +131,12 @@ class SystemService(BaseService):
                     "pid": process.pid
                 }
             }
+
+            if LOW_POWER_MODE:
+                self._resource_cache = stats
+                self._resource_cache_ts = time.time()
+
+            return stats
         except Exception as e:
             self.logger.error(f"Error getting system resources: {e}")
             return {"error": "Unable to retrieve system resources"}
@@ -163,43 +177,49 @@ class SystemService(BaseService):
     def get_performance_summary(self) -> ServiceResult:
         """Get performance summary across all components."""
         try:
-            # Token cache performance
             cache_info = get_token_cache_info()
-            cache_hit_rate = cache_info.get("cache_hit_rate", 0)
-            
-            # Rate limiting effectiveness
+            cache_performance = cache_info.get("performance", {}) if isinstance(cache_info, dict) else {}
+            cache_hit_rate = float(cache_performance.get("cache_hit_rate_percent", 0.0))
+            refresh_success_rate = float(cache_performance.get("refresh_success_rate_percent", 0.0))
+
             rate_limiter = get_rate_limiter()
             rate_stats = rate_limiter.get_statistics()
-            block_rate = rate_stats.get("block_rate_percent", 0)
-            
-            # Thread safety performance
+            block_rate = float(rate_stats.get("block_rate_percent", 0.0))
+            total_requests = rate_stats.get("global_stats", {}).get("total_requests", 0)
+
             config_stats = get_config_stats()
-            concurrent_success_rate = config_stats.get("success_rate", 0)
-            
-            # System resource efficiency
+            cache_valid = bool(config_stats.get("cache_valid")) if isinstance(config_stats, dict) else False
+            thread_success_rate = 100.0 if cache_valid else 75.0
+            active_threads = config_stats.get("active_threads") if isinstance(config_stats, dict) else None
+
             system_stats = self._get_system_resources()
-            memory_usage = system_stats.get("process", {}).get("memory_mb", 0)
-            cpu_usage = system_stats.get("process", {}).get("cpu_percent", 0)
-            
+            process_info = system_stats.get("process", {}) if isinstance(system_stats, dict) else {}
+            memory_usage = float(process_info.get("memory_mb", 0.0)) if isinstance(process_info, dict) else 0.0
+            cpu_usage = float(process_info.get("cpu_percent", 0.0)) if isinstance(process_info, dict) else 0.0
+            efficiency_rating = self._calculate_efficiency_rating(memory_usage, cpu_usage) if process_info else "unknown"
+
             performance_data = {
                 "efficiency_scores": {
-                    "token_cache_hit_rate": cache_hit_rate,
-                    "thread_safety_success_rate": concurrent_success_rate,
-                    "rate_limiting_block_rate": block_rate
+                    "token_cache_hit_rate_percent": cache_hit_rate,
+                    "token_refresh_success_rate_percent": refresh_success_rate,
+                    "thread_safety_health_percent": thread_success_rate,
+                    "rate_limiting_block_rate_percent": block_rate,
+                    "rate_limiter_total_requests": total_requests
                 },
                 "resource_usage": {
                     "memory_mb": memory_usage,
                     "cpu_percent": cpu_usage,
-                    "efficiency_rating": self._calculate_efficiency_rating(memory_usage, cpu_usage)
+                    "efficiency_rating": efficiency_rating,
+                    "active_threads": active_threads
                 },
                 "overall_performance": {
                     "score": self._calculate_performance_score(
-                        cache_hit_rate, concurrent_success_rate, block_rate, memory_usage, cpu_usage
+                        cache_hit_rate, thread_success_rate, block_rate, memory_usage, cpu_usage
                     ),
-                    "grade": self._get_performance_grade(cache_hit_rate, concurrent_success_rate)
+                    "grade": self._get_performance_grade(cache_hit_rate, thread_success_rate)
                 }
             }
-            
+
             return self._success_result(
                 data=performance_data,
                 message="Performance summary generated successfully"

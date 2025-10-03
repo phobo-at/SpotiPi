@@ -75,7 +75,7 @@ def _get_library_worker_limit() -> int:
                 "Invalid SPOTIPI_LIBRARY_WORKERS=%s; falling back to default",
                 override
             )
-    return 2 if _LOW_POWER_MODE else 4
+    return 1 if _LOW_POWER_MODE else 4
 
 # 🔑 Token function
 def refresh_access_token() -> Optional[str]:

@@ -5,6 +5,25 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-10-04
+
+### 🚀 Dashboard & UI
+- Added `/api/dashboard/status`, allowing the web client to refresh alarm, sleep, and playback data in a single request.
+- Front-end polling now consumes the aggregated response and maintains the sleep countdown locally for a smoother experience.
+
+### 🍓 Pi Zero Optimisations
+- Low-power mode skips the startup warmup prefetch, disables template auto-reload, and automatically turns off the rate limiter to keep the Raspberry Pi Zero responsive.
+- Spotify library fetches limit themselves to a single worker, and system metrics are cached to avoid repeated `psutil` calls on constrained hardware.
+
+### 🎛️ Sleep & Playback
+- Sleep monitor wakes less frequently outside the fade window and keeps a cached status to drive the countdown without hammering the API.
+- Dashboard playback aggregation gracefully handles missing authentication while still updating local device state.
+
+### 🧪 Tests
+- `pytest`
+
+---
+
 ## [1.2.8] - 2025-10-03
 
 ### 😴 Sleep Timer

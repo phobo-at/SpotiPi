@@ -2,47 +2,65 @@
 // Manages all DOM manipulations and UI updates
 import { DOM, CONFIG, userIsDragging, lastUserInteraction, setActiveDevice } from './state.js';
 import { t } from './translation.js';
-import { getPlaybackStatus, getSleepStatus, fetchAPI } from './api.js';
+import { getPlaybackStatus, getSleepStatus, fetchAPI, unwrapResponse } from './api.js';
 import { setUserIsDragging } from './state.js';
+
+let cachedSleepStatus = null;
+let cachedSleepTimestamp = 0;
 
 /**
  * Updates playback info and track display
  * @param {boolean} updateVolume - Whether to update the volume as well
  */
+export function applyPlaybackStatus(data, { updateVolume = true } = {}) {
+    if (!data || typeof data !== 'object') return;
+
+    if (document.visibilityState !== 'visible') {
+      // Still update internal device cache for later use
+      if (data?.device) {
+        setActiveDevice(data.device);
+      }
+      return;
+    }
+
+    const playbackData = data;
+
+    if (playbackData?.error) {
+      if (window.location.href.includes('debug=true')) {
+        console.log('No active playback or API error:', playbackData.error);
+      }
+      handleNoActivePlayback();
+      return;
+    }
+
+    if (playbackData?.is_playing !== undefined) {
+      updatePlayPauseButtonText(playbackData.is_playing);
+    }
+
+    if (playbackData?.device) {
+      setActiveDevice(playbackData.device);
+    } else {
+      setActiveDevice(null);
+    }
+
+    if (updateVolume && playbackData?.device?.volume_percent !== undefined) {
+      updateVolumeSlider(playbackData.device.volume_percent);
+    }
+
+    if (playbackData?.current_track) {
+      updateCurrentTrack(playbackData.current_track);
+    } else {
+      hideCurrentTrack();
+    }
+}
+
 export async function updatePlaybackInfo(updateVolume = true) {
     if (document.visibilityState !== 'visible') return;
     try {
-      const data = await getPlaybackStatus();
-  
-      // Check if data contains an error field or no active playback
-      if (data?.error) {
-        if (window.location.href.includes('debug=true')) {
-          console.log('No active playback or API error:', data.error);
-        }
-        handleNoActivePlayback();
-        return;
-      }
-      
-      if (data?.is_playing !== undefined) {
-        updatePlayPauseButtonText(data.is_playing);
-      }
-      
-      if (data?.device) {
-        setActiveDevice(data.device);
-      } else {
-        setActiveDevice(null);
-      }
+      const raw = await getPlaybackStatus();
+      const data = unwrapResponse(raw);
 
-      if (updateVolume && data?.device?.volume_percent !== undefined) {
-        updateVolumeSlider(data.device.volume_percent);
-      }
-      
-      if (data?.current_track) {
-        updateCurrentTrack(data.current_track);
-      } else {
-        // No track info available
-        hideCurrentTrack();
-      }
+      applyPlaybackStatus(data, { updateVolume });
     } catch {
       // Errors already handled in fetchAPI
       // Set play/pause button to "Play" and hide current track
@@ -183,55 +201,93 @@ export function updateCurrentTrack(trackData) {
 /**
  * Updates the sleep timer display
  */
-export async function updateSleepTimer() {
-    if (document.visibilityState !== 'visible') return;
+export function applySleepStatus(data, { cache = true } = {}) {
+    if (!data || typeof data !== 'object') return;
+
+    if (cache) {
+      cachedSleepStatus = data;
+      cachedSleepTimestamp = Date.now();
+    }
+
+    const elements = DOM.getElements({
+      sleepTimer: '#sleep-timer',
+      sleepBtn: '#sleep-toggle-btn',
+      sleepEnabled: '#sleep_enabled',
+      sleepEnabledActive: '#sleep_enabled_active',
+      sleepForm: '#sleep-form',
+      activeSleepMode: '#active-sleep-mode'
+    });
+
+    const remainingSeconds = Math.max(0, Math.floor(data.remaining_seconds ?? data.remaining_time ?? 0));
+
+    if (elements.sleepTimer) {
+      if (!data.active || remainingSeconds <= 0) {
+        elements.sleepTimer.innerText = t('no_sleep_timer') || 'No sleep timer';
+      } else {
+        const min = Math.floor(remainingSeconds / 60);
+        const sec = remainingSeconds % 60;
+        const label = t('sleep_timer_label') || 'Sleep ends in';
+        elements.sleepTimer.innerText = `${label} ${min}:${sec.toString().padStart(2, '0')}`;
+      }
+    }
+
+    if (elements.sleepBtn) {
+      elements.sleepBtn.innerText = data.active
+        ? (t('stop_sleep') || 'Stop sleep')
+        : (t('start_sleep') || 'Start sleep');
+    }
+
+    if (elements.sleepEnabled) {
+      elements.sleepEnabled.checked = !!data.active;
+    }
+    if (elements.sleepEnabledActive) {
+      elements.sleepEnabledActive.checked = !!data.active;
+    }
+
+    if (elements.sleepForm && elements.activeSleepMode) {
+      if (data.active && remainingSeconds > 0) {
+        elements.sleepForm.style.display = 'none';
+        elements.activeSleepMode.style.display = 'block';
+      } else {
+        elements.sleepForm.style.display = 'block';
+        elements.activeSleepMode.style.display = 'none';
+      }
+    }
+}
+
+export function tickSleepCountdown() {
+    if (!cachedSleepStatus || !cachedSleepStatus.active) {
+      return;
+    }
+
+    const elapsed = Math.floor((Date.now() - cachedSleepTimestamp) / 1000);
+    const baseRemaining = Math.floor(cachedSleepStatus.remaining_seconds ?? cachedSleepStatus.remaining_time ?? 0);
+    const remaining = Math.max(0, baseRemaining - elapsed);
+
+    applySleepStatus({
+      ...cachedSleepStatus,
+      remaining_seconds: remaining,
+      remaining_time: remaining
+    }, { cache: false });
+
+    if (remaining <= 0) {
+      cachedSleepStatus = { ...cachedSleepStatus, active: false, remaining_seconds: 0, remaining_time: 0 };
+    }
+}
+
+export async function updateSleepTimer(providedData = null) {
+    if (document.visibilityState !== 'visible' && !providedData) return;
+
     try {
-      const data = await getSleepStatus();
-      const elements = DOM.getElements({
-        sleepTimer: '#sleep-timer',
-        sleepBtn: '#sleep-toggle-btn',
-        sleepEnabled: '#sleep_enabled',
-        sleepEnabledActive: '#sleep_enabled_active',
-        sleepForm: '#sleep-form',
-        activeSleepMode: '#active-sleep-mode'
-      });
-  
-      // Update timer display
-      if (elements.sleepTimer) {
-        if (!data.active || data.remaining_seconds <= 0) {
-          elements.sleepTimer.innerText = 'Kein Sleep-Timer';
-        } else {
-          const min = Math.floor(data.remaining_seconds / 60);
-          const sec = data.remaining_seconds % 60;
-          elements.sleepTimer.innerText = `Sleep endet in ${min}:${sec.toString().padStart(2, '0')}`;
-        }
+      const data = providedData
+        ? providedData
+        : unwrapResponse(await getSleepStatus());
+
+      if (data?.error) {
+        return;
       }
-  
-      // Update button text
-      if (elements.sleepBtn) {
-        elements.sleepBtn.innerText = data.active ? 'Sleep stoppen' : 'Sleep starten';
-      }
-  
-      // Update toggle states for both forms
-      if (elements.sleepEnabled) {
-        elements.sleepEnabled.checked = data.active;
-      }
-      if (elements.sleepEnabledActive) {
-        elements.sleepEnabledActive.checked = data.active;
-      }
-  
-      // ✨ NEW: Switch between inactive and active UI modes
-      if (elements.sleepForm && elements.activeSleepMode) {
-        if (data.active && data.remaining_seconds > 0) {
-          // Show active mode (hide form, show active mode)
-          elements.sleepForm.style.display = 'none';
-          elements.activeSleepMode.style.display = 'block';
-        } else {
-          // Show inactive mode (show form, hide active mode)
-          elements.sleepForm.style.display = 'block';
-          elements.activeSleepMode.style.display = 'none';
-        }
-      }
+
+      applySleepStatus(data);
     } catch (error) {
       console.error("Failed to update sleep timer:", error);
     }
@@ -355,32 +411,42 @@ export function updateStatus(elementId, message, addAnimation = false, resetMess
 /**
  * Aktualisiert den Wecker-Status live
  */
-export async function updateAlarmStatus() {
+export function applyAlarmStatus(data) {
+    if (!data || typeof data !== 'object') return;
+
+    const elements = DOM.getElements({
+      alarmTimer: '#alarm-timer',
+      enabledToggle: '#enabled'
+    });
+
+    if (elements.enabledToggle && typeof data.enabled === 'boolean') {
+      elements.enabledToggle.checked = data.enabled;
+    }
+
+    if (elements.alarmTimer) {
+      const baseLabel = t('alarm_set_for') || 'Alarm set for';
+      const noAlarmLabel = t('no_alarm_active') || 'No alarm active';
+      const volumeLabel = t('volume') || 'Volume';
+
+      const statusMessage = data.enabled
+        ? `${baseLabel} ${data.time}<br><span class="volume-info">${volumeLabel}: ${data.alarm_volume}%</span>`
+        : noAlarmLabel;
+      elements.alarmTimer.innerHTML = statusMessage;
+    }
+}
+
+export async function updateAlarmStatus(providedData = null) {
     try {
-      const data = await fetchAPI("/alarm_status");
-      
+      const data = providedData
+        ? providedData
+        : unwrapResponse(await fetchAPI("/alarm_status"));
+
       if (data?.error) {
         console.warn('Could not get alarm status:', data.error);
         return;
       }
-      
-      if (data) {
-        const elements = DOM.getElements({
-          alarmTimer: '#alarm-timer',
-          enabledToggle: '#enabled'
-        });
-        
-        if (elements.enabledToggle && elements.enabledToggle.checked !== data.enabled) {
-          elements.enabledToggle.checked = data.enabled;
-        }
-        
-        if (elements.alarmTimer) {
-          const statusMessage = data.enabled 
-            ? `${t('alarm_set_for') || 'Alarm set for'} ${data.time}<br><span class="volume-info">${t('volume') || 'Volume'}: ${data.alarm_volume}%</span>`
-            : t('no_alarm_active') || 'No alarm active';
-          elements.alarmTimer.innerHTML = statusMessage;
-        }
-      }
+
+      applyAlarmStatus(data);
     } catch (error) {
       console.error('Failed to update alarm status:', error);
     }

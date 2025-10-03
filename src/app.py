@@ -49,6 +49,9 @@ project_root = Path(__file__).parent.parent  # Go up from src/ to project root
 template_dir = project_root / "templates"
 static_dir = project_root / "static"
 
+# Detect low power mode (e.g. Pi Zero) to tailor runtime features
+LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+
 app = Flask(
     __name__,
     template_folder=str(template_dir),
@@ -56,12 +59,13 @@ app = Flask(
     static_url_path='/static'
 )
 
+# Optimize template handling for low-power environments
+app.config['TEMPLATES_AUTO_RELOAD'] = not LOW_POWER_MODE
+app.jinja_env.auto_reload = not LOW_POWER_MODE
+
 # Secure secret key generation
 import secrets
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
-
-# Detect low power mode (e.g. Pi Zero) to tailor runtime features
-LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
 
 # Setup logging
 setup_logging()
@@ -309,7 +313,8 @@ def index():
     return render_template('index.html', **template_data)
 
 # Background warmup (runs once after startup) to prefetch devices and music library
-if not hasattr(app, '_warmup_started'):
+# Skip on low-power devices like Pi Zero W to avoid CPU/RAM spikes at boot.
+if not LOW_POWER_MODE and not hasattr(app, '_warmup_started'):
     def _warmup_fetch():
         try:
             logging.info("🌅 Warmup: starting background prefetch")
@@ -417,6 +422,53 @@ def alarm_status():
             "device_name": config.get("device_name", ""),
             "mode": "basic"
         })
+
+
+@app.route("/api/dashboard/status")
+@api_error_handler
+@rate_limit("status_check")
+def api_dashboard_status():
+    """Aggregate dashboard status (alarm, sleep, playback) in a single response."""
+    config = load_config()
+
+    next_alarm_time = ""
+    if config.get("enabled") and config.get("time"):
+        next_alarm_time = AlarmTimeValidator.format_time_until_alarm(
+            config["time"],
+            config.get("weekdays", [])
+        )
+
+    alarm_payload = {
+        "enabled": config.get("enabled", False),
+        "time": config.get("time", "07:00"),
+        "alarm_volume": config.get("alarm_volume", 50),
+        "weekdays": config.get("weekdays", []),
+        "weekdays_display": WeekdayScheduler.format_weekdays_display(config.get("weekdays", [])),
+        "next_alarm": next_alarm_time,
+        "playlist_uri": config.get("playlist_uri", ""),
+        "device_name": config.get("device_name", "")
+    }
+
+    sleep_payload = get_sleep_status()
+
+    playback_payload = {}
+    token = get_access_token()
+    if token:
+        try:
+            playback_payload = get_combined_playback(token) or {}
+        except Exception as playback_err:
+            logger.debug("Dashboard playback aggregation failed: %s", playback_err)
+    else:
+        playback_payload = {"auth_required": True}
+
+    response_payload = {
+        "timestamp": datetime.datetime.utcnow().isoformat() + 'Z',
+        "alarm": alarm_payload,
+        "sleep": sleep_payload,
+        "playback": playback_payload
+    }
+
+    return api_response(True, data=response_payload)
 
 # =====================================
 # 🎵 API Routes - Music & Playback
@@ -767,9 +819,19 @@ def toggle_play_pause():
     token = get_access_token()
     if not token:
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
-    
+
     result = toggle_playback_fast(token)
-    return api_response(True, data=result) if isinstance(result, dict) else api_response(True, data={"result": result})
+
+    if isinstance(result, dict):
+        success = result.get("success", True)
+        if success:
+            return api_response(True, data=result, message=t_api("ok", request))
+
+        error_message = result.get("error") or "Playback toggle failed"
+        return api_response(False, data=result, message=error_message, status=503, error_code="playback_toggle_failed")
+
+    # Fallback for unexpected return shapes
+    return api_response(True, data={"result": result}, message=t_api("ok", request))
 
 @app.route("/volume", methods=["POST"])
 @api_error_handler
@@ -1117,9 +1179,7 @@ def get_rate_limiting_status():
 def reset_rate_limiting():
     """🔄 Reset rate limiting statistics and storage."""
     try:
-        # Clear all rate limiting data
-        rate_limiter._storage.clear()
-        
+        rate_limiter.reset()
         return api_response(True, data={"timestamp": datetime.datetime.now().isoformat()}, message="Rate limiting data reset successfully")
     except Exception as e:
         logger.error(f"Error resetting rate limiting: {e}")

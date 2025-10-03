@@ -6,9 +6,8 @@ console.log("state.js loaded");
 export const CONFIG = {
     SYNC_COOLDOWN: 2000,          // 2 seconds cooldown after user interaction
     UPDATE_INTERVALS: {
-      SLEEP_TIMER: 1000,          // Update sleep timer (1 second)
-      PLAYBACK: 5000,             // Update play/pause (5 seconds) - less aggressive
-      VOLUME: 10000               // Sync volume (10 seconds)
+      DASHBOARD: 4000,            // Combined dashboard refresh interval (ms)
+      SLEEP_TICK: 1000            // Local countdown tick interval (ms)
     }
 };
 

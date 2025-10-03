@@ -28,6 +28,9 @@ from ..api.spotify import (
 )
 from ..config import load_config, save_config
 
+# Detect low-power mode once for module-wide optimisations
+LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+
 # Paths for status and log files - Path-agnostic
 def _get_app_data_dir():
     """Get application data directory path-agnostically"""
@@ -112,16 +115,14 @@ def start_sleep_timer(duration_minutes: int, playlist_uri: str = "", device_name
     Returns:
         bool: True if timer started successfully, False otherwise
     """
-    print(f"🔥 DEBUG: start_sleep_timer called with {duration_minutes} minutes")
     try:
+        logger.debug("Sleep timer requested for %s minutes", duration_minutes)
         if duration_minutes <= 0:
-            print("🔥 DEBUG: Invalid duration for sleep timer")
             logger.warning("Invalid duration for sleep timer")
             return False
             
         start_timestamp = time.time()
         end_timestamp = start_timestamp + duration_minutes * 60
-        print(f"🔥 DEBUG: End timestamp calculated: {end_timestamp}")
         
         # Save sleep status
         sleep_data = {
@@ -136,46 +137,33 @@ def start_sleep_timer(duration_minutes: int, playlist_uri: str = "", device_name
         }
         
         def _write_status(data: Dict[str, Any]) -> None:
-            print(f"🔥 DEBUG: Saving sleep status to {STATUS_PATH}")
             with open(STATUS_PATH, "w", encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-            print("🔥 DEBUG: Sleep status saved successfully")
+            logger.debug("Sleep status file updated at %s", STATUS_PATH)
 
-        print("🔥 DEBUG: About to log timer started message")
         logger.info(f"🕒 Sleep timer started for {duration_minutes} minutes")
-        print("🔥 DEBUG: Timer started message logged")
         
         # Start music playback if specified
         if playlist_uri and device_name:
-            print(f"🔥 DEBUG: Starting sleep music: {playlist_uri} on {device_name}, shuffle: {shuffle}")
             success, device_id = _start_sleep_music(playlist_uri, device_name, volume, shuffle)
             if not success:
-                print("🔥 DEBUG: Failed to start sleep music")
                 logger.warning("Failed to start sleep music, cancelling timer")
                 _write_status({"active": False})
                 return False
 
             sleep_data["device_id"] = device_id
-        else:
-            print("🔥 DEBUG: No music playback requested")
         
         _write_status(sleep_data)
         
         # Start monitoring thread
-        print("🔥 DEBUG: About to create monitor thread")
         monitor_thread = Thread(target=_monitor_sleep_timer, daemon=True)
-        print("🔥 DEBUG: Monitor thread created, about to start")
         monitor_thread.start()
-        print("🔥 DEBUG: Monitor thread started successfully")
-        
-        print("🔥 DEBUG: About to log monitoring thread started message")
+
         logger.info(f"😴 Sleep timer started: {duration_minutes} minutes, monitoring thread started")
-        print("🔥 DEBUG: All done, returning True")
         
         return True
         
     except Exception as e:
-        print(f"🔥 DEBUG: Exception in start_sleep_timer: {e}")
         logger.exception("Error starting sleep timer")
         return False
 
@@ -336,32 +324,25 @@ def _monitor_sleep_timer() -> None:
     Monitors the sleep timer and automatically stops music when expired.
     Runs in a daemon thread with regular status checks.
     """
-    print("🔥 DEBUG MONITOR: _monitor_sleep_timer function started!")
     logger.info("😴 Sleep timer monitor thread started")
     try:
         fade_state: Dict[str, Any] = {"last_volume": None}
         while True:
-            print("🔥 DEBUG MONITOR: Starting while loop iteration")
             status = get_sleep_status()
-            print(f"🔥 DEBUG MONITOR: Got status: {status}")
             
             if not status.get("active", False):
-                print("🔥 DEBUG MONITOR: Timer not active, exiting")
                 logger.info("😴 Sleep timer monitor: timer not active, exiting")
                 break
                 
             remaining = status.get("remaining_seconds", 0)
-            print(f"🔥 DEBUG MONITOR: {remaining} seconds remaining")
             logger.debug(f"😴 Sleep timer monitor: {remaining} seconds remaining")
             
             if remaining <= 0:
                 # Timer expired - stop music
-                print("🔥 DEBUG MONITOR: Timer expired! Stopping music...")
                 logger.info("😴 Timer expired! Stopping music...")
                 _stop_sleep_music()
                 stop_sleep_timer()
                 logger.info("😴 Sleep timer expired - stopping music")
-                print("🔥 DEBUG MONITOR: Music stopped, breaking")
                 break
             
             # Log remaining time every 5 minutes (300 seconds)
@@ -377,17 +358,13 @@ def _monitor_sleep_timer() -> None:
                 fade_state.pop("token", None)
                 fade_state.pop("device_id", None)
                 fade_state.pop("last_measured_volume", None)
-                sleep_interval = 30
+                sleep_interval = 60 if LOW_POWER_MODE else 30
 
-            print(f"🔥 DEBUG MONITOR: Sleeping for {sleep_interval} seconds")
             time.sleep(sleep_interval)
-            print("🔥 DEBUG MONITOR: Woke up from sleep")
 
     except Exception as e:
-        print(f"🔥 DEBUG MONITOR: Exception in monitor: {e}")
         logger.exception("Error in sleep timer monitor")
     finally:
-        print("🔥 DEBUG MONITOR: Monitor thread exiting")
         logger.info("😴 Sleep timer monitor thread exiting")
 
 def _stop_sleep_music() -> bool:

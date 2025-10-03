@@ -15,6 +15,7 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 - 😴 **Sleep Timer** - Peaceful fade-out for better sleep
 - 📱 **Mobile First** - Responsive web interface, PWA support
 - 🍓 **Pi Optimized** - Auto-detection and SD-card protection
+- ⚡ **Fast Dashboard** - Aggregated status updates over a single request
 - 🛡️ **Secure** - Environment variables for all credentials
 
 ## 🚀 Quick Start

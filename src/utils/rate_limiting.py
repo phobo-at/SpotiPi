@@ -8,6 +8,7 @@ Provides comprehensive rate limiting to protect against:
 - Brute force attempts on sensitive endpoints
 """
 
+import os
 import time
 import threading
 from typing import Dict, Any, Optional, Callable, List, Tuple
@@ -18,6 +19,8 @@ import hashlib
 import logging
 from flask import request, jsonify, g
 from enum import Enum
+
+LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
 
 class RateLimitType(Enum):
     """Types of rate limits with different strategies."""
@@ -136,6 +139,10 @@ class RateLimiter:
         self._register_default_rules()
         
         self._logger.info("🚦 Rate limiter initialized")
+
+        if LOW_POWER_MODE:
+            self.disable()
+            self._logger.info("⛽ Low power mode detected – rate limiter disabled")
     
     def _register_default_rules(self) -> None:
         """Register default rate limiting rules."""
@@ -449,7 +456,17 @@ class RateLimiter:
         """Enable rate limiting."""
         self._enabled = True
         self._logger.info("🟢 Rate limiting enabled")
-    
+
+    def reset(self) -> None:
+        """Reset all tracked statistics and cached client data."""
+        self._storage.clear()
+        self._global_stats = {
+            'total_requests': 0,
+            'blocked_requests': 0,
+            'start_time': time.time()
+        }
+        self._logger.info("🔄 Rate limiter state reset")
+
     def get_statistics(self) -> Dict[str, Any]:
         """Alias for get_stats() for API compatibility."""
         return self.get_stats()

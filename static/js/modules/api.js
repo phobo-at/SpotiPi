@@ -122,6 +122,11 @@ export async function getSleepStatus() {
   return unwrapResponse(raw);
 }
 
+export async function getDashboardStatus() {
+  const raw = await fetchAPI("/api/dashboard/status");
+  return unwrapResponse(raw);
+}
+
 /**
  * Sets the volume and saves it
  * @param {number} value - Volume value (0-100)

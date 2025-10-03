@@ -2,9 +2,9 @@
 // Imports other modules and initializes the application logic
 
 import { initializeEventListeners } from './modules/eventListeners.js';
-import { initializeUI, updateSleepTimer, updateAlarmStatus, updatePlaybackInfo, updateVolumeSlider, hideCurrentTrack, updateCurrentTrack, updatePlayPauseButtonText, handleDurationChange } from './modules/ui.js';
+import { initializeUI, updateSleepTimer, updateAlarmStatus, updatePlaybackInfo, updateVolumeSlider, hideCurrentTrack, updateCurrentTrack, updatePlayPauseButtonText, handleDurationChange, applyPlaybackStatus, tickSleepCountdown } from './modules/ui.js';
 import { DOM, CONFIG } from './modules/state.js';
-import { getPlaybackStatus, fetchAPI, playMusic } from './modules/api.js';
+import { getPlaybackStatus, fetchAPI, playMusic, getDashboardStatus } from './modules/api.js';
 import { PlaylistSelector } from './modules/playlistSelector.js';
 import { saveAlarmSettings, activateSleepTimerDirect, deactivateSleepTimerDirect } from './modules/settings.js';
 import { initializeWeekdayBubbles } from './modules/weekdays.js';
@@ -35,6 +35,20 @@ async function loadInitialData() {
     console.log('🚀 Starting asynchronous data loading...');
     
     try {
+      const dashboard = await getDashboardStatus();
+
+      if (dashboard) {
+        if (dashboard.alarm) {
+          await updateAlarmStatus(dashboard.alarm);
+        }
+        if (dashboard.sleep) {
+          await updateSleepTimer(dashboard.sleep);
+        }
+        if (dashboard.playback) {
+          applyPlaybackStatus(dashboard.playback, { updateVolume: true });
+        }
+      }
+
       // Get initial playback status (devices are now handled by DeviceManager)
       const playback = await getPlaybackStatus();
 
@@ -179,6 +193,31 @@ async function loadPlaylistsFallback() {
     }
 }
 
+async function refreshDashboard() {
+    if (document.visibilityState !== 'visible') return;
+
+    try {
+        const data = await getDashboardStatus();
+        if (!data || data.error) {
+            return;
+        }
+
+        if (data.alarm) {
+            await updateAlarmStatus(data.alarm);
+        }
+
+        if (data.sleep) {
+            await updateSleepTimer(data.sleep);
+        }
+
+        if (data.playback) {
+            applyPlaybackStatus(data.playback, { updateVolume: true });
+        }
+    } catch (error) {
+        console.error('Failed to refresh dashboard:', error);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log("SpotiPi Main Initializing...");
     DOM.clearCache();
@@ -306,9 +345,12 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePlaybackInfo();
 
     // Regular updates
-    setInterval(updateSleepTimer, CONFIG.UPDATE_INTERVALS.SLEEP_TIMER);
-    setInterval(() => updatePlaybackInfo(false), CONFIG.UPDATE_INTERVALS.PLAYBACK);
-    setInterval(syncVolumeFromSpotify, CONFIG.UPDATE_INTERVALS.VOLUME);
+    setInterval(() => {
+        refreshDashboard();
+    }, CONFIG.UPDATE_INTERVALS.DASHBOARD);
+    setInterval(() => {
+        tickSleepCountdown();
+    }, CONFIG.UPDATE_INTERVALS.SLEEP_TICK);
 
     console.log("SpotiPi Main Initialized successfully.");
 });

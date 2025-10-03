@@ -93,7 +93,11 @@ def test_rate_limiting_reset(client):
     assert reset_response.status_code == 200
 
     final_stats = client.get('/api/rate-limiting/status').get_json()
+    final_global = final_stats["data"]["rate_limiting"]["statistics"]["global_stats"]
     final_storage = final_stats["data"]["rate_limiting"]["statistics"]["storage_stats"]["total_clients"]
+
+    assert final_global["total_requests"] <= 1
+    assert final_global["blocked_requests"] == 0
     assert final_storage <= 1
 
 
