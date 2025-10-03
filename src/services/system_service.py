@@ -33,6 +33,7 @@ class SystemService(BaseService):
         self.start_time = datetime.now()
         self._resource_cache: Dict[str, Any] | None = None
         self._resource_cache_ts: float = 0.0
+        self._last_cpu_percent: float | None = None
         
         # Initialize all services
         self._initialize_services()
@@ -104,11 +105,16 @@ class SystemService(BaseService):
 
             # Memory usage
             memory = psutil.virtual_memory()
-            
-            # CPU usage (avoid blocking interval on low power devices)
-            cpu_sample_interval = None if LOW_POWER_MODE else 0.1
-            cpu_percent = psutil.cpu_percent(interval=cpu_sample_interval)
-            
+
+            # CPU usage; avoid blocking samples on low power hardware
+            if LOW_POWER_MODE:
+                cpu_percent = psutil.cpu_percent(interval=None)
+                if cpu_percent is None:
+                    cpu_percent = self._last_cpu_percent or 0.0
+            else:
+                cpu_percent = psutil.cpu_percent(interval=0.1)
+            self._last_cpu_percent = cpu_percent
+
             # Process info
             process = psutil.Process()
             process_memory = process.memory_info()

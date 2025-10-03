@@ -5,6 +5,30 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2025-10-05
+
+### ⚙️ Backend Simplification
+- Replaced the heavyweight config read/write locks with a lean mutex + snapshot cache, reducing per-request allocations on the Pi Zero.
+- Streamlined rate limiting to a single sliding-window engine that stays disabled in low-power mode but still exposes diagnostics when active.
+
+### 🌐 Device & Playback Responsiveness
+- Primed the device list on boot (even in low-power mode) and shortened the cache loop so speakers appear almost instantly after login.
+- Introduced a short-lived playback cache (default 3 s) that is invalidated whenever playback state changes, keeping the dashboard snappy while avoiding redundant Spotify calls.
+- Aligned all alarm and scheduler time calculations with the `Europe/Vienna` timezone to ensure DST-safe triggers.
+
+### 😴 Sleep Timer & System Metrics
+- Added an in-memory sleep-status cache with TTL to avoid hammering the SD card and tightened monitor polling to 15 s in the final two minutes for smoother countdowns.
+- Avoid blocking `psutil` CPU sampling on the Pi Zero and reuse the last known reading when low-power mode is active.
+
+### 🔒 Security & Config
+- Default CORS now locks to `http://spotipi.local` (overridable via `SPOTIPI_DEFAULT_ORIGIN`) instead of `*`.
+- Per-request config snapshots are cached in `flask.g`, eliminating duplicate disk reads for each template render.
+
+### 🧪 Tests
+- `python -m compileall src/app.py src/api/spotify.py`
+
+---
+
 ## [1.3.0] - 2025-10-04
 
 ### 🚀 Dashboard & UI

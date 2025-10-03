@@ -9,7 +9,7 @@ import uuid
 from threading import Thread
 from pathlib import Path
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response, g
 from functools import wraps
 import logging
 import threading
@@ -151,7 +151,13 @@ def after_request(response: Response):
         elif request_origin == 'null' and any(entry.lower() == 'null' for entry in allowed_entries):
             response.headers['Access-Control-Allow-Origin'] = 'null'
     else:
-        response.headers['Access-Control-Allow-Origin'] = '*'
+        default_origin = os.getenv('SPOTIPI_DEFAULT_ORIGIN', 'http://spotipi.local')
+        if request_origin and _matches_origin(request_origin, default_origin):
+            response.headers['Access-Control-Allow-Origin'] = request_origin
+            response.headers.setdefault('Vary', 'Origin')
+        else:
+            response.headers['Access-Control-Allow-Origin'] = default_origin
+            response.headers.setdefault('Vary', 'Origin')
 
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
     response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
@@ -206,7 +212,11 @@ def api_error_handler(func):
 @app.context_processor
 def inject_global_vars():
     """Inject global variables into all templates"""
-    config = load_config()
+    if hasattr(g, 'current_config'):
+        config = g.current_config
+    else:
+        config = load_config()
+        g.current_config = config
     
     # Get user language from current request
     user_language = get_user_language(request)
@@ -262,7 +272,11 @@ def api_response(success: bool, *, data: Any | None = None, message: str = "", s
 @api_error_handler
 def index():
     """Main page with alarm and sleep interface"""
-    config = load_config()
+    if hasattr(g, 'current_config'):
+        config = g.current_config
+    else:
+        config = load_config()
+        g.current_config = config
     
     # Data is now loaded asynchronously via JavaScript to improve initial page load time.
     # We pass empty placeholders to the template.
@@ -312,9 +326,9 @@ def index():
     
     return render_template('index.html', **template_data)
 
-# Background warmup (runs once after startup) to prefetch devices and music library
-# Skip on low-power devices like Pi Zero W to avoid CPU/RAM spikes at boot.
-if not LOW_POWER_MODE and not hasattr(app, '_warmup_started'):
+# Background warmup (runs once after startup) to prefetch devices. On Pi Zero
+# we keep the warmup lightweight (devices + playback cache only).
+if not hasattr(app, '_warmup_started'):
     def _warmup_fetch():
         try:
             logging.info("🌅 Warmup: starting background prefetch")
@@ -323,15 +337,28 @@ if not LOW_POWER_MODE and not hasattr(app, '_warmup_started'):
                 logging.info("🌅 Warmup: no token available yet (user not authenticated)")
                 return
             try:
-                devs = cache_migration.get_devices_cached(token, get_devices, force_refresh=True)
+                devs = cache_migration.get_devices_cached(
+                    token,
+                    get_devices,
+                    force_refresh=not LOW_POWER_MODE
+                )
                 logging.info(f"🌅 Warmup: cached {len(devs)} devices")
             except Exception as e:
                 logging.info(f"🌅 Warmup: device fetch error: {e}")
+            # Light playback cache warmup for faster first paint
             try:
-                cache_migration.get_full_library_cached(token, get_user_library, force_refresh=True)
-                logging.info("🌅 Warmup: music library prefetched into cache")
+                playback = get_combined_playback(token, force_refresh=True)
+                if playback:
+                    logging.info("🌅 Warmup: playback cache primed")
             except Exception as e:
-                logging.info(f"🌅 Warmup: library fetch error: {e}")
+                logging.debug(f"🌅 Warmup: playback fetch error: {e}")
+
+            if not LOW_POWER_MODE:
+                try:
+                    cache_migration.get_full_library_cached(token, get_user_library, force_refresh=True)
+                    logging.info("🌅 Warmup: music library prefetched into cache")
+                except Exception as e:
+                    logging.info(f"🌅 Warmup: library fetch error: {e}")
         except Exception as e:
             logging.info(f"🌅 Warmup: unexpected error: {e}")
     try:
@@ -1161,14 +1188,10 @@ def invalidate_device_cache():
 def get_rate_limiting_status():
     """📊 Get rate limiting status and statistics."""
     try:
-        stats = rate_limiter.get_statistics()
+        stats = rate_limiter.get_stats()
         return api_response(True, data={
             "timestamp": datetime.datetime.now().isoformat(),
-            "rate_limiting": {
-                "enabled": True,
-                "statistics": stats,
-                "rules": rate_limiter.get_rules_summary()
-            }
+            "rate_limiting": stats
         })
     except Exception as e:
         logger.error(f"Error getting rate limiting status: {e}")

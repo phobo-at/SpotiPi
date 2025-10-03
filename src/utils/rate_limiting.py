@@ -1,538 +1,249 @@
-#!/usr/bin/env python3
+"""Simplified rate limiting tuned for single-user LAN deployments.
+
+The original implementation supported multiple algorithms, per-client
+deques and verbose statistics.  That flexibility consumed unnecessary
+CPU/RAM on Raspberry Pi Zero systems.  This module keeps the public API
+but implements a lightweight sliding-window limiter with minimal state.
 """
-🚦 Rate Limiting System for SpotiPi
-Provides comprehensive rate limiting to protect against:
-- API abuse and DoS attacks
-- Rate limit violations
-- Resource exhaustion from excessive requests
-- Brute force attempts on sensitive endpoints
-"""
+
+from __future__ import annotations
 
 import os
-import time
 import threading
-from typing import Dict, Any, Optional, Callable, List, Tuple
-from dataclasses import dataclass, field
-from collections import defaultdict, deque
+import time
+from dataclasses import dataclass
 from functools import wraps
-import hashlib
-import logging
-from flask import request, jsonify, g
-from enum import Enum
+from typing import Any, Dict, Optional
 
-LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+from flask import g, jsonify, request
 
-class RateLimitType(Enum):
-    """Types of rate limits with different strategies."""
-    FIXED_WINDOW = "fixed_window"      # Traditional rate limiting
-    SLIDING_WINDOW = "sliding_window"  # More accurate, smoother
-    TOKEN_BUCKET = "token_bucket"      # Burst tolerance
-    ADAPTIVE = "adaptive"              # Dynamic based on load
 
-@dataclass
+LOW_POWER_MODE = os.getenv("SPOTIPI_LOW_POWER", "").lower() in ("1", "true", "yes", "on")
+
+
+@dataclass(frozen=True)
 class RateLimitRule:
-    """Defines a rate limiting rule."""
+    """Definition of a rate limiting rule."""
+
     name: str
     requests_per_window: int
-    window_seconds: int
-    limit_type: RateLimitType = RateLimitType.SLIDING_WINDOW
-    burst_allowance: int = 0           # Extra requests for token bucket
-    block_duration_seconds: int = 60   # How long to block after limit exceeded
-    exempt_ips: List[str] = field(default_factory=list)
-    priority: int = 100                # Lower number = higher priority
+    window_seconds: float
+    block_duration_seconds: float
+    limit_type: str = "sliding_window"
+    exempt_ips: tuple[str, ...] = ()
 
-@dataclass 
+
+@dataclass
 class RateLimitStatus:
-    """Current status of rate limiting for a client."""
+    """Current status result returned by the limiter."""
+
     requests_made: int
     requests_remaining: int
     window_reset_time: float
     is_blocked: bool
     block_expires_at: Optional[float] = None
-    total_requests: int = 0
-    first_request_time: float = 0
 
-class RateLimitStorage:
-    """Thread-safe storage for rate limit data."""
-    
-    def __init__(self):
-        self._lock = threading.RLock()
-        self._client_data: Dict[str, Dict[str, Any]] = defaultdict(dict)
-        self._cleanup_interval = 300  # Clean up every 5 minutes
-        self._last_cleanup = time.time()
-    
-    def get_client_data(self, client_id: str, rule_name: str) -> Dict[str, Any]:
-        """Get rate limit data for a client and rule."""
-        with self._lock:
-            return self._client_data[client_id].get(rule_name, {
-                'requests': deque(),
-                'tokens': 0,
-                'last_refill': time.time(),
-                'blocked_until': 0,
-                'total_requests': 0,
-                'first_request': time.time()
-            })
-    
-    def set_client_data(self, client_id: str, rule_name: str, data: Dict[str, Any]) -> None:
-        """Set rate limit data for a client and rule."""
-        with self._lock:
-            self._client_data[client_id][rule_name] = data
-            self._maybe_cleanup()
-    
-    def _maybe_cleanup(self) -> None:
-        """Clean up old rate limit data."""
-        now = time.time()
-        if now - self._last_cleanup < self._cleanup_interval:
-            return
-        
-        self._last_cleanup = now
-        # Remove data older than 1 hour
-        cutoff = now - 3600
-        
-        clients_to_remove = []
-        for client_id, rules_data in self._client_data.items():
-            rules_to_remove = []
-            for rule_name, data in rules_data.items():
-                if data.get('first_request', now) < cutoff:
-                    rules_to_remove.append(rule_name)
-            
-            for rule_name in rules_to_remove:
-                del rules_data[rule_name]
-            
-            if not rules_data:
-                clients_to_remove.append(client_id)
-        
-        for client_id in clients_to_remove:
-            del self._client_data[client_id]
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """Get storage statistics."""
-        with self._lock:
-            return {
-                'total_clients': len(self._client_data),
-                'total_rules_tracked': sum(len(rules) for rules in self._client_data.values()),
-                'last_cleanup': self._last_cleanup,
-                'memory_usage_estimate': len(str(self._client_data))
-            }
-    
-    def clear(self) -> None:
-        """Clear all rate limiting data."""
-        with self._lock:
-            self._client_data.clear()
-            self._last_cleanup = time.time()
 
-class RateLimiter:
-    """Advanced rate limiting engine with multiple strategies."""
-    
-    def __init__(self):
+class SimpleRateLimiter:
+    """Lightweight sliding-window rate limiter."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
         self._rules: Dict[str, RateLimitRule] = {}
-        self._storage = RateLimitStorage()
-        self._logger = logging.getLogger('rate_limiter')
-        self._enabled = True
-        self._global_stats = {
-            'total_requests': 0,
-            'blocked_requests': 0,
-            'start_time': time.time()
-        }
-        
-        # Default rules
-        self._register_default_rules()
-        
-        self._logger.info("🚦 Rate limiter initialized")
+        self._state: Dict[tuple[str, str], tuple[int, float, float]] = {}
+        self._start = time.monotonic()
+        self._start_wall = time.time()
+        self._total_requests = 0
+        self._blocked_requests = 0
+        self._enabled = os.getenv("SPOTIPI_DISABLE_RATE_LIMIT", "0") != "1" and not LOW_POWER_MODE
+        self._install_default_rules()
 
-        if LOW_POWER_MODE:
-            self.disable()
-            self._logger.info("⛽ Low power mode detected – rate limiter disabled")
-    
-    def _register_default_rules(self) -> None:
-        """Register default rate limiting rules."""
-        
-        # General API protection - generous for single user
-        self.add_rule(RateLimitRule(
-            name="api_general",
-            requests_per_window=300,  # Much higher for local use
-            window_seconds=60,
-            limit_type=RateLimitType.SLIDING_WINDOW,
-            block_duration_seconds=30  # Quick recovery
-        ))
-        
-        # Strict limit for sensitive endpoints (still some protection)
-        self.add_rule(RateLimitRule(
-            name="api_strict",
-            requests_per_window=50,  # Higher but still controlled
-            window_seconds=60,
-            limit_type=RateLimitType.SLIDING_WINDOW,
-            block_duration_seconds=120  # Shorter block time
-        ))
-        
-        # Relaxed for single-user local installation
-        self.add_rule(RateLimitRule(
-            name="config_changes",
-            requests_per_window=100,  # Much higher for local use
-            window_seconds=60,
-            limit_type=RateLimitType.SLIDING_WINDOW,
-            block_duration_seconds=30  # Short block time
-        ))
-        
-        # Generous for music library browsing 
-        self.add_rule(RateLimitRule(
-            name="music_library", 
-            requests_per_window=100,  # Higher for smooth browsing
-            window_seconds=60,
-            limit_type=RateLimitType.TOKEN_BUCKET,
-            burst_allowance=20,  # More burst capacity
-            block_duration_seconds=60  # Shorter block
-        ))
-        
-        # Spotify API protection (respects their limits but generous for local use)
-        self.add_rule(RateLimitRule(
-            name="spotify_api",
-            requests_per_window=80,  # Spotify allows ~100/minute, keep some buffer
-            window_seconds=60,
-            limit_type=RateLimitType.SLIDING_WINDOW,
-            block_duration_seconds=120  # Shorter recovery time
-        ))
-        
-        # Very frequent status checks allowed for responsive UI
-        self.add_rule(RateLimitRule(
-            name="status_check",
-            requests_per_window=500,  # Much higher for responsive UI
-            window_seconds=60,
-            limit_type=RateLimitType.SLIDING_WINDOW,
-            block_duration_seconds=30
-        ))
-    
+    # ------------------------------------------------------------------
+    # Rule management
+    # ------------------------------------------------------------------
+    def _install_default_rules(self) -> None:
+        self.add_rule(RateLimitRule("api_general", 300, 60.0, 30.0, "sliding_window"))
+        self.add_rule(RateLimitRule("api_strict", 80, 60.0, 30.0, "sliding_window"))
+        self.add_rule(RateLimitRule("config_changes", 60, 60.0, 30.0, "sliding_window"))
+        self.add_rule(RateLimitRule("music_library", 120, 60.0, 30.0, "token_bucket"))
+        self.add_rule(RateLimitRule("spotify_api", 100, 60.0, 45.0, "sliding_window"))
+        self.add_rule(RateLimitRule("status_check", 200, 10.0, 30.0, "sliding_window"))
+
     def add_rule(self, rule: RateLimitRule) -> None:
-        """Add a rate limiting rule."""
         self._rules[rule.name] = rule
-        self._logger.info(f"📋 Added rate limit rule: {rule.name} ({rule.requests_per_window}/{rule.window_seconds}s)")
-    
-    def remove_rule(self, rule_name: str) -> bool:
-        """Remove a rate limiting rule."""
-        if rule_name in self._rules:
-            del self._rules[rule_name]
-            self._logger.info(f"🗑️ Removed rate limit rule: {rule_name}")
-            return True
-        return False
 
-    def get_rules_summary(self) -> Dict[str, Any]:
-        """Public accessor for rule definitions without exposing internals."""
+    def remove_rule(self, rule_name: str) -> bool:
+        return self._rules.pop(rule_name, None) is not None
+
+    def get_rules_summary(self) -> Dict[str, Dict[str, float]]:
         return {
             name: {
                 "requests_per_window": rule.requests_per_window,
                 "window_seconds": rule.window_seconds,
-                "limit_type": rule.limit_type.value,
                 "block_duration": rule.block_duration_seconds,
-            } for name, rule in self._rules.items()
+                "limit_type": rule.limit_type,
+            }
+            for name, rule in self._rules.items()
         }
-    
-    def _get_client_id(self, request_obj=None) -> str:
-        """Generate client identifier for rate limiting."""
-        if request_obj is None:
-            request_obj = request
-        
-        # Use IP address + User-Agent hash for identification
-        ip = request_obj.environ.get('HTTP_X_FORWARDED_FOR', request_obj.remote_addr)
-        user_agent = request_obj.headers.get('User-Agent', '')
-        
-        # Create stable client ID
-        client_data = f"{ip}:{hashlib.md5(user_agent.encode()).hexdigest()[:8]}"
-        return client_data
-    
-    def _check_sliding_window(self, client_id: str, rule: RateLimitRule) -> RateLimitStatus:
-        """Check rate limit using sliding window algorithm."""
-        now = time.time()
-        data = self._storage.get_client_data(client_id, rule.name)
-        
-        requests = data['requests']
-        window_start = now - rule.window_seconds
-        
-        # Remove old requests outside the window
-        while requests and requests[0] <= window_start:
-            requests.popleft()
-        
-        # Check if blocked
-        if data['blocked_until'] > now:
-            return RateLimitStatus(
-                requests_made=len(requests),
-                requests_remaining=0,
-                window_reset_time=data['blocked_until'],
-                is_blocked=True,
-                block_expires_at=data['blocked_until'],
-                total_requests=data['total_requests']
-            )
-        
-        # Check if limit exceeded
-        if len(requests) >= rule.requests_per_window:
-            # Block the client
-            data['blocked_until'] = now + rule.block_duration_seconds
-            self._storage.set_client_data(client_id, rule.name, data)
-            
-            return RateLimitStatus(
-                requests_made=len(requests),
-                requests_remaining=0,
-                window_reset_time=data['blocked_until'],
-                is_blocked=True,
-                block_expires_at=data['blocked_until'],
-                total_requests=data['total_requests']
-            )
-        
-        # Allow request
-        requests.append(now)
-        data['total_requests'] += 1
-        if data['total_requests'] == 1:
-            data['first_request'] = now
-        
-        self._storage.set_client_data(client_id, rule.name, data)
-        
-        return RateLimitStatus(
-            requests_made=len(requests),
-            requests_remaining=rule.requests_per_window - len(requests),
-            window_reset_time=now + rule.window_seconds,
-            is_blocked=False,
-            total_requests=data['total_requests'],
-            first_request_time=data['first_request']
-        )
-    
-    def _check_token_bucket(self, client_id: str, rule: RateLimitRule) -> RateLimitStatus:
-        """Check rate limit using token bucket algorithm."""
-        now = time.time()
-        data = self._storage.get_client_data(client_id, rule.name)
-        
-        # Check if blocked
-        if data['blocked_until'] > now:
-            return RateLimitStatus(
-                requests_made=0,
-                requests_remaining=0,
-                window_reset_time=data['blocked_until'],
-                is_blocked=True,
-                block_expires_at=data['blocked_until'],
-                total_requests=data['total_requests']
-            )
-        
-        # Refill tokens
-        time_passed = now - data['last_refill']
-        max_tokens = rule.requests_per_window + rule.burst_allowance
-        refill_rate = rule.requests_per_window / rule.window_seconds
-        tokens_to_add = time_passed * refill_rate
-        
-        data['tokens'] = min(max_tokens, data['tokens'] + tokens_to_add)
-        data['last_refill'] = now
-        
-        # Check if tokens available
-        if data['tokens'] < 1:
-            # Block if no tokens and this would exceed normal rate
-            requests = data.get('requests', deque())
-            window_start = now - rule.window_seconds
-            
-            # Clean old requests
-            while requests and requests[0] <= window_start:
-                requests.popleft()
-            
-            if len(requests) >= rule.requests_per_window:
-                data['blocked_until'] = now + rule.block_duration_seconds
-                self._storage.set_client_data(client_id, rule.name, data)
-                
-                return RateLimitStatus(
-                    requests_made=len(requests),
-                    requests_remaining=0,
-                    window_reset_time=data['blocked_until'],
-                    is_blocked=True,
-                    block_expires_at=data['blocked_until'],
-                    total_requests=data['total_requests']
-                )
-        
-        # Consume token
-        if data['tokens'] >= 1:
-            data['tokens'] -= 1
-            data['total_requests'] += 1
-            
-            # Track requests for window calculation
-            if 'requests' not in data:
-                data['requests'] = deque()
-            data['requests'].append(now)
-            
-            if data['total_requests'] == 1:
-                data['first_request'] = now
-            
-            self._storage.set_client_data(client_id, rule.name, data)
-            
-            return RateLimitStatus(
-                requests_made=rule.requests_per_window - int(data['tokens']),
-                requests_remaining=int(data['tokens']),
-                window_reset_time=now + (max_tokens - data['tokens']) / refill_rate,
-                is_blocked=False,
-                total_requests=data['total_requests'],
-                first_request_time=data.get('first_request', now)
-            )
-        
-        # No tokens available
-        return RateLimitStatus(
-            requests_made=rule.requests_per_window,
-            requests_remaining=0,
-            window_reset_time=now + (1 / refill_rate),
-            is_blocked=True,
-            total_requests=data['total_requests']
-        )
-    
+
+    # ------------------------------------------------------------------
+    # Core limiter
+    # ------------------------------------------------------------------
+    def _resolve_client_id(self) -> str:
+        forwarded = request.headers.get("X-Forwarded-For")
+        ip = forwarded.split(",")[0].strip() if forwarded else request.remote_addr or "127.0.0.1"
+        user_agent = request.headers.get("User-Agent", "")[:64]
+        ua_hash = hash(user_agent) & 0xFFFF
+        return f"{ip}:{ua_hash:x}"
+
     def check_rate_limit(self, rule_name: str, client_id: Optional[str] = None) -> RateLimitStatus:
-        """Check if request is allowed under rate limit."""
         if not self._enabled:
-            return RateLimitStatus(
-                requests_made=0,
-                requests_remaining=999999,
-                window_reset_time=time.time() + 3600,
-                is_blocked=False
-            )
-        
-        self._global_stats['total_requests'] += 1
-        
-        if client_id is None:
-            client_id = self._get_client_id()
-        
+            return RateLimitStatus(0, 999999, time.time() + 3600, False)
+
         rule = self._rules.get(rule_name)
         if not rule:
-            self._logger.warning(f"⚠️ Unknown rate limit rule: {rule_name}")
-            return RateLimitStatus(
-                requests_made=0,
-                requests_remaining=999999,
-                window_reset_time=time.time() + 3600,
-                is_blocked=False
-            )
-        
-        # Check if client is exempt
-        client_ip = client_id.split(':')[0]
+            return RateLimitStatus(0, 999999, time.time() + 3600, False)
+
+        if client_id is None:
+            client_id = self._resolve_client_id()
+
+        client_ip = client_id.split(":", 1)[0]
         if client_ip in rule.exempt_ips:
-            return RateLimitStatus(
-                requests_made=0,
-                requests_remaining=999999,
-                window_reset_time=time.time() + 3600,
-                is_blocked=False
-            )
-        
-        # Apply rate limiting based on type
-        if rule.limit_type == RateLimitType.TOKEN_BUCKET:
-            status = self._check_token_bucket(client_id, rule)
-        else:  # SLIDING_WINDOW or FIXED_WINDOW
-            status = self._check_sliding_window(client_id, rule)
-        
-        if status.is_blocked:
-            self._global_stats['blocked_requests'] += 1
-            self._logger.warning(f"🚫 Rate limit exceeded for {client_id} on rule {rule_name}")
-        
-        return status
-    
+            return RateLimitStatus(0, 999999, time.time() + 3600, False)
+
+        now_mono = time.monotonic()
+        now_wall = time.time()
+        state_key = (client_id, rule.name)
+
+        with self._lock:
+            count, window_start, blocked_until = self._state.get(state_key, (0, now_mono, 0.0))
+
+            if blocked_until > now_mono:
+                self._blocked_requests += 1
+                reset_seconds = max(0.0, blocked_until - now_mono)
+                reset_at = now_wall + reset_seconds
+                return RateLimitStatus(count, 0, reset_at, True, reset_at)
+
+            if now_mono - window_start >= rule.window_seconds:
+                count = 0
+                window_start = now_mono
+
+            count += 1
+            self._total_requests += 1
+
+            if count > rule.requests_per_window:
+                blocked_until = now_mono + rule.block_duration_seconds
+                self._state[state_key] = (count, window_start, blocked_until)
+                self._blocked_requests += 1
+                reset_at = now_wall + rule.block_duration_seconds
+                return RateLimitStatus(rule.requests_per_window, 0, reset_at, True, reset_at)
+
+            self._state[state_key] = (count, window_start, 0.0)
+            remaining = max(0, rule.requests_per_window - count)
+            reset_seconds = max(0.0, rule.window_seconds - (now_mono - window_start))
+            reset_at = now_wall + reset_seconds
+            return RateLimitStatus(count, remaining, reset_at, False, None)
+
     def is_request_allowed(self, rule_name: str, client_id: Optional[str] = None) -> bool:
-        """Simple boolean check if request is allowed."""
         status = self.check_rate_limit(rule_name, client_id)
         return not status.is_blocked
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """Get comprehensive rate limiter statistics."""
-        uptime = time.time() - self._global_stats['start_time']
-        storage_stats = self._storage.get_stats()
-        
+
+    # ------------------------------------------------------------------
+    # Diagnostics / control
+    # ------------------------------------------------------------------
+    def get_stats(self) -> Dict[str, Any]:  # type: ignore[override]
+        with self._lock:
+            uptime = time.monotonic() - self._start
+            block_rate = 0.0 if self._total_requests == 0 else (self._blocked_requests / self._total_requests) * 100.0
+            requests_per_second = self._total_requests / max(uptime, 1.0)
+
+            unique_clients = {client for client, _ in self._state.keys()}
+            storage_stats = {
+                "total_clients": len(unique_clients),
+                "tracked_entries": len(self._state),
+            }
+
+            statistics = {
+                "uptime_seconds": uptime,
+                "requests_per_second": requests_per_second,
+                "block_rate_percent": block_rate,
+                "global_stats": {
+                    "total_requests": self._total_requests,
+                    "blocked_requests": self._blocked_requests,
+                    "start_time": self._start_wall,
+                },
+                "storage_stats": storage_stats,
+            }
+
         return {
-            'enabled': self._enabled,
-            'uptime_seconds': uptime,
-            'global_stats': self._global_stats.copy(),
-            'storage_stats': storage_stats,
-            'rules': {
-                name: {
-                    'requests_per_window': rule.requests_per_window,
-                    'window_seconds': rule.window_seconds,
-                    'limit_type': rule.limit_type.value,
-                    'block_duration': rule.block_duration_seconds
-                }
-                for name, rule in self._rules.items()
-            },
-            'requests_per_second': self._global_stats['total_requests'] / max(uptime, 1),
-            'block_rate_percent': (
-                self._global_stats['blocked_requests'] / max(self._global_stats['total_requests'], 1)
-            ) * 100
+            "enabled": self._enabled,
+            "statistics": statistics,
+            "rules": self.get_rules_summary(),
         }
-    
-    def enable(self) -> None:
-        """Enable rate limiting."""
-        self._enabled = True
-        self._logger.info("🟢 Rate limiting enabled")
+
+    def get_statistics(self) -> Dict[str, Any]:  # compatibility alias
+        return self.get_stats()
 
     def reset(self) -> None:
-        """Reset all tracked statistics and cached client data."""
-        self._storage.clear()
-        self._global_stats = {
-            'total_requests': 0,
-            'blocked_requests': 0,
-            'start_time': time.time()
-        }
-        self._logger.info("🔄 Rate limiter state reset")
+        with self._lock:
+            self._state.clear()
+            self._start = time.monotonic()
+            self._start_wall = time.time()
+            self._total_requests = 0
+            self._blocked_requests = 0
 
-    def get_statistics(self) -> Dict[str, Any]:
-        """Alias for get_stats() for API compatibility."""
-        return self.get_stats()
-    
+    def enable(self) -> None:
+        self._enabled = True
+
     def disable(self) -> None:
-        """Disable rate limiting (for debugging)."""
         self._enabled = False
-        self._logger.warning("🔴 Rate limiting disabled")
 
-# Global rate limiter instance
-_rate_limiter: Optional[RateLimiter] = None
 
-def get_rate_limiter() -> RateLimiter:
-    """Get the global rate limiter instance."""
+_rate_limiter: Optional[SimpleRateLimiter] = None
+
+
+def get_rate_limiter() -> SimpleRateLimiter:
     global _rate_limiter
     if _rate_limiter is None:
-        _rate_limiter = RateLimiter()
+        _rate_limiter = SimpleRateLimiter()
     return _rate_limiter
 
-def rate_limit(rule_name: str, error_response: Optional[Dict[str, Any]] = None):
-    """
-    Decorator for rate limiting Flask endpoints.
-    
-    Args:
-        rule_name: Name of the rate limiting rule to apply
-        error_response: Custom error response (optional)
-    """
-    def decorator(f: Callable) -> Callable:
-        @wraps(f)
+
+def rate_limit(rule_name: str, error_response: Optional[Dict[str, Any]] = None):  # type: ignore[name-defined]
+    """Decorator that applies rate limiting to Flask routes."""
+
+    def decorator(func):
+        @wraps(func)
         def wrapper(*args, **kwargs):
             limiter = get_rate_limiter()
             status = limiter.check_rate_limit(rule_name)
-            
             if status.is_blocked:
-                response = error_response or {
+                payload = error_response or {
                     "error": "Rate limit exceeded",
-                    "message": f"Too many requests. Try again in {int(status.window_reset_time - time.time())} seconds.",
-                    "rate_limit": {
-                        "requests_made": status.requests_made,
-                        "requests_remaining": status.requests_remaining,
-                        "reset_time": status.window_reset_time,
-                        "block_expires_at": status.block_expires_at
-                    }
+                    "message": "Too many requests. Please retry later.",
                 }
-                
-                # Add rate limit headers
-                resp = jsonify(response)
-                resp.status_code = 429  # Too Many Requests
-                resp.headers['X-RateLimit-Limit'] = str(limiter._rules[rule_name].requests_per_window)
-                resp.headers['X-RateLimit-Remaining'] = str(status.requests_remaining)
-                resp.headers['X-RateLimit-Reset'] = str(int(status.window_reset_time))
-                resp.headers['Retry-After'] = str(int(status.window_reset_time - time.time()))
-                
-                return resp
-            
-            # Add rate limit info to Flask global context
+                response = jsonify(payload)
+                response.status_code = 429
+                response.headers["Retry-After"] = str(
+                    max(1, int(status.block_expires_at - time.time()))
+                ) if status.block_expires_at else "1"
+                response.headers["X-RateLimit-Remaining"] = "0"
+                response.headers["X-RateLimit-Reset"] = str(int(status.window_reset_time))
+                return response
+
             g.rate_limit_status = status
-            
-            return f(*args, **kwargs)
+            return func(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
+
 def add_rate_limit_headers(response):
-    """Add rate limit headers to response."""
-    if hasattr(g, 'rate_limit_status'):
-        status = g.rate_limit_status
-        response.headers['X-RateLimit-Remaining'] = str(status.requests_remaining)
-        response.headers['X-RateLimit-Reset'] = str(int(status.window_reset_time))
+    """Attach rate limit metadata to responses when available."""
+
+    status: RateLimitStatus | None = getattr(g, "rate_limit_status", None)
+    if status is not None:
+        response.headers["X-RateLimit-Remaining"] = str(status.requests_remaining)
+        response.headers["X-RateLimit-Reset"] = str(int(status.window_reset_time))
     return response

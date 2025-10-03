@@ -76,7 +76,7 @@ class SpotifyTokenCache:
             'total_requests': 0
         }
         
-        self._logger.info("🎟️ Spotify Token Cache initialized")
+        self._logger.debug("🎟️ Spotify Token Cache initialized")
     
     def get_valid_token(self) -> Optional[str]:
         """
@@ -117,7 +117,7 @@ class SpotifyTokenCache:
             age_minutes = self._cached_token.age_seconds // 60
             old_token_info = f" (replacing {age_minutes}min old token)"
         
-        self._logger.info(f"🔄 Refreshing Spotify access token{old_token_info}")
+        self._logger.debug(f"🔄 Refreshing Spotify access token{old_token_info}")
         
         try:
             # Call the provided refresh function
@@ -139,7 +139,7 @@ class SpotifyTokenCache:
                 self._metrics['refresh_successes'] += 1
                 
                 expires_at_str = datetime.fromtimestamp(self._cached_token.expires_at).strftime("%H:%M:%S")
-                self._logger.info(f"✅ Token refreshed successfully (expires at {expires_at_str})")
+                self._logger.debug(f"✅ Token refreshed successfully (expires at {expires_at_str})")
                 
                 return new_access_token
             else:
@@ -160,14 +160,14 @@ class SpotifyTokenCache:
             Optional[str]: New access token or None if refresh fails
         """
         with self._lock:
-            self._logger.info("🔄 Force refreshing token")
+            self._logger.debug("🔄 Force refreshing token")
             return self._refresh_and_cache_token()
     
     def invalidate_cache(self) -> None:
         """Invalidate the current cached token."""
         with self._lock:
             if self._cached_token:
-                self._logger.info("🗑️ Invalidating cached token")
+                self._logger.debug("🗑️ Invalidating cached token")
                 self._cached_token = None
             else:
                 self._logger.debug("🗑️ No cached token to invalidate")

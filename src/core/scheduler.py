@@ -10,7 +10,11 @@ Provides comprehensive scheduling functionality including:
 """
 
 import datetime
-from typing import List, Dict, Optional, Tuple, Union
+from zoneinfo import ZoneInfo
+from typing import Dict, List, Optional, Tuple, Union
+
+
+LOCAL_TZ = ZoneInfo("Europe/Vienna")
 
 class WeekdayScheduler:
     """Handles weekday-based alarm scheduling with comprehensive validation."""
@@ -47,7 +51,7 @@ class WeekdayScheduler:
             Optional[datetime.datetime]: Next datetime when alarm should trigger, or None if invalid
         """
         try:
-            now = datetime.datetime.now()
+            now = datetime.datetime.now(tz=LOCAL_TZ)
             hour, minute = map(int, alarm_time.split(":"))
             
             # Validate hour and minute ranges
@@ -226,8 +230,8 @@ class AlarmTimeValidator:
         try:
             if not AlarmTimeValidator.validate_time_format(alarm_time):
                 return False
-                
-            now = datetime.datetime.now()
+
+            now = datetime.datetime.now(tz=LOCAL_TZ)
             target_time = datetime.datetime.strptime(alarm_time, "%H:%M")
             
             target_today = now.replace(
@@ -262,7 +266,7 @@ class AlarmTimeValidator:
         if not next_alarm:
             return "Invalid alarm configuration"
         
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(tz=LOCAL_TZ)
         time_diff = next_alarm - now
         
         if time_diff.total_seconds() < 0:

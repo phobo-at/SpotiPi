@@ -13,7 +13,7 @@ import os
 import time
 import json
 import logging
-from threading import Thread
+from threading import Lock, Thread
 from typing import Dict, Any, Optional, Union, Tuple
 import requests
 
@@ -48,6 +48,44 @@ logger = logging.getLogger('sleep')
 
 SLEEP_FADE_WINDOW_SECONDS = 60
 
+_STATUS_LOCK = Lock()
+_STATUS_CACHE: Dict[str, Any] | None = None
+_STATUS_CACHE_TS: float = 0.0
+_STATUS_CACHE_TTL = max(1.0, float(os.getenv('SPOTIPI_SLEEP_STATUS_TTL', '5.0')))
+
+
+def _read_status_from_disk() -> Dict[str, Any]:
+    try:
+        with open(STATUS_PATH, "r", encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"active": False}
+    except (json.JSONDecodeError, OSError) as err:
+        logger.warning(f"Error reading sleep status: {err}")
+        return {"active": False}
+
+
+def _get_status_snapshot(force_refresh: bool = False) -> Dict[str, Any]:
+    global _STATUS_CACHE, _STATUS_CACHE_TS
+    now = time.monotonic()
+    with _STATUS_LOCK:
+        if not force_refresh and _STATUS_CACHE is not None and (now - _STATUS_CACHE_TS) < _STATUS_CACHE_TTL:
+            return dict(_STATUS_CACHE)
+
+        data = _read_status_from_disk()
+        _STATUS_CACHE = dict(data)
+        _STATUS_CACHE_TS = now
+        return data
+
+
+def _write_status(data: Dict[str, Any]) -> None:
+    global _STATUS_CACHE, _STATUS_CACHE_TS
+    with _STATUS_LOCK:
+        with open(STATUS_PATH, "w", encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+        _STATUS_CACHE = dict(data)
+        _STATUS_CACHE_TS = time.monotonic()
+
 def get_sleep_status() -> Dict[str, Any]:
     """Get current sleep timer status.
     
@@ -55,49 +93,44 @@ def get_sleep_status() -> Dict[str, Any]:
         Dict[str, Any]: Sleep timer status with remaining time and activity state
     """
     try:
-        if os.path.exists(STATUS_PATH):
-            with open(STATUS_PATH, "r", encoding='utf-8') as f:
-                data = json.load(f)
-                if data.get("active", False):
-                    end_time = data.get("end", 0)
-                    start_time = data.get("start")
-                    duration_minutes = data.get("duration_minutes")
-                    total_seconds = data.get("total_seconds")
+        data = _get_status_snapshot()
+        if data.get("active", False):
+            end_time = data.get("end", 0)
+            start_time = data.get("start")
+            duration_minutes = data.get("duration_minutes")
+            total_seconds = data.get("total_seconds")
 
-                    if duration_minutes is not None and total_seconds is None:
-                        try:
-                            total_seconds = int(duration_minutes) * 60
-                        except (TypeError, ValueError):
-                            total_seconds = None
+            if duration_minutes is not None and total_seconds is None:
+                try:
+                    total_seconds = int(duration_minutes) * 60
+                except (TypeError, ValueError):
+                    total_seconds = None
 
-                    if start_time is None and end_time and total_seconds:
-                        start_time = end_time - total_seconds
+            if start_time is None and end_time and total_seconds:
+                start_time = end_time - total_seconds
 
-                    remaining = max(0, int(end_time - time.time())) if end_time else 0
-                    progress_percent = 0.0
-                    if total_seconds and total_seconds > 0:
-                        elapsed = total_seconds - remaining
-                        elapsed = max(0, min(total_seconds, elapsed))
-                        progress_percent = (elapsed / total_seconds) * 100
+            remaining = max(0, int(end_time - time.time())) if end_time else 0
+            progress_percent = 0.0
+            if total_seconds and total_seconds > 0:
+                elapsed = total_seconds - remaining
+                elapsed = max(0, min(total_seconds, elapsed))
+                progress_percent = (elapsed / total_seconds) * 100
 
-                    return {
-                        "active": True,
-                        "remaining_seconds": remaining,
-                        "remaining_minutes": remaining // 60 if remaining else 0,
-                        "remaining_time": remaining,
-                        "total_duration_seconds": total_seconds,
-                        "total_duration_minutes": duration_minutes,
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "progress_percent": progress_percent,
-                        "volume": data.get("volume"),
-                        "device_name": data.get("device_name"),
-                        "playlist_uri": data.get("playlist_uri"),
-                        "device_id": data.get("device_id")
-                    }
-        return {"active": False}
-    except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
-        logger.warning(f"Error reading sleep status: {e}")
+            return {
+                "active": True,
+                "remaining_seconds": remaining,
+                "remaining_minutes": remaining // 60 if remaining else 0,
+                "remaining_time": remaining,
+                "total_duration_seconds": total_seconds,
+                "total_duration_minutes": duration_minutes,
+                "start_time": start_time,
+                "end_time": end_time,
+                "progress_percent": progress_percent,
+                "volume": data.get("volume"),
+                "device_name": data.get("device_name"),
+                "playlist_uri": data.get("playlist_uri"),
+                "device_id": data.get("device_id")
+            }
         return {"active": False}
     except Exception as e:
         logger.exception("Unexpected error getting sleep status")
@@ -136,11 +169,6 @@ def start_sleep_timer(duration_minutes: int, playlist_uri: str = "", device_name
             "volume": volume
         }
         
-        def _write_status(data: Dict[str, Any]) -> None:
-            with open(STATUS_PATH, "w", encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-            logger.debug("Sleep status file updated at %s", STATUS_PATH)
-
         logger.info(f"🕒 Sleep timer started for {duration_minutes} minutes")
         
         # Start music playback if specified
@@ -174,9 +202,7 @@ def stop_sleep_timer() -> bool:
         bool: True if stopped successfully, False otherwise
     """
     try:
-        with open(STATUS_PATH, "w", encoding='utf-8') as f:
-            json.dump({"active": False}, f, indent=2)
-        
+        _write_status({"active": False})
         logger.info("🛑 Sleep timer stopped")
         return True
         
@@ -353,6 +379,12 @@ def _monitor_sleep_timer() -> None:
             if remaining <= SLEEP_FADE_WINDOW_SECONDS:
                 _fade_out_sleep_music(status, remaining, fade_state)
                 sleep_interval = 5
+            elif remaining <= 120:
+                fade_state["last_volume"] = None
+                fade_state.pop("token", None)
+                fade_state.pop("device_id", None)
+                fade_state.pop("last_measured_volume", None)
+                sleep_interval = 15
             else:
                 fade_state["last_volume"] = None
                 fade_state.pop("token", None)

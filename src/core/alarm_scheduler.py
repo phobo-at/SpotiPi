@@ -9,6 +9,7 @@ from __future__ import annotations
 import threading
 import time
 import datetime as _dt
+from zoneinfo import ZoneInfo
 from typing import Optional
 import logging
 
@@ -19,6 +20,7 @@ from ..constants import ALARM_TRIGGER_WINDOW_MINUTES
 from ..utils.thread_safety import get_thread_safe_config_manager
 
 _logger = logging.getLogger("alarm_scheduler")
+LOCAL_TZ = ZoneInfo("Europe/Vienna")
 
 class AlarmScheduler:
     def __init__(self):
@@ -77,7 +79,7 @@ class AlarmScheduler:
                 self._wake_event.wait(timeout=60)
                 continue
 
-            now = _dt.datetime.now()
+            now = _dt.datetime.now(tz=LOCAL_TZ)
             seconds_until = (next_alarm - now).total_seconds()
             if seconds_until <= 0:
                 # Already passed; recompute next cycle

@@ -12,15 +12,10 @@ Handles alarm triggering, weekday scheduling, and playback management with:
 import os
 import datetime
 import time
-import requests
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
-from ..api.spotify import (
-    get_access_token,
-    get_device_id,
-    start_playback,
-    set_volume
-)
+from ..api.spotify import get_access_token, get_device_id, start_playback, set_volume
 from ..constants import ALARM_TRIGGER_WINDOW_MINUTES
 from ..config import load_config, save_config
 from ..utils.logger import setup_logger
@@ -28,6 +23,7 @@ from ..utils.thread_safety import config_transaction
 
 # Get logger for alarm module
 logger = setup_logger(__name__)
+LOCAL_TZ = ZoneInfo("Europe/Vienna")
 
 def log(message: str) -> None:
     """Log message using centralized logger.
@@ -62,7 +58,7 @@ def execute_alarm() -> bool:
     Returns:
         bool: True if playback was started, False otherwise
     """
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(tz=LOCAL_TZ)
 
     try:
         config = load_config()
@@ -191,7 +187,7 @@ def execute_alarm() -> bool:
             try:
                 if target_volume > 0:
                     fade_step = max(1, min(5, target_volume))
-                    volumes = []
+                    volumes: List[int] = []
                     current = fade_step
                     while current < target_volume:
                         volumes.append(current)
@@ -200,18 +196,10 @@ def execute_alarm() -> bool:
 
                     for idx, v in enumerate(volumes):
                         time.sleep(1 if idx == 0 else 5)
-                        r = requests.put(
-                            "https://api.spotify.com/v1/me/player/volume",
-                            params={"volume_percent": v, "device_id": device_id},
-                            headers={"Authorization": f"Bearer {token}"},
-                            timeout=10
-                        )
-                        if r.status_code == 204:
+                        if set_volume(token, v, device_id):
                             log(f"🎚️ Volume increased to {v}%")
                         else:
-                            log(f"⚠️ Volume set attempt to {v}% - Status: {r.status_code}")
-            except requests.exceptions.RequestException as e:
-                log(f"❌ Network error during fade-in: {e}")
+                            log(f"⚠️ Volume set attempt to {v}% - Spotify API refused value")
             except Exception as e:
                 log(f"❌ Error during fade-in: {e}")
 

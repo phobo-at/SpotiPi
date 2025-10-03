@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Any, Union
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 import socket
+import copy
 
 # Use the new centralized config system
 from ..config import load_config, save_config
@@ -147,6 +148,15 @@ def _build_session() -> requests.Session:
     return session
 
 SESSION = _build_session()
+
+_PLAYBACK_CACHE: Dict[str, Any] | None = None
+_PLAYBACK_CACHE_EXPIRY: float = 0.0
+
+
+def _invalidate_playback_cache() -> None:
+    global _PLAYBACK_CACHE, _PLAYBACK_CACHE_EXPIRY
+    _PLAYBACK_CACHE = None
+    _PLAYBACK_CACHE_EXPIRY = 0.0
 
 _BREAKER = {
     'consecutive_failures': 0,
@@ -686,13 +696,16 @@ def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_pe
                         logging.getLogger('spotify').warning(f"⚠️ Could not enable shuffle (fallback): {shuffle_resp.text}")
                 except Exception as e:
                     logging.getLogger('spotify').warning(f"⚠️ Error enabling shuffle (fallback): {e}")
+            _invalidate_playback_cache()
             return True
         else:
             logging.getLogger('spotify').error(f"❌ Error starting playback: {play_resp.text}")
+            _invalidate_playback_cache()
             return False
             
     except Exception as e:
         logging.getLogger('spotify').error(f"❌ Error in start_playback: {e}")
+        _invalidate_playback_cache()
         return False
 
 # --- Track count caching for random offset (playlist/album) ---
@@ -737,11 +750,14 @@ def stop_playback(token: str) -> bool:
             timeout=10
         )
         if r.status_code == 204:
+            _invalidate_playback_cache()
             return True
         else:
+            _invalidate_playback_cache()
             print("❌ Error stopping playback:", r.text)
             return False
     except Exception as e:
+        _invalidate_playback_cache()
         print(f"❌ Exception stopping playback: {e}")
         return False
 
@@ -761,11 +777,14 @@ def resume_playback(token: str) -> bool:
             timeout=10
         )
         if r.status_code == 204:
+            _invalidate_playback_cache()
             return True
         else:
+            _invalidate_playback_cache()
             print("❌ Error resuming playback:", r.text)
             return False
     except Exception as e:
+        _invalidate_playback_cache()
         print(f"❌ Exception resuming playback: {e}")
         return False
 
@@ -813,6 +832,7 @@ def toggle_playback_fast(token: str) -> Dict[str, Union[bool, str]]:
                 timeout=5
             )
             if pause_resp.status_code == 204:
+                _invalidate_playback_cache()
                 return {"action": "paused", "success": True}
             elif pause_resp.status_code == 403:
                 # 403 means no active device or already paused - try play
@@ -823,6 +843,7 @@ def toggle_playback_fast(token: str) -> Dict[str, Union[bool, str]]:
                     timeout=5
                 )
                 if play_resp.status_code == 204:
+                    _invalidate_playback_cache()
                     return {"action": "playing", "success": True}
                 else:
                     return {"success": False, "error": f"Play failed: {play_resp.status_code}"}
@@ -838,6 +859,7 @@ def toggle_playback_fast(token: str) -> Dict[str, Union[bool, str]]:
                     timeout=5
                 )
                 if play_resp.status_code == 204:
+                    _invalidate_playback_cache()
                     return {"action": "playing", "success": True}
                 else:
                     return {"success": False, "error": f"Play fallback failed: {play_resp.status_code}"}
@@ -949,12 +971,27 @@ def get_current_track(token: str) -> Optional[Dict[str, Any]]:
         logging.error(f"Error getting current track: {e}")
         return None
 
-def get_combined_playback(token: str) -> Optional[Dict[str, Any]]:
+def _playback_cache_ttl() -> float:
+    try:
+        return max(0.0, float(os.getenv('SPOTIPI_PLAYBACK_CACHE_TTL', '3.0')))
+    except ValueError:
+        return 3.0
+
+
+def get_combined_playback(token: str, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
     """Single-call helper returning playback + simplified track + volume.
 
     Avoids making three separate requests (status + track + volume) since
     Spotify's /me/player already contains everything needed.
     """
+    global _PLAYBACK_CACHE, _PLAYBACK_CACHE_EXPIRY
+
+    ttl = _playback_cache_ttl()
+    now = time.time()
+
+    if not force_refresh and ttl > 0 and _PLAYBACK_CACHE and now < _PLAYBACK_CACHE_EXPIRY:
+        return copy.deepcopy(_PLAYBACK_CACHE)
+
     try:
         playback = get_current_playback(token)
         if not playback:
@@ -983,6 +1020,9 @@ def get_combined_playback(token: str) -> Optional[Dict[str, Any]]:
             "current_track": track,
             "volume": volume
         }
+        if ttl > 0:
+            _PLAYBACK_CACHE = copy.deepcopy(combined)
+            _PLAYBACK_CACHE_EXPIRY = now + ttl
         return combined
     except Exception as e:
         logging.getLogger('spotify').debug(f"Combined playback fetch failed: {e}")

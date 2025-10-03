@@ -48,6 +48,8 @@ SPOTIFY_USERNAME=your_username
 
 # Optional: Pi Zero / low-power mode optimisations
 SPOTIPI_LOW_POWER=1
+SPOTIPI_DEFAULT_ORIGIN=http://spotipi.local   # CORS allowlist fallback for LAN UI
+SPOTIPI_PLAYBACK_CACHE_TTL=3.0                # Seconds to cache /me/player snapshot
 ```
 
 Everything else is auto-configured with smart defaults.
