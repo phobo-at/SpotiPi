@@ -23,7 +23,8 @@ import os
 import time
 import threading
 import logging
-from typing import Dict, List, Any, Optional, Set
+import hashlib
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -117,6 +118,12 @@ class MusicLibraryCache:
         
         self.logger.info("🎵 Unified Music Library Cache initialized")
 
+    def _scoped_cache_key(self, namespace: str, token: Optional[str]) -> str:
+        """Build a stable cache key scoped to the current access token."""
+        token_value = token or ""
+        digest = hashlib.sha256(token_value.encode("utf-8")).hexdigest()[:16]
+        return f"{namespace}_{digest}"
+
     def get(self, cache_key: str, cache_type: CacheType) -> Optional[Any]:
         """Get data from cache if fresh.
         
@@ -193,7 +200,7 @@ class MusicLibraryCache:
         Returns:
             Complete music library data
         """
-        cache_key = f"full_library_{hash(token) % 10000}"  # Token-specific cache
+        cache_key = self._scoped_cache_key("full_library", token)
         
         if not force_refresh:
             cached_data = self.get(cache_key, CacheType.FULL_LIBRARY)
@@ -242,7 +249,7 @@ class MusicLibraryCache:
         section_cache_status = {}
         
         def load_section(section_name: str) -> List[Dict[str, Any]]:
-            cache_key = f"{section_name}_{hash(token) % 10000}"
+            cache_key = self._scoped_cache_key(section_name, token)
             cache_type = getattr(CacheType, section_name.upper())
             
             # Try cache first
@@ -307,7 +314,7 @@ class MusicLibraryCache:
         Returns:
             List of available devices
         """
-        cache_key = "spotify_devices"
+        cache_key = self._scoped_cache_key("spotify_devices", token)
         
         if not force_refresh:
             cached_devices = self.get(cache_key, CacheType.DEVICES)

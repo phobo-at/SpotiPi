@@ -63,7 +63,10 @@ class SleepService(BaseService):
                 "end_time": end_time,
                 "progress_percent": progress_percent,
                 "remaining_seconds": remaining_seconds,
-                "total_duration_seconds": total_duration
+                "total_duration_seconds": total_duration,
+                "volume": status.get("volume"),
+                "device_name": status.get("device_name"),
+                "device_id": status.get("device_id")
             }
             
             return self._success_result(

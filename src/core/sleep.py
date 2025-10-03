@@ -14,13 +14,15 @@ import time
 import json
 import logging
 from threading import Thread
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, Tuple
 import requests
 
 # Import from new modular structure
 from ..api.spotify import (
     refresh_access_token,
+    get_access_token,
     get_devices,
+    get_current_playback,
     start_playback,
     set_volume
 )
@@ -40,6 +42,8 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 # Setup logger for sleep module
 logger = logging.getLogger('sleep')
+
+SLEEP_FADE_WINDOW_SECONDS = 60
 
 def get_sleep_status() -> Dict[str, Any]:
     """Get current sleep timer status.
@@ -82,7 +86,11 @@ def get_sleep_status() -> Dict[str, Any]:
                         "total_duration_minutes": duration_minutes,
                         "start_time": start_time,
                         "end_time": end_time,
-                        "progress_percent": progress_percent
+                        "progress_percent": progress_percent,
+                        "volume": data.get("volume"),
+                        "device_name": data.get("device_name"),
+                        "playlist_uri": data.get("playlist_uri"),
+                        "device_id": data.get("device_id")
                     }
         return {"active": False}
     except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
@@ -127,11 +135,12 @@ def start_sleep_timer(duration_minutes: int, playlist_uri: str = "", device_name
             "volume": volume
         }
         
-        print(f"🔥 DEBUG: Saving sleep status to {STATUS_PATH}")
-        with open(STATUS_PATH, "w", encoding='utf-8') as f:
-            json.dump(sleep_data, f, indent=2)
-        print("🔥 DEBUG: Sleep status saved successfully")
-        
+        def _write_status(data: Dict[str, Any]) -> None:
+            print(f"🔥 DEBUG: Saving sleep status to {STATUS_PATH}")
+            with open(STATUS_PATH, "w", encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            print("🔥 DEBUG: Sleep status saved successfully")
+
         print("🔥 DEBUG: About to log timer started message")
         logger.info(f"🕒 Sleep timer started for {duration_minutes} minutes")
         print("🔥 DEBUG: Timer started message logged")
@@ -139,12 +148,18 @@ def start_sleep_timer(duration_minutes: int, playlist_uri: str = "", device_name
         # Start music playback if specified
         if playlist_uri and device_name:
             print(f"🔥 DEBUG: Starting sleep music: {playlist_uri} on {device_name}, shuffle: {shuffle}")
-            success = _start_sleep_music(playlist_uri, device_name, volume, shuffle)
+            success, device_id = _start_sleep_music(playlist_uri, device_name, volume, shuffle)
             if not success:
                 print("🔥 DEBUG: Failed to start sleep music")
-                logger.warning("Failed to start sleep music, but timer is still active")
+                logger.warning("Failed to start sleep music, cancelling timer")
+                _write_status({"active": False})
+                return False
+
+            sleep_data["device_id"] = device_id
         else:
             print("🔥 DEBUG: No music playback requested")
+        
+        _write_status(sleep_data)
         
         # Start monitoring thread
         print("🔥 DEBUG: About to create monitor thread")
@@ -181,23 +196,23 @@ def stop_sleep_timer() -> bool:
         logger.exception("Error stopping sleep timer")
         return False
 
-def _start_sleep_music(playlist_uri: str, device_name: str, volume: int, shuffle: bool = False) -> bool:
+def _start_sleep_music(playlist_uri: str, device_name: str, volume: int, shuffle: bool = False) -> Tuple[bool, Optional[str]]:
     """Start sleep music playback.
-    
+
     Args:
         playlist_uri: Spotify playlist URI
         device_name: Target device name
         volume: Playback volume (0-100)
         shuffle: Enable shuffle mode
-        
+
     Returns:
-        bool: True if playback started successfully
+        Tuple[bool, Optional[str]]: Success flag and resolved device ID
     """
     try:
-        token = refresh_access_token()
+        token = get_access_token() or refresh_access_token()
         if not token:
             logger.warning("Failed to get Spotify token for sleep music")
-            return False
+            return False, None
             
         # Get device ID
         devices = get_devices(token)
@@ -209,16 +224,111 @@ def _start_sleep_music(playlist_uri: str, device_name: str, volume: int, shuffle
         
         if not device_id:
             logger.warning(f"Device '{device_name}' not found for sleep music")
-            return False
+            return False, None
         
-        # Start playback
-        start_playback(token, device_id, playlist_uri, volume_percent=volume, shuffle=shuffle)
+        # Start playback and verify success
+        playback_started = start_playback(token, device_id, playlist_uri, volume_percent=volume, shuffle=shuffle)
+        if not playback_started:
+            logger.warning("Sleep music playback could not be started")
+            return False, None
+
         logger.info(f"🎵 Started sleep music: {playlist_uri} on {device_name} at {volume}% volume, shuffle: {shuffle}")
-        return True
-        
+        return True, device_id
+
     except Exception as e:
         logger.exception("Error starting sleep music")
-        return False
+        return False, None
+
+
+def _fade_out_sleep_music(status: Dict[str, Any], remaining_seconds: int, fade_state: Dict[str, Any]) -> None:
+    """Gradually reduce volume during the final minute of the sleep timer."""
+    initial_volume = status.get("volume")
+    if initial_volume is None:
+        return
+
+    try:
+        initial_volume = int(initial_volume)
+    except (TypeError, ValueError):
+        return
+
+    if initial_volume <= 0:
+        fade_state["last_volume"] = 0
+        return
+
+    window = SLEEP_FADE_WINDOW_SECONDS
+    ratio = max(0.0, min(1.0, remaining_seconds / window))
+    computed_target = int(initial_volume * ratio)
+    if remaining_seconds <= 5:
+        computed_target = 0
+    computed_target = max(0, min(initial_volume, computed_target))
+
+    token = fade_state.get("token") or get_access_token()
+    if not token:
+        token = refresh_access_token()
+    if not token:
+        logger.warning("Sleep fade-out skipped: no Spotify token available")
+        return
+
+    device_id = fade_state.get("device_id") or status.get("device_id")
+    device_name = status.get("device_name")
+
+    if not device_id and device_name:
+        try:
+            devices = get_devices(token)
+            for device in devices:
+                if device.get("name") == device_name:
+                    device_id = device.get("id")
+                    break
+        except Exception as device_err:
+            logger.debug(f"Sleep fade-out: unable to resolve device id: {device_err}")
+
+    playback_device_id = device_id
+    if device_id:
+        fade_state["device_id"] = device_id
+
+    current_volume = None
+    playback_device_id = fade_state.get("device_id") or device_id
+    try:
+        playback = get_current_playback(token, playback_device_id)
+        device_info = playback.get("device") if playback else None
+        if device_info and device_info.get("volume_percent") is not None:
+            current_volume = int(device_info["volume_percent"])
+            fade_state["last_measured_volume"] = current_volume
+    except Exception as playback_err:
+        logger.debug(f"Sleep fade-out: unable to fetch current playback: {playback_err}")
+        current_volume = fade_state.get("last_measured_volume")
+
+    if current_volume is None:
+        if fade_state.get("last_volume") is None:
+            # Without a baseline volume we risk increasing loudness; wait for the next poll.
+            return
+        current_volume = fade_state.get("last_volume", initial_volume)
+
+    target_volume = min(computed_target, current_volume)
+    if fade_state.get("last_volume") is not None:
+        target_volume = min(target_volume, fade_state["last_volume"])
+
+    if target_volume == fade_state.get("last_volume"):
+        return
+
+    success = set_volume(token, target_volume, device_id)
+    if not success:
+        fade_state.pop("token", None)
+        token = refresh_access_token()
+        if not token:
+            logger.warning("Sleep fade-out failed: unable to refresh Spotify token")
+            return
+        success = set_volume(token, target_volume, device_id)
+
+    if success:
+        fade_state["token"] = token
+        fade_state["last_volume"] = target_volume
+        fade_state["last_measured_volume"] = target_volume
+        logger.debug(f"😴 Sleep fade-out volume set to {target_volume}%")
+    else:
+        fade_state.pop("token", None)
+        logger.warning("Sleep fade-out: set_volume call did not succeed")
+
 
 def _monitor_sleep_timer() -> None:
     """Background thread to monitor sleep timer.
@@ -229,6 +339,7 @@ def _monitor_sleep_timer() -> None:
     print("🔥 DEBUG MONITOR: _monitor_sleep_timer function started!")
     logger.info("😴 Sleep timer monitor thread started")
     try:
+        fade_state: Dict[str, Any] = {"last_volume": None}
         while True:
             print("🔥 DEBUG MONITOR: Starting while loop iteration")
             status = get_sleep_status()
@@ -258,11 +369,20 @@ def _monitor_sleep_timer() -> None:
                 minutes_left = remaining // 60
                 logger.info(f"😴 Sleep timer: {minutes_left} minutes remaining")
             
-            # Check every 30 seconds
-            print("🔥 DEBUG MONITOR: Sleeping for 30 seconds")
-            time.sleep(30)
+            if remaining <= SLEEP_FADE_WINDOW_SECONDS:
+                _fade_out_sleep_music(status, remaining, fade_state)
+                sleep_interval = 5
+            else:
+                fade_state["last_volume"] = None
+                fade_state.pop("token", None)
+                fade_state.pop("device_id", None)
+                fade_state.pop("last_measured_volume", None)
+                sleep_interval = 30
+
+            print(f"🔥 DEBUG MONITOR: Sleeping for {sleep_interval} seconds")
+            time.sleep(sleep_interval)
             print("🔥 DEBUG MONITOR: Woke up from sleep")
-            
+
     except Exception as e:
         print(f"🔥 DEBUG MONITOR: Exception in monitor: {e}")
         logger.exception("Error in sleep timer monitor")
@@ -277,10 +397,29 @@ def _stop_sleep_music() -> bool:
         bool: True if music stopped successfully
     """
     try:
-        token = refresh_access_token()
+        status = get_sleep_status()
+
+        token = get_access_token() or refresh_access_token()
         if not token:
             logger.warning("Failed to get token for stopping sleep music")
             return False
+        try:
+            device_id = status.get("device_id") if isinstance(status, dict) else None
+            device_name = status.get("device_name") if isinstance(status, dict) else None
+
+            if not device_id and device_name:
+                try:
+                    devices = get_devices(token)
+                    for device in devices:
+                        if device.get("name") == device_name:
+                            device_id = device.get("id")
+                            break
+                except Exception as device_err:
+                    logger.debug(f"Sleep fade-out: unable to resolve device id during stop: {device_err}")
+
+            set_volume(token, 0, device_id)
+        except Exception:
+            logger.debug("Sleep fade-out: unable to set final volume to 0 before pause")
             
         # Try to pause playback
         response = requests.put(

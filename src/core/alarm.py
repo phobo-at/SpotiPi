@@ -18,7 +18,8 @@ from typing import Optional, List, Dict, Any
 from ..api.spotify import (
     get_access_token,
     get_device_id,
-    start_playback
+    start_playback,
+    set_volume
 )
 from ..constants import ALARM_TRIGGER_WINDOW_MINUTES
 from ..config import load_config, save_config
@@ -121,8 +122,12 @@ def execute_alarm() -> bool:
     log(f"🎯 Target time: {config['time']}")
     log(f"📏 Time difference: {diff_minutes:.2f} minutes")
 
-    if abs(diff_minutes) > ALARM_TRIGGER_WINDOW_MINUTES:
-        debug(f"Not within trigger window (±1.5m). diff={diff_minutes:.2f}m")
+    if diff_minutes < 0:
+        debug(f"Not yet within trigger window. diff={diff_minutes:.2f}m")
+        return False
+
+    if diff_minutes > ALARM_TRIGGER_WINDOW_MINUTES:
+        debug(f"Not within trigger window (+{ALARM_TRIGGER_WINDOW_MINUTES}m). diff={diff_minutes:.2f}m")
         return False
 
     # Start playback
@@ -150,6 +155,21 @@ def execute_alarm() -> bool:
         if not config.get("playlist_uri"):
             debug("No playlist_uri configured; playback may fail")
 
+        initial_volume = 0 if fade_in else target_volume
+
+        preset_success = False
+        try:
+            preset_success = set_volume(token, initial_volume, device_id)
+        except Exception as preset_err:
+            log(f"⚠️ Error presetting volume: {preset_err}")
+
+        if not preset_success:
+            log(f"⚠️ Could not preset volume to {initial_volume}% before playback")
+            if fade_in:
+                fade_in = False
+                initial_volume = target_volume
+                log("⚠️ Fade-in disabled because initial volume could not be set safely")
+
         if not fade_in:
             start_playback(
                 token,
@@ -164,23 +184,32 @@ def execute_alarm() -> bool:
                 token,
                 device_id,
                 config.get("playlist_uri", ""),
-                volume_percent=5,
+                volume_percent=initial_volume,
                 shuffle=shuffle
             )
-            log("▶️ Playback started at 5% volume (Fade-In to alarm volume)")
+            log("▶️ Playback started at 0% volume (Fade-In active)")
             try:
-                for v in range(10, target_volume + 1, 5):
-                    time.sleep(5)
-                    r = requests.put(
-                        "https://api.spotify.com/v1/me/player/volume",
-                        params={"volume_percent": v},
-                        headers={"Authorization": f"Bearer {token}"},
-                        timeout=10
-                    )
-                    if r.status_code == 204:
-                        log(f"🎚️ Volume increased to {v}%")
-                    else:
-                        log(f"⚠️ Volume set to {v}% - Status: {r.status_code}")
+                if target_volume > 0:
+                    fade_step = max(1, min(5, target_volume))
+                    volumes = []
+                    current = fade_step
+                    while current < target_volume:
+                        volumes.append(current)
+                        current += fade_step
+                    volumes.append(target_volume)
+
+                    for idx, v in enumerate(volumes):
+                        time.sleep(1 if idx == 0 else 5)
+                        r = requests.put(
+                            "https://api.spotify.com/v1/me/player/volume",
+                            params={"volume_percent": v, "device_id": device_id},
+                            headers={"Authorization": f"Bearer {token}"},
+                            timeout=10
+                        )
+                        if r.status_code == 204:
+                            log(f"🎚️ Volume increased to {v}%")
+                        else:
+                            log(f"⚠️ Volume set attempt to {v}% - Status: {r.status_code}")
             except requests.exceptions.RequestException as e:
                 log(f"❌ Network error during fade-in: {e}")
             except Exception as e:

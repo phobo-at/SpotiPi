@@ -29,13 +29,23 @@ def test_service_health(client):
     assert data["success"] is True
 
     health = data["data"]["health"]
-    assert health["overall_healthy"] is True
-    assert health["total_services"] == health["healthy_services"] >= 4
+    total = health["total_services"]
+    healthy = health["healthy_services"]
+
+    assert total >= 4
+    assert 0 <= healthy <= total
+    assert health["overall_healthy"] == (healthy == total)
 
     services = health["services"]
     for name in ["alarm", "spotify", "sleep", "system"]:
         assert name in services
-        assert services[name]["healthy"] is True
+        entry = services[name]
+        assert "healthy" in entry
+        assert "status" in entry
+        if entry["healthy"]:
+            status_value = entry.get("status_summary") or entry["status"].get("status")
+            if isinstance(status_value, str):
+                assert status_value.lower() in {"healthy", "ok"}
 
 
 def test_service_performance(client):
@@ -123,4 +133,3 @@ def test_service_error_handling(client):
         data = response.get_json()
         assert 'success' in data
         assert 'timestamp' in data
-

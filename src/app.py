@@ -257,13 +257,13 @@ if not hasattr(app, '_warmup_started'):
                 logging.info("🌅 Warmup: no token available yet (user not authenticated)")
                 return
             try:
-                devs = get_devices(token)
+                devs = cache_migration.get_devices_cached(token, get_devices, force_refresh=True)
                 logging.info(f"🌅 Warmup: cached {len(devs)} devices")
             except Exception as e:
                 logging.info(f"🌅 Warmup: device fetch error: {e}")
             try:
-                _ = get_user_library(token)
-                logging.info("🌅 Warmup: music library prefetched")
+                cache_migration.get_full_library_cached(token, get_user_library, force_refresh=True)
+                logging.info("🌅 Warmup: music library prefetched into cache")
             except Exception as e:
                 logging.info(f"🌅 Warmup: library fetch error: {e}")
         except Exception as e:

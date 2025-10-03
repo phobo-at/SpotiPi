@@ -62,14 +62,36 @@ class ServiceManager:
             results = {}
             overall_healthy = True
             
+            degraded_states = {"degraded", "warning", "warn", "error", "fail", "failed", "unhealthy"}
+
             for name, service in self.services.items():
                 health = service.health_check()
+
+                if health.success and isinstance(health.data, dict):
+                    status_payload: Dict[str, Any] = health.data
+                elif health.success:
+                    status_payload = {"status": "healthy", "details": health.data}
+                else:
+                    status_payload = {"error": health.message}
+
+                status_value = None
+                if isinstance(status_payload, dict):
+                    raw_status = status_payload.get("status")
+                    if isinstance(raw_status, str):
+                        status_value = raw_status.lower()
+
+                service_healthy = health.success
+                if status_value:
+                    service_healthy = service_healthy and status_value not in degraded_states
+
                 results[name] = {
-                    "healthy": health.success,
-                    "status": health.data if health.success else {"error": health.message}
+                    "healthy": service_healthy,
+                    "status": status_payload
                 }
-                
-                if not health.success:
+                if status_value:
+                    results[name]["status_summary"] = status_value
+
+                if not service_healthy:
                     overall_healthy = False
             
             return ServiceResult(

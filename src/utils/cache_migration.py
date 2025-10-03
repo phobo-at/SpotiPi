@@ -20,6 +20,7 @@ Bietet:
 import os
 import time
 import logging
+import hashlib
 from typing import Dict, List, Any, Optional, Callable
 from pathlib import Path
 
@@ -138,15 +139,21 @@ class CacheMigrationLayer:
     # 3. Device Cache Migration (_DEVICE_CACHE)
     # =====================================
     
-    def get_legacy_device_cache(self) -> Dict[str, Any]:
+    def _device_cache_key(self, token: Optional[str]) -> str:
+        token_value = token or ""
+        digest = hashlib.sha256(token_value.encode('utf-8')).hexdigest()[:16]
+        return f"spotify_devices_{digest}"
+
+    def get_legacy_device_cache(self, token: Optional[str] = None) -> Dict[str, Any]:
         """Ersetzt _DEVICE_CACHE in spotify.py.
-        
+
         Returns:
             Legacy-format device cache {"ts": float, "data": list}
         """
         self._migration_stats['legacy_calls'] += 1
-        
-        cached_devices = self.unified_cache.get("spotify_devices", CacheType.DEVICES)
+
+        cache_key = self._device_cache_key(token)
+        cached_devices = self.unified_cache.get(cache_key, CacheType.DEVICES)
         
         # Return legacy format for compatibility
         if cached_devices:
@@ -154,13 +161,14 @@ class CacheMigrationLayer:
         else:
             return {"ts": 0.0, "data": []}
     
-    def set_legacy_device_cache(self, devices: List[Dict[str, Any]]) -> None:
+    def set_legacy_device_cache(self, devices: List[Dict[str, Any]], token: Optional[str] = None) -> None:
         """Ersetzt device cache update in spotify.py.
-        
+
         Args:
             devices: Device list to cache
         """
-        self.unified_cache.set("spotify_devices", devices, CacheType.DEVICES)
+        cache_key = self._device_cache_key(token)
+        self.unified_cache.set(cache_key, devices, CacheType.DEVICES)
         self.logger.debug("💾 Legacy device cache -> unified cache")
 
     # =====================================

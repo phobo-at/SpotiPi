@@ -5,6 +5,24 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.8] - 2025-10-03
+
+### 😴 Sleep Timer
+- Fadedown now tracks the active Spotify device and tapers volume over the final 60 seconds without jumping back up if the user adjusted the level manually.
+- Sleep start aborts cleanly when Spotify playback fails instead of leaving a phantom “active” timer.
+
+### ⏰ Alarm Reliability
+- Fade-in only remains enabled when the initial volume preset succeeds; otherwise the alarm starts at the configured target volume to avoid loud surprises.
+
+### 🎧 Spotify Integration
+- Library and device caches are token-scoped to prevent cross-account bleed-through during multi-user sessions.
+- Sleep stop reuses cached access tokens instead of forcing a refresh on every stop.
+
+### 🧪 Tests
+- `pytest`
+
+---
+
 ## [1.2.7] - 2025-10-02
 
 ### 🔄 Deployment & Runtime Cleanup
