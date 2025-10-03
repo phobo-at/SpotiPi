@@ -14,6 +14,7 @@ from functools import wraps
 import logging
 import threading
 import time
+from urllib.parse import urlparse
 
 # Import from new structure - use relative imports since we're in src/
 from .config import load_config, save_config
@@ -75,19 +76,79 @@ rate_limiter = get_rate_limiter()
 # Initialize service manager
 service_manager = get_service_manager()
 
+def _matches_origin(origin: str, allowed_entry: str) -> bool:
+    """Check if a request origin matches an allowed CORS entry."""
+    if not allowed_entry:
+        return False
+
+    allowed_entry = allowed_entry.strip()
+    if allowed_entry == '*':
+        return True
+
+    if origin == 'null':
+        # Allow explicit "null" entries for local file / PWA contexts
+        return allowed_entry.lower() == 'null'
+
+    if not origin:
+        return False
+
+    parsed_origin = urlparse(origin)
+    origin_host = parsed_origin.hostname
+    origin_port = parsed_origin.port or (443 if parsed_origin.scheme == 'https' else 80)
+
+    # Allow host entries without scheme ("example.com" or "example.com:5000")
+    if '://' not in allowed_entry:
+        host, _, port = allowed_entry.partition(':')
+        if host and host.lower() == (origin_host or '').lower():
+            if not port:
+                return True
+            try:
+                return int(port) == origin_port
+            except ValueError:
+                return False
+        return False
+
+    parsed_allowed = urlparse(allowed_entry)
+
+    if parsed_allowed.scheme and parsed_allowed.scheme != parsed_origin.scheme:
+        return False
+
+    if parsed_allowed.hostname and (parsed_allowed.hostname.lower() != (origin_host or '').lower()):
+        return False
+
+    allowed_port = parsed_allowed.port or (
+        443 if parsed_allowed.scheme == 'https' else 80 if parsed_allowed.scheme == 'http' else None
+    )
+
+    if parsed_allowed.port and allowed_port != origin_port:
+        return False
+
+    return True
+
+
 @app.after_request
 def after_request(response: Response):
     """Add CORS headers + (optional) gzip compression & cache related headers."""
     # ---- CORS ----
-    allowed_origins = os.getenv('SPOTIPI_CORS_ORIGINS')
-    if allowed_origins:
-        origin = request.headers.get('Origin', '')
-        allowed = [o.strip() for o in allowed_origins.split(',') if o.strip()]
-        if origin in allowed:
-            response.headers['Access-Control-Allow-Origin'] = origin
+    allowed_origins_env = os.getenv('SPOTIPI_CORS_ORIGINS')
+    request_origin = request.headers.get('Origin')
+
+    if allowed_origins_env:
+        allowed_entries = [entry.strip() for entry in allowed_origins_env.split(',') if entry.strip()]
+
+        if any(entry == '*' for entry in allowed_entries):
+            acao_value = request_origin or '*'
+            response.headers['Access-Control-Allow-Origin'] = acao_value
+            if request_origin:
+                response.headers.setdefault('Vary', 'Origin')
+        elif request_origin and any(_matches_origin(request_origin, entry) for entry in allowed_entries):
+            response.headers['Access-Control-Allow-Origin'] = request_origin
             response.headers.setdefault('Vary', 'Origin')
+        elif request_origin == 'null' and any(entry.lower() == 'null' for entry in allowed_entries):
+            response.headers['Access-Control-Allow-Origin'] = 'null'
     else:
         response.headers['Access-Control-Allow-Origin'] = '*'
+
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
     response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
 
