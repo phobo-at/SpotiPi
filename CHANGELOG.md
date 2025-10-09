@@ -5,6 +5,17 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2025-10-07
+
+### ⏰ Alarm & Sleep UX Polishing
+- Mirrored sleep-mode behaviour for alarms: the edit form now collapses into an active-state summary with disable toggle and speaker/next-alarm details once the alarm is enabled.
+- Added device info and localized status strings to the collapsed alarm view so it is clear which speaker will fire.
+- Sleep timer countdown now shows a human-friendly label instead of the raw translation key when active.
+- Initial global volume slider pulls the live Spotify device volume (including device-list fallbacks) rather than the static config default.
+
+### 🧪 Tests
+- `pytest`
+
 ## [1.3.2] - 2025-10-06
 
 ### ⏰ Alarm Experience Refresh

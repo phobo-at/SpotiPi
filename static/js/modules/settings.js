@@ -1,6 +1,6 @@
 // /static/js/modules/settings.js
 import { DOM } from './state.js';
-import { updateStatus, updateSleepTimer } from './ui.js';
+import { updateStatus, updateSleepTimer, updateAlarmStatus } from './ui.js';
 import { t } from './translation.js';
 import { fetchAPI } from './api.js';
 
@@ -70,6 +70,7 @@ export function saveAlarmSettings() {
         
       updateStatus('alarm-timer', statusMessage, true);
       console.log('✅ Alarm settings saved successfully');
+      updateAlarmStatus();
     } else {
       console.error('Error saving settings:', data ? data.message : 'No data received');
       statusElement.innerHTML = originalStatus;

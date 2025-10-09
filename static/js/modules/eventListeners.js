@@ -47,6 +47,7 @@ export function initializeEventListeners() {
         durationSelect: '#duration',
         // Alarm form elements
         alarmEnabled: '#enabled',
+        alarmEnabledActive: '#enabled_active',
         alarmTime: '#time',
         alarmVolumeSlider: '#alarm_volume_slider',
         deviceSelect: '#device_name',
@@ -107,6 +108,16 @@ export function initializeEventListeners() {
     if (elements.alarmEnabled) {
         elements.alarmEnabled.addEventListener('change', function() {
             console.log('🚨 Alarm enabled changed:', this.checked);
+            throttledSaveAlarmSettings();
+        });
+    }
+    if (elements.alarmEnabledActive) {
+        elements.alarmEnabledActive.addEventListener('change', function() {
+            console.log('🚨 Alarm active toggle changed:', this.checked);
+            const configToggle = DOM.getElement('enabled');
+            if (configToggle) {
+                configToggle.checked = this.checked;
+            }
             throttledSaveAlarmSettings();
         });
     }

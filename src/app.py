@@ -335,6 +335,36 @@ def index():
         config = load_config()
         g.current_config = config
     
+    initial_volume = config.get('volume', 50)
+    preferred_device = config.get("device_name")
+    try:
+        token = get_access_token()
+        if token:
+            playback_snapshot = get_combined_playback(token)
+            device_info = playback_snapshot.get("device") if playback_snapshot else None
+            if device_info and device_info.get("volume_percent") is not None:
+                initial_volume = int(device_info.get("volume_percent", initial_volume))
+            else:
+                devices = get_devices(token) or []
+                target_device = None
+                if preferred_device:
+                    target_device = next(
+                        (d for d in devices if d.get("name") == preferred_device),
+                        None,
+                    )
+                if not target_device:
+                    target_device = next(
+                        (d for d in devices if d.get("is_active")),
+                        None,
+                    )
+                if not target_device and devices:
+                    target_device = devices[0]
+                if target_device and target_device.get("volume_percent") is not None:
+                    initial_volume = int(target_device.get("volume_percent", initial_volume))
+        initial_volume = max(0, min(100, int(initial_volume)))
+    except Exception as volume_err:
+        logger.debug("Initial volume fetch failed: %s", volume_err)
+    
     # Data is now loaded asynchronously via JavaScript to improve initial page load time.
     # We pass empty placeholders to the template.
     devices = []
@@ -378,6 +408,7 @@ def index():
         'weekdays_display': weekdays_display,
         'next_alarm_info': next_alarm_info,
         'recurring_alarm_enabled': recurring_enabled,
+        'initial_volume': initial_volume,
         'error_message': session.pop('error_message', None),
         'success_message': session.pop('success_message', None),
         'sleep_status': get_sleep_status(),

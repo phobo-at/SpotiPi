@@ -416,11 +416,30 @@ export function applyAlarmStatus(data) {
 
     const elements = DOM.getElements({
       alarmTimer: '#alarm-timer',
-      enabledToggle: '#enabled'
+      enabledToggle: '#enabled',
+      enabledToggleActive: '#enabled_active',
+      alarmForm: '#alarm-form',
+      activeAlarmMode: '#active-alarm-mode',
+      nextAlarmSummary: '#next-alarm-summary',
+      alarmActiveInfo: '#alarm-active-info-text',
+      alarmDeviceName: '#alarm-device-name'
     });
 
     if (elements.enabledToggle && typeof data.enabled === 'boolean') {
       elements.enabledToggle.checked = data.enabled;
+    }
+    if (elements.enabledToggleActive && typeof data.enabled === 'boolean') {
+      elements.enabledToggleActive.checked = data.enabled;
+    }
+
+    if (elements.alarmForm && elements.activeAlarmMode) {
+      if (data.enabled) {
+        elements.alarmForm.classList.add('hidden');
+        elements.activeAlarmMode.classList.remove('hidden');
+      } else {
+        elements.alarmForm.classList.remove('hidden');
+        elements.activeAlarmMode.classList.add('hidden');
+      }
     }
 
     if (elements.alarmTimer) {
@@ -432,6 +451,24 @@ export function applyAlarmStatus(data) {
         ? `${baseLabel} ${data.time}<br><span class="volume-info">${volumeLabel}: ${data.alarm_volume}%</span>`
         : noAlarmLabel;
       elements.alarmTimer.innerHTML = statusMessage;
+    }
+
+    if (elements.nextAlarmSummary) {
+      const nextInfo = data.next_alarm && typeof data.next_alarm === 'string' && data.next_alarm.trim()
+        ? data.next_alarm
+        : (t('alarm_next_unknown') || 'Pending');
+      elements.nextAlarmSummary.textContent = nextInfo;
+    }
+
+    if (elements.alarmActiveInfo && data.time) {
+      elements.alarmActiveInfo.textContent = t('alarm_active_info', { time: data.time }) || `Alarm scheduled for ${data.time}`;
+    }
+
+    if (elements.alarmDeviceName) {
+      const deviceLabel = data.device_name && data.device_name.trim()
+        ? data.device_name
+        : (t('alarm_device_unknown') || 'Unknown device');
+      elements.alarmDeviceName.textContent = deviceLabel;
     }
 }
 

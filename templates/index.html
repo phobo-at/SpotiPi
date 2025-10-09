@@ -77,18 +77,18 @@
       <div class="global-volume-container">
                 <label for="volume" class="volume-label">
           {{ t('volume_label')|safe }}
-          (<span id="volume-display">{{ config.volume or 50 }}</span>%)
+          (<span id="volume-display">{{ initial_volume }}</span>%)
         <input
           type="range"
           id="global-volume"
           class="form-input"
           min="0"
           max="100"
-          value="{{ config.volume or 50 }}"
+          value="{{ initial_volume }}"
           aria-valuemin="0"
           aria-valuemax="100"
-          aria-valuenow="{{ config.volume or 50 }}"
-          aria-valuetext="{{ config.volume or 50 }}%"
+          aria-valuenow="{{ initial_volume }}"
+          aria-valuetext="{{ initial_volume }}%"
         >
       </div>
 

@@ -29,6 +29,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'fade_in': 'Fade-In',
         'shuffle': 'Shuffle',
         'enable_alarm': 'Wecker aktivieren',
+        'alarm_active_title': 'Wecker aktiv',
+        'alarm_active_info': 'Wecker geplant für {time} Uhr. Du kannst ihn unten deaktivieren.',
+        'alarm_next_label': 'Nächster Alarm:',
+        'alarm_next_unknown': 'Noch nicht berechnet',
+        'alarm_device_label': 'Gerät:',
+        'alarm_device_unknown': 'Unbekanntes Gerät',
         'alarm_set': 'Wecker gestellt für {time} Uhr',
         'alarm_volume_info': 'Lautstärke: {volume}%',
         'no_alarm': 'Kein Wecker gestellt',
@@ -56,6 +62,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'sleep_active_title': 'Sleep-Timer aktiv',
         'sleep_active_info': 'Die Musik wird automatisch gestoppt, wenn die eingestellte Zeit abgelaufen ist.',
         'no_sleep_timer': 'Kein aktiver Sleep-Timer',
+        'sleep_timer_label': 'Sleep-Timer endet in',
         'sleep_ends_in': 'Sleep endet in {min}m {sec}s',
         
         # Music Library
@@ -208,6 +215,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'fade_in': 'Fade-In',
         'shuffle': 'Shuffle',
         'enable_alarm': 'Enable Alarm',
+        'alarm_active_title': 'Alarm active',
+        'alarm_active_info': 'Alarm scheduled for {time}. Use the switch below to disable it.',
+        'alarm_next_label': 'Next alarm:',
+        'alarm_next_unknown': 'Calculating...',
+        'alarm_device_label': 'Speaker:',
+        'alarm_device_unknown': 'Unknown device',
         'alarm_set': 'Alarm set for {time}',
         'alarm_volume_info': 'Volume: {volume}%',
         'no_alarm': 'No alarm set',
@@ -235,6 +248,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'sleep_active_title': 'Sleep Timer Active',
         'sleep_active_info': 'Music will automatically stop when the set time expires.',
         'no_sleep_timer': 'No active sleep timer',
+        'sleep_timer_label': 'Sleep timer ends in',
         'sleep_ends_in': 'Sleep ends in {min}m {sec}s',
         
         # Music Library
