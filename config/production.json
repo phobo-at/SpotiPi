@@ -19,5 +19,8 @@
   "enable_file_logging": false,
   "enable_daily_logs": false,
   "max_log_size": 1048576,
-  "backup_count": 1
+  "backup_count": 1,
+  "features": {
+    "recurring_alarm_enabled": false
+  }
 }

@@ -42,17 +42,7 @@
       aria-describedby="time-help"
     >
     <small id="time-help" class="form-help">{{ t('alarm_time_help') }}</small>
-    
-    <!-- Wochentag-Bubbles (Python Compatible: 0=Monday, 6=Sunday) -->
-    <div class="weekday-bubbles">
-      <div class="weekday-bubble" data-day="0" title="{{ t('monday') }}">{{ t('mon') }}</div>
-      <div class="weekday-bubble" data-day="1" title="{{ t('tuesday') }}">{{ t('tue') }}</div>
-      <div class="weekday-bubble" data-day="2" title="{{ t('wednesday') }}">{{ t('wed') }}</div>
-      <div class="weekday-bubble" data-day="3" title="{{ t('thursday') }}">{{ t('thu') }}</div>
-      <div class="weekday-bubble" data-day="4" title="{{ t('friday') }}">{{ t('fri') }}</div>
-      <div class="weekday-bubble" data-day="5" title="{{ t('saturday') }}">{{ t('sat') }}</div>
-      <div class="weekday-bubble" data-day="6" title="{{ t('sunday') }}">{{ t('sun') }}</div>
-    </div>
+    <small class="form-help">{{ t('single_alarm_mode_hint') }}</small>
   </div>
 
   <!-- Speaker Device -->
@@ -96,9 +86,6 @@
   <!-- Hidden field for playlist URI -->
   <input type="hidden" id="playlist_uri" name="playlist_uri" value="{{ config.get('playlist_uri', '') }}">
   
-  <!-- Hidden field for weekdays -->
-  <input type="hidden" id="weekdays" name="weekdays" value="{{ config.get('weekdays', [])|map('string')|join(',') }}">
-
   <!-- Options Section -->
   <fieldset class="options-group">
     <legend>{{ t('further_options') }}</legend>

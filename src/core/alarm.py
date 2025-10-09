@@ -43,7 +43,13 @@ def is_weekday_enabled(config: Dict[str, Any], current_weekday: int) -> bool:
     Returns:
         bool: True if alarm should trigger today, False otherwise
     """
-    weekdays = config.get("weekdays", [])
+    features = config.get("features", {})
+    recurring_enabled = bool(features.get("recurring_alarm_enabled", False))
+    weekdays = config.get("weekdays", []) if recurring_enabled else []
+    
+    # If recurring alarms are disabled via feature flag, treat alarm as single-use
+    if not recurring_enabled:
+        return True
     
     # If no specific weekdays set, alarm triggers daily
     if not weekdays:
@@ -97,7 +103,12 @@ def execute_alarm() -> bool:
     log(f"⏰ Current time: {now_str}")
     log(f"📅 Current weekday: {current_weekday} (0=Mon, 6=Sun)")
     # Log only key fields to reduce noise
-    safe_cfg = {k: config.get(k) for k in ["enabled", "time", "weekdays", "device_name", "playlist_uri", "alarm_volume", "fade_in", "shuffle"]}
+    recurring_enabled = bool(config.get("features", {}).get("recurring_alarm_enabled", False))
+    safe_cfg = {
+        k: config.get(k)
+        for k in ["enabled", "time", "weekdays", "device_name", "playlist_uri", "alarm_volume", "fade_in", "shuffle"]
+    }
+    safe_cfg["recurring_alarm_enabled"] = recurring_enabled
     log(f"📄 Loaded config (sanitized): {safe_cfg}")
 
     # Time check

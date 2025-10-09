@@ -5,6 +5,35 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2025-10-06
+
+### ⏰ Alarm Experience Refresh
+- Default alarms now behave as one-time events; they automatically disable after playback while keeping the previous configuration intact for fast re-arming.
+- Introduced a `features.recurring_alarm_enabled` flag so advanced recurring schedules can be reactivated later without losing stored weekday selections.
+- Updated scheduler, service layer, and API payloads to surface both the recurring flag and the currently active weekday set for diagnostics.
+- Simplified the alarm editor UI by removing weekday bubbles and adding a localized hint that recurring options will return once the feature flag is enabled.
+
+### 🧰 Configuration & Validation
+- Config manager now deep-fills default feature flags across all environments and guards against malformed `features` sections.
+- Alarm validation preserves stored weekday data when the UI omits the field, ensuring future releases can re-enable recurring mode seamlessly.
+
+### ⚡ Pi Zero W Performance Pass
+- Added a lightweight perf monitor (P50/P95 per Flask route) with rate-limited logging so we can profile the Pi Zero without overwhelming the SD card.
+- Replaced ad-hoc Spotify calls with a pooled `requests.Session`, single-flight dedupe for GET requests, and a global semaphore (`SPOTIPI_MAX_CONCURRENCY`) to keep the Pi CPU under control.
+- Introduced a two-tier device/library cache: small in-memory LRU plus disk snapshots under `./cache/`, with new env knobs (`SPOTIPI_DEVICE_TTL`, `SPOTIPI_LIBRARY_TTL_MINUTES`).
+- Created `scripts/bench.sh` + `/api/perf/metrics` to benchmark cold/warm device discovery and library loads reproducibly.
+
+### 📈 Benchmark Snapshot (run `scripts/bench.sh` on hardware)
+| Endpoint | Target P50 | Target P95 | Requests (warm) | Payload |
+|----------|------------|------------|-----------------|---------|
+| `/api/spotify/devices` | <= 0.20 s | <= 1.50 s | 5 | ~4 KB |
+| `/api/music-library?fields=basic` | <= 0.35 s | <= 1.50 s | 5 | ~48 KB |
+
+> Instrumentation is baked in; capture actual before/after numbers on the Pi Zero W with `scripts/bench.sh` and archive them alongside the deployment notes.
+
+### 🧪 Tests
+- `pytest`
+
 ## [1.3.1] - 2025-10-05
 
 ### ⚙️ Backend Simplification

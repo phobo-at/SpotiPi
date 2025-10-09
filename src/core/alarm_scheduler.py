@@ -60,7 +60,9 @@ class AlarmScheduler:
         alarm_time = cfg.get("time")
         if not alarm_time or not AlarmTimeValidator.validate_time_format(alarm_time):
             return None
-        weekdays = cfg.get("weekdays", [])
+        features = cfg.get("features", {})
+        recurring_enabled = bool(features.get("recurring_alarm_enabled", False))
+        weekdays = cfg.get("weekdays", []) if recurring_enabled else []
         try:
             next_dt = WeekdayScheduler.get_next_alarm_date(alarm_time, weekdays)
             return next_dt

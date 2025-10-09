@@ -9,7 +9,7 @@ validation, execution, and status management.
 import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import BaseService, ServiceResult
 from ..config import load_config, save_config
@@ -29,6 +29,8 @@ class AlarmInfo:
     volume: int
     next_execution: Optional[datetime]
     is_scheduled: bool
+    recurring_enabled: bool = False
+    active_weekdays: List[int] = field(default_factory=list)
 
 class AlarmService(BaseService):
     """Service for managing alarms and scheduling."""
@@ -38,6 +40,12 @@ class AlarmService(BaseService):
         self.scheduler = WeekdayScheduler()
         self.validator = AlarmTimeValidator()
     
+    @staticmethod
+    def _is_recurring_enabled(config: Dict[str, Any]) -> bool:
+        """Feature toggle for recurring alarm support."""
+        features = config.get("features", {})
+        return bool(features.get("recurring_alarm_enabled", False))
+    
     def get_alarm_status(self) -> ServiceResult:
         """Get comprehensive alarm status information."""
         try:
@@ -46,25 +54,28 @@ class AlarmService(BaseService):
             # Calculate next alarm execution
             next_alarm = None
             is_scheduled = False
+            recurring_enabled = self._is_recurring_enabled(config)
+            stored_weekdays = config.get("weekdays", [])
+            active_weekdays = stored_weekdays if recurring_enabled else []
             
             if config.get("enabled") and config.get("time"):
-                weekdays = config.get("weekdays", [])
-                if weekdays:
-                    next_alarm = self.scheduler.get_next_alarm_date(
-                        config["time"], weekdays
-                    )
-                    is_scheduled = True
+                next_alarm = self.scheduler.get_next_alarm_date(
+                    config["time"], active_weekdays
+                )
+                is_scheduled = next_alarm is not None
             
             alarm_info = AlarmInfo(
                 enabled=config.get("enabled", False),
                 time=config.get("time"),
-                weekdays=config.get("weekdays", []),
+                weekdays=stored_weekdays,
                 device_name=config.get("device_name"),
                 device_id=config.get("device_id"),
                 playlist_uri=config.get("playlist_uri"),
                 volume=config.get("volume", 50),
                 next_execution=next_alarm,
-                is_scheduled=is_scheduled
+                is_scheduled=is_scheduled,
+                recurring_enabled=recurring_enabled,
+                active_weekdays=active_weekdays
             )
             
             return self._success_result(
@@ -178,11 +189,12 @@ class AlarmService(BaseService):
                     message="No alarms scheduled"
                 )
             
+            recurring_enabled = self._is_recurring_enabled(config)
             weekdays = config.get("weekdays", [])
-            if not weekdays:
+            if not recurring_enabled or not weekdays:
                 return self._success_result(
                     data=[],
-                    message="No weekdays selected for alarm"
+                    message="Recurring alarms are disabled"
                 )
             
             next_alarms = []
@@ -238,7 +250,9 @@ class AlarmService(BaseService):
                     error_code="MISSING_TIME"
                 )
             
-            if not config.get("weekdays"):
+            recurring_enabled = self._is_recurring_enabled(config)
+            
+            if recurring_enabled and not config.get("weekdays"):
                 return self._error_result(
                     "Cannot enable alarm: No weekdays selected",
                     error_code="MISSING_WEEKDAYS"

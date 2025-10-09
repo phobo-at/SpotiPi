@@ -222,6 +222,11 @@ class CacheMigrationLayer:
         self._migration_stats['unified_calls'] += 1
         return self.unified_cache.get_devices(token, loader_func, force_refresh)
 
+    def get_device_cache_info(self, token: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Metadata zum aktuellen Device-Cache (z.B. lastUpdated)."""
+        cache_key = self._device_cache_key(token)
+        return self.unified_cache.get_metadata(cache_key)
+
     # =====================================
     # 5. Cache Management
     # =====================================

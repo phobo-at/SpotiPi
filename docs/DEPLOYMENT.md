@@ -21,6 +21,7 @@ Mac Entwicklung              Raspberry Pi Produktion
 ├── /spotipi-dev/            ├── /home/pi/repo.git (bare repo)
 │   └── spotify_wakeup       ├── /home/pi/.spotify_wakeup (app)
 │                            └── systemd service (spotify-web.service)
+│                            └── Waitress WSGI Server via `python run.py`
 ```
 
 ### Deployment Ablauf

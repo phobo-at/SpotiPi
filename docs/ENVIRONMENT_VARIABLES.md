@@ -108,6 +108,18 @@ PORT=8080              # Custom port
 - **Environment Issues:** Set `SPOTIPI_ENV` explicitly
 - **Port Conflicts:** Use `PORT` variable
 
+### 🚀 **Performance Flags (Pi Zero W)**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SPOTIPI_MAX_CONCURRENCY` | `2` | Limits concurrent Spotify API requests; keep low on the Pi Zero W. |
+| `SPOTIPI_DEVICE_TTL` | `10` | Device discovery cache in seconds (clamped 5-15). |
+| `SPOTIPI_LIBRARY_TTL_MINUTES` | `60` | Full library cache TTL in minutes (clamped 30-120). |
+| `SPOTIPI_SECTION_TTL_MINUTES` | `60` | Section (playlists/albums/etc.) cache TTL in minutes. |
+| `SPOTIPI_HTTP_TIMEOUT` | `3.0` | Default Spotify HTTP timeout in seconds. |
+| `SPOTIPI_HTTP_LONG_TIMEOUT` | `6.0` | Extended timeout for long-running Spotify calls. |
+| `SPOTIPI_CACHE_MAX_ENTRIES` | `64` | In-memory cache size before LRU eviction. |
+
 ---
 *Documented on: September 5, 2025*  
 *SpotiPi Auto-Detection System v1.0.0*

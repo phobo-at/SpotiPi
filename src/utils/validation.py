@@ -337,11 +337,20 @@ def validate_alarm_config(form_data: Dict[str, Any]) -> Dict[str, Any]:
         raise ValidationError(device_result.field_name, device_result.error)
     validated['device_name'] = device_result.value
     
-    # Weekdays validation
-    weekdays_result = InputValidator.validate_weekdays(form_data.get('weekdays'), 'weekdays')
+    # Weekdays validation (preserve existing config when field omitted)
+    weekdays_raw = form_data.get('weekdays')
+    weekdays_result = InputValidator.validate_weekdays(weekdays_raw, 'weekdays')
     if not weekdays_result.is_valid:
         raise ValidationError(weekdays_result.field_name, weekdays_result.error)
-    validated['weekdays'] = weekdays_result.value
+    weekdays_value = weekdays_result.value
+    if weekdays_raw is None:
+        try:
+            from ..config import load_config  # Local import to avoid circular dependency
+            existing_config = load_config()
+            weekdays_value = existing_config.get('weekdays', weekdays_value)
+        except Exception:
+            pass
+    validated['weekdays'] = weekdays_value
     
     # Boolean fields
     for field in ['enabled', 'fade_in', 'shuffle']:

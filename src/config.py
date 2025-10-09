@@ -6,6 +6,7 @@ Handles environment-specific configs and validation with thread safety
 import os
 import json
 import logging
+import copy
 from typing import Dict, Any, Optional
 from pathlib import Path
 
@@ -102,18 +103,28 @@ class ConfigManager:
             "shuffle": False,
             "weekdays": [],
             "debug": False,
-            "log_level": "INFO"
+            "log_level": "INFO",
+            "features": {
+                "recurring_alarm_enabled": False
+            },
         }
         
         for key, default_value in defaults.items():
             if key not in config:
-                config[key] = default_value
+                config[key] = copy.deepcopy(default_value)
         
         # Validate types and ranges
         try:
             config["alarm_volume"] = max(0, min(100, int(config.get("alarm_volume", 50))))
         except (ValueError, TypeError):
             config["alarm_volume"] = 50
+        
+        # Validate feature flags
+        features = config.get("features", {})
+        if not isinstance(features, dict):
+            features = {}
+        features["recurring_alarm_enabled"] = bool(features.get("recurring_alarm_enabled", False))
+        config["features"] = features
         
         # Validate weekdays
         weekdays = config.get("weekdays", [])

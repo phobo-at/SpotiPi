@@ -16,7 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 from functools import lru_cache
 import logging
-from typing import Dict, List, Optional, Any, Union
+import threading
+from typing import Dict, List, Optional, Any, Union, Tuple
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 import socket
@@ -27,6 +28,7 @@ from ..config import load_config, save_config
 # Import token caching system
 from ..utils.token_cache import initialize_token_cache, get_cached_token, force_token_refresh
 from ..utils.cache_migration import get_cache_migration_layer
+from ..utils.perf_monitor import perf_monitor
 
 # Use the new central#  Exportable functions - Updated for new config system
 __all__ = [
@@ -51,10 +53,6 @@ def _get_env_path():
 
 ENV_PATH = _get_env_path()
 
-# ⏱️ Network timeout configuration
-# Increased timeout for better reliability with unstable connections
-SPOTIFY_API_TIMEOUT = 30  # seconds
-
 # 🌍 Load environment variables
 load_dotenv(dotenv_path=ENV_PATH)
 CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
@@ -62,6 +60,50 @@ CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("SPOTIFY_REFRESH_TOKEN")
 USERNAME = os.getenv("SPOTIFY_USERNAME")
 _LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+
+
+def _coerce_float(value: Optional[str], default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+DEFAULT_HTTP_TIMEOUT = _coerce_float(os.getenv('SPOTIPI_HTTP_TIMEOUT'), 3.0)
+LONG_HTTP_TIMEOUT = _coerce_float(
+    os.getenv('SPOTIPI_HTTP_LONG_TIMEOUT'),
+    max(DEFAULT_HTTP_TIMEOUT * 2, 6.0)
+)
+SPOTIFY_API_TIMEOUT = max(DEFAULT_HTTP_TIMEOUT, LONG_HTTP_TIMEOUT)
+
+
+def _max_concurrency() -> int:
+    override = os.getenv('SPOTIPI_MAX_CONCURRENCY')
+    if override:
+        try:
+            value = max(1, int(override))
+            return value
+        except ValueError:
+            logging.getLogger('spotify').warning(
+                "Invalid SPOTIPI_MAX_CONCURRENCY=%s; using safe default",
+                override
+            )
+    return 2 if _LOW_POWER_MODE else 3
+
+
+MAX_CONCURRENCY = _max_concurrency()
+_REQUEST_SEMAPHORE = threading.Semaphore(MAX_CONCURRENCY)
+_SINGLE_FLIGHT_LOCK = threading.Lock()
+_IN_FLIGHT: Dict[Tuple[str, str, Tuple[Any, ...]], "_SingleFlight"] = {}
+
+
+def _coerce_timeout(value: Optional[Union[int, float]]) -> float:
+    if value is None:
+        return DEFAULT_HTTP_TIMEOUT
+    try:
+        return max(0.2, float(value))
+    except (TypeError, ValueError):
+        return DEFAULT_HTTP_TIMEOUT
 
 
 def _get_library_worker_limit() -> int:
@@ -76,7 +118,8 @@ def _get_library_worker_limit() -> int:
                 "Invalid SPOTIPI_LIBRARY_WORKERS=%s; falling back to default",
                 override
             )
-    return 1 if _LOW_POWER_MODE else 4
+    base = 2 if _LOW_POWER_MODE else 3
+    return max(1, min(base, MAX_CONCURRENCY))
 
 # 🔑 Token function
 def refresh_access_token() -> Optional[str]:
@@ -89,12 +132,13 @@ def refresh_access_token() -> Optional[str]:
     if os.getenv("SPOTIPI_OFFLINE") == "1":
         return None
     try:
-        r = requests.post(
-            "https://accounts.spotify.com/api/token",
-            data={"grant_type": "refresh_token", "refresh_token": REFRESH_TOKEN},
-            auth=(CLIENT_ID, CLIENT_SECRET),
-            timeout=SPOTIFY_API_TIMEOUT
-        )
+        with _REQUEST_SEMAPHORE:
+            r = SESSION.post(
+                "https://accounts.spotify.com/api/token",
+                data={"grant_type": "refresh_token", "refresh_token": REFRESH_TOKEN},
+                auth=(CLIENT_ID, CLIENT_SECRET),
+                timeout=SPOTIFY_API_TIMEOUT
+            )
         if r.status_code == 200:
             return r.json().get("access_token")
         else:
@@ -134,20 +178,72 @@ cache_migration = get_cache_migration_layer()
 def _build_session() -> requests.Session:
     session = requests.Session()
     retry = Retry(
-        total=int(os.getenv('SPOTIPI_HTTP_RETRY_TOTAL', '3')),
-        backoff_factor=float(os.getenv('SPOTIPI_HTTP_BACKOFF', '0.5')),
+        total=int(os.getenv('SPOTIPI_HTTP_RETRY_TOTAL', '2')),
+        backoff_factor=float(os.getenv('SPOTIPI_HTTP_BACKOFF', '0.3')),
         status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=(
-            'GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'
-        ),
+        allowed_methods=('GET', 'HEAD', 'OPTIONS'),
         respect_retry_after_header=True,
     )
-    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=10)
+    pool_size = max(4, MAX_CONCURRENCY * 4)
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=pool_size, pool_maxsize=pool_size)
     session.mount('https://', adapter)
     session.mount('http://', adapter)
+    session.headers.update({
+        'Connection': 'keep-alive',
+        'Accept': 'application/json',
+    })
+    session.trust_env = False
     return session
 
 SESSION = _build_session()
+
+
+class _SingleFlight:
+    """Track in-flight GET requests to deduplicate identical calls."""
+
+    __slots__ = ("event", "response", "error")
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self.response: Optional[requests.Response] = None
+        self.error: Optional[Exception] = None
+
+
+def _freeze_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return tuple(sorted((k, _freeze_value(v)) for k, v in value.items()))
+    if isinstance(value, (list, tuple, set)):
+        return tuple(_freeze_value(v) for v in value)
+    return str(value)
+
+
+def _build_singleflight_key(method: str, url: str, params: Optional[Any]) -> Tuple[str, str, Tuple[Any, ...]]:
+    if not params:
+        frozen: Tuple[Any, ...] = tuple()
+    elif isinstance(params, dict):
+        frozen = tuple(sorted((k, _freeze_value(v)) for k, v in params.items()))
+    else:
+        try:
+            frozen = tuple((str(k), _freeze_value(v)) for k, v in params)  # type: ignore[assignment]
+        except Exception:
+            frozen = (_freeze_value(params),)
+    return method.upper(), url, frozen
+
+
+def _claim_singleflight(key: Tuple[str, str, Tuple[Any, ...]]) -> Tuple[_SingleFlight, bool]:
+    with _SINGLE_FLIGHT_LOCK:
+        slot = _IN_FLIGHT.get(key)
+        if slot:
+            return slot, False
+        slot = _SingleFlight()
+        _IN_FLIGHT[key] = slot
+        return slot, True
+
+
+def _release_singleflight(key: Tuple[str, str, Tuple[Any, ...]]) -> None:
+    with _SINGLE_FLIGHT_LOCK:
+        _IN_FLIGHT.pop(key, None)
+
 
 _PLAYBACK_CACHE: Dict[str, Any] | None = None
 _PLAYBACK_CACHE_EXPIRY: float = 0.0
@@ -177,16 +273,60 @@ def _breaker_on_failure() -> None:
     if _BREAKER['consecutive_failures'] >= _BREAKER['threshold']:
         _BREAKER['open_until'] = time.time() + _BREAKER['cooldown']
 
-def _spotify_request(method: str, url: str, *, headers: Dict[str, str], params: Optional[Dict[str, Any]] = None, json: Optional[Dict[str, Any]] = None, timeout: int = 10) -> requests.Response:
+def _spotify_request(
+    method: str,
+    url: str,
+    *,
+    headers: Dict[str, str],
+    params: Optional[Dict[str, Any]] = None,
+    json: Optional[Dict[str, Any]] = None,
+    timeout: Optional[Union[int, float]] = None
+) -> requests.Response:
     if _breaker_open():
         raise RuntimeError("Spotify API temporarily unavailable (circuit breaker open)")
+
+    method_upper = method.upper()
+    request_timeout = _coerce_timeout(timeout)
+
+    sf_key: Optional[Tuple[str, str, Tuple]] = None
+    sf_slot: Optional[_SingleFlight] = None
+    is_leader = False
+
+    if method_upper == 'GET':
+        sf_key = _build_singleflight_key(method_upper, url, params)
+        sf_slot, is_leader = _claim_singleflight(sf_key)
+        if not is_leader:
+            sf_slot.event.wait()
+            if sf_slot.error:
+                raise sf_slot.error
+            if sf_slot.response is None:
+                raise RuntimeError("Single-flight response missing")
+            return sf_slot.response
+
     try:
-        resp = SESSION.request(method=method, url=url, headers=headers, params=params, json=json, timeout=timeout)
+        with _REQUEST_SEMAPHORE:
+            resp = SESSION.request(
+                method=method_upper,
+                url=url,
+                headers=headers,
+                params=params,
+                json=json,
+                timeout=request_timeout
+            )
         _breaker_on_success()
+        if method_upper == 'GET' and is_leader and sf_slot:
+            sf_slot.response = resp
         return resp
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as exc:
         _breaker_on_failure()
+        if method_upper == 'GET' and is_leader and sf_slot:
+            sf_slot.error = exc
         raise
+    finally:
+        if method_upper == 'GET' and sf_slot and is_leader:
+            sf_slot.event.set()
+            if sf_key is not None:
+                _release_singleflight(sf_key)
 
 # 🎵 Spotify API
 def get_playlists(token: str) -> List[Dict[str, Any]]:
@@ -543,12 +683,13 @@ def get_devices(token: str) -> List[Dict[str, Any]]:
     def load_devices_from_api(token: str) -> List[Dict[str, Any]]:
         """Load devices directly from Spotify API."""
         try:
-            r = _spotify_request(
-                'GET',
-                "https://api.spotify.com/v1/me/player/devices",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=8
-            )
+            with perf_monitor.time_block("spotify.devices.api_call"):
+                r = _spotify_request(
+                    'GET',
+                    "https://api.spotify.com/v1/me/player/devices",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=8
+                )
             if r.status_code == 200:
                 devices = r.json().get("devices", [])
                 return devices
@@ -744,10 +885,11 @@ def stop_playback(token: str) -> bool:
         bool: True if successful, False otherwise
     """
     try:
-        r = requests.put(
+        r = _spotify_request(
+            'PUT',
             "https://api.spotify.com/v1/me/player/pause",
             headers={"Authorization": f"Bearer {token}"},
-            timeout=10
+            timeout=DEFAULT_HTTP_TIMEOUT
         )
         if r.status_code == 204:
             _invalidate_playback_cache()
@@ -771,10 +913,11 @@ def resume_playback(token: str) -> bool:
         bool: True if successful, False otherwise
     """
     try:
-        r = requests.put(
+        r = _spotify_request(
+            'PUT',
             "https://api.spotify.com/v1/me/player/play",
             headers={"Authorization": f"Bearer {token}"},
-            timeout=10
+            timeout=DEFAULT_HTTP_TIMEOUT
         )
         if r.status_code == 204:
             _invalidate_playback_cache()
@@ -1051,8 +1194,10 @@ def load_music_library_parallel(token: str) -> Dict[str, Any]:
         Returns:
             List[Dict[str, Any]]: Loaded data or empty list on error
         """
+        label = name.lower().replace(' ', '_')
         try:
-            result = func(token)
+            with perf_monitor.time_block(f"spotify.library.{label}"):
+                result = func(token)
             logger.info(f"✅ {name} loaded: {len(result)} items")
             return result
         except Exception as e:
@@ -1168,10 +1313,11 @@ def spotify_network_health() -> Dict[str, Any]:
 
     # TLS reachability (HEAD to a harmless endpoint)
     try:
-        r = requests.head(
-            "https://api.spotify.com/v1",
-            timeout=5,
-        )
+        with _REQUEST_SEMAPHORE:
+            r = SESSION.head(
+                "https://api.spotify.com/v1",
+                timeout=_coerce_timeout(5)
+            )
         info["tls"] = {
             "reachable": True,
             "status": r.status_code,

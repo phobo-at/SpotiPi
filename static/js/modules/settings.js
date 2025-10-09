@@ -28,8 +28,10 @@ export function saveAlarmSettings() {
   formData.set('playlist_uri', playlistUri);
   
   // Weekdays from hidden field
-  const weekdaysValue = DOM.getElement('weekdays')?.value || '';
-  formData.set('weekdays', weekdaysValue);
+  const weekdaysElement = DOM.getElement('weekdays');
+  if (weekdaysElement) {
+    formData.set('weekdays', weekdaysElement.value || '');
+  }
   
   // Debug output
   console.log('💾 Saving alarm settings:', {

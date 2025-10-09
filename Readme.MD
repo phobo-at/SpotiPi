@@ -11,7 +11,7 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 ## ✨ Features
 
 - 🎵 **Spotify Integration** - Wake up to any playlist, album, or track
-- ⏰ **Smart Alarms** - Weekday scheduling with automatic management
+- ⏰ **Smart Alarms** - One-shot alarms by default with optional recurring scheduling (feature flag)
 - 😴 **Sleep Timer** - Peaceful fade-out for better sleep
 - 📱 **Mobile First** - Responsive web interface, PWA support
 - 🍓 **Pi Optimized** - Auto-detection and SD-card protection
@@ -50,9 +50,24 @@ SPOTIFY_USERNAME=your_username
 SPOTIPI_LOW_POWER=1
 SPOTIPI_DEFAULT_ORIGIN=http://spotipi.local   # CORS allowlist fallback for LAN UI
 SPOTIPI_PLAYBACK_CACHE_TTL=3.0                # Seconds to cache /me/player snapshot
+SPOTIPI_DEVICE_TTL=10                         # Device cache TTL in seconds (5-15 on Pi Zero)
+SPOTIPI_LIBRARY_TTL_MINUTES=60                # Library cache TTL in minutes (30-120)
+SPOTIPI_MAX_CONCURRENCY=2                     # Global HTTP concurrency limit on low-power devices
 ```
 
 Everything else is auto-configured with smart defaults.
+
+### Alarm Behaviour Flags
+
+Recurring alarms are currently hidden behind a feature flag so they stay ready for a future configuration screen:
+
+```json
+"features": {
+  "recurring_alarm_enabled": false
+}
+```
+
+Leave the flag at `false` for the single-use experience. When you flip it to `true`, the stored weekday list becomes active again and the scheduler resumes recurring operation.
 
 ## 🍓 Raspberry Pi Setup
 
@@ -66,6 +81,13 @@ pip install -r requirements.txt && python generate_token.py
 sudo cp scripts/spotipi.service /etc/systemd/system/
 sudo systemctl enable spotipi && sudo systemctl start spotipi
 ```
+
+## 🧠 Performance Setup (Pi Zero W)
+
+- **HTTP pooling & limits:** a shared `requests.Session` keeps TLS warm and caps concurrent Spotify API calls (`SPOTIPI_MAX_CONCURRENCY`, default `2`).
+- **Two-tier caching:** devices persist to `./cache/spotify_devices_<hash>.json` (default TTL `SPOTIPI_DEVICE_TTL=10s`), the music library uses an in-memory LRU backed by disk (`SPOTIPI_LIBRARY_TTL_MINUTES=60`).
+- **Instrumentation:** high-resolution timings for every Flask route plus per-endpoint P50/P95 logs; inspect via `/api/perf/metrics`.
+- **Benchmark helper:** run `scripts/bench.sh` after deployment to measure cold/warm latencies and validate cache hit rates (details in `docs/benchmark.md`).
 
 ## 🚀 Deployment Workflow
 

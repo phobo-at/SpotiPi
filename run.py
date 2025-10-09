@@ -15,6 +15,11 @@ sys.path.insert(0, str(project_root))
 from src.app import app, start_alarm_scheduler
 from src.config import load_config
 
+try:
+    from waitress import serve
+except ImportError:  # pragma: no cover - waitress installed in deployment
+    serve = None
+
 if __name__ == "__main__":
     # Load configuration for port and debug settings
     config = load_config()
@@ -28,7 +33,9 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", default_port))
     debug_mode = config.get("debug", False)
     
-    print(f"🚀 Starting SpotiPi on port {port} with new modular structure")
+    host = config.get("host", "0.0.0.0")
+
+    print(f"🚀 Starting SpotiPi on {host}:{port} with new modular structure")
     print(f"🌍 Environment: {config.get('environment', 'unknown')}")
     print(f"🔧 Debug mode: {debug_mode}")
     
@@ -38,8 +45,20 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    app.run(
-        host="0.0.0.0", 
-        port=port, 
-        debug=debug_mode
-    )
+    if debug_mode or serve is None:
+        app.run(
+            host=host,
+            port=port,
+            debug=debug_mode
+        )
+    else:
+        threads = int(os.environ.get("SPOTIPI_WAITRESS_THREADS", "4"))
+        backlog = int(os.environ.get("SPOTIPI_WAITRESS_BACKLOG", "128"))
+        print(f"🍽️ Using Waitress WSGI server (threads={threads}, backlog={backlog})")
+        serve(
+            app,
+            host=host,
+            port=port,
+            threads=threads,
+            backlog=backlog
+        )

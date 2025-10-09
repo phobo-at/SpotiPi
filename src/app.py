@@ -43,6 +43,7 @@ from .core.sleep import (
     start_sleep_timer, stop_sleep_timer, get_sleep_status,
     save_sleep_settings
 )
+from .utils.perf_monitor import perf_monitor
 
 # Initialize Flask app with correct paths
 project_root = Path(__file__).parent.parent  # Go up from src/ to project root
@@ -79,6 +80,19 @@ rate_limiter = get_rate_limiter()
 
 # Initialize service manager
 service_manager = get_service_manager()
+
+
+@app.before_request
+def _perf_before_request():
+    """Capture request start timestamp for perf monitoring."""
+    try:
+        g.perf_started = time.perf_counter()
+        g.perf_route = request.endpoint or request.path
+        g.perf_method = request.method
+        g.perf_recorded = False
+    except Exception:
+        g.perf_started = None
+
 
 def _matches_origin(origin: str, allowed_entry: str) -> bool:
     """Check if a request origin matches an allowed CORS entry."""
@@ -191,7 +205,50 @@ def after_request(response: Response):
     except Exception as gzip_err:
         logging.debug(f"Compression skipped: {gzip_err}")
 
+    # ---- Performance instrumentation ----
+    try:
+        start = getattr(g, 'perf_started', None)
+        if start is not None:
+            duration = time.perf_counter() - start
+            route_name = getattr(g, 'perf_route', request.endpoint or request.path)
+            method = getattr(g, 'perf_method', request.method)
+            perf_monitor.record_request(
+                route_name,
+                duration,
+                method=method,
+                status=response.status_code,
+                path=request.path,
+            )
+            g.perf_recorded = True
+    except Exception as perf_err:
+        logging.debug(f"Perf monitor skipped: {perf_err}")
+
     return response
+
+
+@app.teardown_request
+def _perf_teardown(exception):
+    """Ensure timings are recorded even if after_request was skipped."""
+    try:
+        if getattr(g, 'perf_recorded', False):
+            return
+        start = getattr(g, 'perf_started', None)
+        if start is None:
+            return
+        duration = time.perf_counter() - start
+        route_name = getattr(g, 'perf_route', request.endpoint or request.path)
+        method = getattr(g, 'perf_method', request.method if request else 'UNKNOWN')
+        status = 500 if exception else 200
+        perf_monitor.record_request(
+            route_name,
+            duration,
+            method=method,
+            status=status,
+            path=request.path if request else route_name,
+        )
+        g.perf_recorded = True
+    except Exception as perf_err:
+        logging.debug(f"Perf teardown skipped: {perf_err}")
 
 def api_error_handler(func):
     """Decorator for consistent API error handling"""
@@ -284,16 +341,17 @@ def index():
     playlists = []
     current_track = None
     
-    # Format weekdays for display
-    weekdays_display = WeekdayScheduler.format_weekdays_display(config.get('weekdays', []))
+    # Determine active weekdays based on feature flag
+    recurring_enabled = bool(config.get('features', {}).get('recurring_alarm_enabled', False))
+    active_weekdays = config.get('weekdays', []) if recurring_enabled else []
     
     # Calculate next alarm time
     next_alarm_info = ""
     if config.get('enabled') and config.get('time'):
         try:
             next_alarm_info = AlarmTimeValidator.format_time_until_alarm(
-                config['time'], 
-                config.get('weekdays', [])
+                config['time'],
+                active_weekdays
             )
         except Exception:
             next_alarm_info = "Next alarm calculation error"
@@ -307,6 +365,11 @@ def index():
         from .utils.translations import t
         return t(key, user_language, **kwargs)
     
+    if recurring_enabled:
+        weekdays_display = WeekdayScheduler.format_weekdays_display(active_weekdays)
+    else:
+        weekdays_display = template_t('single_alarm_mode_label')
+    
     template_data = {
         'config': config,
         'devices': devices,
@@ -314,6 +377,7 @@ def index():
         'current_track': current_track,
         'weekdays_display': weekdays_display,
         'next_alarm_info': next_alarm_info,
+        'recurring_alarm_enabled': recurring_enabled,
         'error_message': session.pop('error_message', None),
         'success_message': session.pop('success_message', None),
         'sleep_status': get_sleep_status(),
@@ -384,16 +448,27 @@ def save_alarm():
             return api_response(False, message=t_api("invalid_time_format", request), status=400, error_code="time_format")
         if not save_config(config):
             return api_response(False, message=t_api("failed_save_config", request), status=500, error_code="save_failed")
-        weekdays_info = WeekdayScheduler.format_weekdays_display(config.get('weekdays', []))
+        recurring_enabled = bool(config.get('features', {}).get('recurring_alarm_enabled', False))
+        active_weekdays = config.get('weekdays', []) if recurring_enabled else []
+        if recurring_enabled:
+            weekdays_info = WeekdayScheduler.format_weekdays_display(active_weekdays)
+        else:
+            weekdays_info = t_api("single_alarm_mode_label", request)
         logging.info(
-            "Alarm settings saved: Active=%s Time=%s Volume=%s%% Weekdays=%s",
-            config['enabled'], config['time'], config['alarm_volume'], weekdays_info or 'daily'
+            "Alarm settings saved: Active=%s Time=%s Volume=%s%% Mode=%s Weekdays=%s",
+            config['enabled'],
+            config['time'],
+            config['alarm_volume'],
+            "recurring" if recurring_enabled else "single-run",
+            active_weekdays if recurring_enabled else []
         )
         return api_response(True, data={
             "enabled": config["enabled"],
             "time": config["time"],
             "alarm_volume": config["alarm_volume"],
             "weekdays": config["weekdays"],
+            "active_weekdays": active_weekdays,
+            "recurring_alarm_enabled": recurring_enabled,
             "weekdays_display": weekdays_info
         }, message=t_api("alarm_settings_saved", request))
     except ValidationError as e:
@@ -432,18 +507,22 @@ def alarm_status():
                               error_code="alarm_status_exception")
     else:
         # Basic status (legacy format)
+        recurring_enabled = bool(config.get("features", {}).get("recurring_alarm_enabled", False))
+        active_weekdays = config.get("weekdays", []) if recurring_enabled else []
         next_alarm_time = ""
         if config.get("enabled") and config.get("time"):
             next_alarm_time = AlarmTimeValidator.format_time_until_alarm(
                 config["time"], 
-                config.get("weekdays", [])
+                active_weekdays
             )
         return api_response(True, data={
             "enabled": config.get("enabled", False),
             "time": config.get("time", "07:00"),
             "alarm_volume": config.get("alarm_volume", 50),
             "weekdays": config.get("weekdays", []),
-            "weekdays_display": WeekdayScheduler.format_weekdays_display(config.get("weekdays", [])),
+            "active_weekdays": active_weekdays,
+            "recurring_alarm_enabled": recurring_enabled,
+            "weekdays_display": WeekdayScheduler.format_weekdays_display(active_weekdays) if recurring_enabled else t_api("single_alarm_mode_label", request),
             "next_alarm": next_alarm_time,
             "playlist_uri": config.get("playlist_uri", ""),
             "device_name": config.get("device_name", ""),
@@ -458,11 +537,13 @@ def api_dashboard_status():
     """Aggregate dashboard status (alarm, sleep, playback) in a single response."""
     config = load_config()
 
+    recurring_enabled = bool(config.get("features", {}).get("recurring_alarm_enabled", False))
+    active_weekdays = config.get("weekdays", []) if recurring_enabled else []
     next_alarm_time = ""
     if config.get("enabled") and config.get("time"):
         next_alarm_time = AlarmTimeValidator.format_time_until_alarm(
             config["time"],
-            config.get("weekdays", [])
+            active_weekdays
         )
 
     alarm_payload = {
@@ -470,7 +551,9 @@ def api_dashboard_status():
         "time": config.get("time", "07:00"),
         "alarm_volume": config.get("alarm_volume", 50),
         "weekdays": config.get("weekdays", []),
-        "weekdays_display": WeekdayScheduler.format_weekdays_display(config.get("weekdays", [])),
+        "active_weekdays": active_weekdays,
+        "recurring_alarm_enabled": recurring_enabled,
+        "weekdays_display": WeekdayScheduler.format_weekdays_display(active_weekdays) if recurring_enabled else t_api("single_alarm_mode_label", request),
         "next_alarm": next_alarm_time,
         "playlist_uri": config.get("playlist_uri", ""),
         "device_name": config.get("device_name", "")
@@ -1257,6 +1340,22 @@ def api_services_diagnostics():
         logger.error(f"Error running diagnostics: {e}")
         return api_response(False, message=str(e), status=500, error_code="services_diagnostics_exception")
 
+
+@app.route("/api/perf/metrics")
+@rate_limit("status_check")
+def api_perf_metrics():
+    """📈 Expose recent performance timings for bench scripts."""
+    try:
+        metrics = perf_monitor.snapshot()
+        payload = {
+            "timestamp": datetime.datetime.utcnow().isoformat() + 'Z',
+            "metrics": metrics
+        }
+        return api_response(True, data=payload)
+    except Exception as e:
+        logger.error(f"Error collecting perf metrics: {e}")
+        return api_response(False, message=str(e), status=500, error_code="perf_metrics_error")
+
 # =====================================
 # ⏱️ Alarm Manual Trigger Endpoint
 # =====================================
@@ -1303,7 +1402,24 @@ def api_spotify_devices():
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
     devices = get_devices(token)
-    return api_response(True, data={"devices": devices if devices else []})
+    cache_info = cache_migration.get_device_cache_info(token)
+    last_updated_iso = None
+    if cache_info and cache_info.get('timestamp'):
+        try:
+            last_updated_iso = datetime.datetime.fromtimestamp(
+                cache_info['timestamp'],
+                tz=datetime.timezone.utc
+            ).isoformat()
+        except (TypeError, ValueError, OSError):
+            last_updated_iso = None
+
+    payload = {
+        "devices": devices if devices else [],
+        "cache": cache_info or {},
+        "lastUpdated": last_updated_iso,
+        "stale": bool(cache_info.get('stale')) if cache_info else True
+    }
+    return api_response(True, data=payload)
 
 @app.route("/api/devices/refresh")
 @api_error_handler
@@ -1314,23 +1430,25 @@ def api_devices_refresh():
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
     try:
-        # Load devices directly from Spotify API (bypass cache)
-        import requests
-        r = _spotify_request(
-            'GET',
-            "https://api.spotify.com/v1/me/player/devices",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=5  # Reduced timeout for fast response
-        )
-        
-        if r.status_code == 200:
-            devices = r.json().get("devices", [])
-            logging.info(f"🔄 Fast device refresh: {len(devices)} devices found")
-            return api_response(True, data={"devices": devices, "timestamp": time.time()})
-        else:
-            logging.warning(f"⚠️ Device refresh failed: {r.status_code} - {r.text}")
-            return api_response(False, message="Device refresh failed", status=503, error_code="device_refresh_failed")
-            
+        cache_migration.invalidate_devices()
+        devices = get_devices(token)
+        cache_info = cache_migration.get_device_cache_info(token)
+        payload = {
+            "devices": devices if devices else [],
+            "cache": cache_info or {},
+            "lastUpdated": cache_info.get('timestamp') if cache_info else None,
+            "stale": bool(cache_info.get('stale')) if cache_info else False,
+            "timestamp": time.time()
+        }
+        if cache_info and cache_info.get('timestamp'):
+            try:
+                payload['lastUpdatedIso'] = datetime.datetime.fromtimestamp(
+                    cache_info['timestamp'], tz=datetime.timezone.utc
+                ).isoformat()
+            except (TypeError, ValueError, OSError):
+                pass
+        logging.info(f"🔄 Fast device refresh: {len(payload['devices'])} devices loaded")
+        return api_response(True, data=payload)
     except Exception as e:
         logging.error(f"❌ Error in device refresh: {e}")
         return api_response(False, message=str(e), status=503, error_code="device_refresh_error")

@@ -89,12 +89,18 @@ class MusicLibraryCache:
         self.logger = logging.getLogger("music_cache")
         self._lock = threading.RLock()
         self._cache: Dict[str, CacheEntry] = {}
+        self._metadata: Dict[str, Dict[str, Any]] = {}
         self._stats = {
             'hits': 0,
             'misses': 0,
             'total_requests': 0,
             'last_cleanup': time.time()
         }
+
+        try:
+            self._max_entries = max(16, int(os.getenv('SPOTIPI_CACHE_MAX_ENTRIES', '64')))
+        except ValueError:
+            self._max_entries = 64
         
         # Paths for persistent cache
         if project_root:
@@ -104,13 +110,47 @@ class MusicLibraryCache:
         self.cache_dir.mkdir(exist_ok=True)
         
         # TTL configuration (seconds)
+        def _parse_int(env_name: str, default: int) -> int:
+            value = os.getenv(env_name)
+            if value is None:
+                return default
+            try:
+                return int(value)
+            except ValueError:
+                logging.getLogger('music_cache').warning(
+                    "Invalid %s=%s; using %s",
+                    env_name,
+                    value,
+                    default
+                )
+                return default
+
+        library_minutes = _parse_int('SPOTIPI_LIBRARY_TTL_MINUTES', 60)
+        library_minutes = min(120, max(30, library_minutes))
+        legacy_library_seconds = os.getenv('SPOTIPI_MUSIC_CACHE_TTL')
+        if legacy_library_seconds and not os.getenv('SPOTIPI_LIBRARY_TTL_MINUTES'):
+            try:
+                library_minutes = max(30, min(120, int(int(legacy_library_seconds) / 60)))
+            except ValueError:
+                pass
+        library_ttl_seconds = library_minutes * 60
+
+        device_ttl = _parse_int('SPOTIPI_DEVICE_TTL', 10)
+        if 'SPOTIPI_DEVICE_TTL' not in os.environ and 'SPOTIPI_DEVICE_CACHE_TTL' in os.environ:
+            device_ttl = _parse_int('SPOTIPI_DEVICE_CACHE_TTL', device_ttl)
+        device_ttl = min(15, max(5, device_ttl))
+
+        section_minutes = _parse_int('SPOTIPI_SECTION_TTL_MINUTES', library_minutes)
+        section_minutes = min(120, max(30, section_minutes))
+        section_ttl_seconds = section_minutes * 60
+
         self._ttl_config = {
-            CacheType.FULL_LIBRARY: int(os.getenv('SPOTIPI_MUSIC_CACHE_TTL', '600')),  # 10 min
-            CacheType.PLAYLISTS: int(os.getenv('SPOTIPI_LIBRARY_SECTION_TTL', '600')),  # 10 min
-            CacheType.ALBUMS: int(os.getenv('SPOTIPI_LIBRARY_SECTION_TTL', '600')),    # 10 min
-            CacheType.TRACKS: int(os.getenv('SPOTIPI_LIBRARY_SECTION_TTL', '600')),    # 10 min
-            CacheType.ARTISTS: int(os.getenv('SPOTIPI_LIBRARY_SECTION_TTL', '600')),   # 10 min
-            CacheType.DEVICES: int(os.getenv('SPOTIPI_DEVICE_CACHE_TTL', '15')),       # 15 sec
+            CacheType.FULL_LIBRARY: library_ttl_seconds,
+            CacheType.PLAYLISTS: section_ttl_seconds,
+            CacheType.ALBUMS: section_ttl_seconds,
+            CacheType.TRACKS: section_ttl_seconds,
+            CacheType.ARTISTS: section_ttl_seconds,
+            CacheType.DEVICES: device_ttl,
         }
         
         # Auto-cleanup interval
@@ -148,6 +188,7 @@ class MusicLibraryCache:
             if (now - entry.timestamp) > entry.ttl:
                 self._stats['misses'] += 1
                 del self._cache[cache_key]
+                self._metadata.pop(cache_key, None)
                 return None
             
             # Update access statistics
@@ -158,8 +199,8 @@ class MusicLibraryCache:
             self.logger.debug(f"✅ Cache hit for {cache_key} ({cache_type.value})")
             return entry.data
 
-    def set(self, cache_key: str, data: Any, cache_type: CacheType, 
-            hash_value: Optional[str] = None) -> None:
+    def set(self, cache_key: str, data: Any, cache_type: CacheType,
+            hash_value: Optional[str] = None, source: str = 'memory') -> None:
         """Store data in cache.
         
         Args:
@@ -183,10 +224,88 @@ class MusicLibraryCache:
             )
             
             self._cache[cache_key] = entry
+            self._metadata[cache_key] = {
+                'timestamp': now,
+                'ttl': ttl,
+                'cache_type': cache_type.value,
+                'hash': hash_value,
+                'source': source,
+            }
             self.logger.debug(f"💾 Cached {cache_key} ({cache_type.value}) TTL={ttl}s")
             
+            if cache_type == CacheType.DEVICES:
+                self._persist_device_cache(cache_key, data)
+
+            self._evict_if_needed()
             # Trigger cleanup if needed
             self._maybe_cleanup()
+
+    def _device_cache_path(self, cache_key: str) -> Path:
+        return self.cache_dir / f"{cache_key}.json"
+
+    def _persist_device_cache(self, cache_key: str, data: Any) -> None:
+        try:
+            write_json_cache(str(self._device_cache_path(cache_key)), data)
+            self.logger.debug("💾 Persisted devices to disk cache")
+        except Exception as exc:
+            self.logger.debug(f"⚠️ Could not persist device cache: {exc}")
+
+    def _delete_device_cache_file(self, cache_key: str) -> None:
+        path = self._device_cache_path(cache_key)
+        try:
+            if path.exists():
+                path.unlink()
+                self.logger.debug("🗑️ Removed device cache file")
+        except Exception as exc:
+            self.logger.debug(f"⚠️ Could not delete device cache file: {exc}")
+
+    def _load_device_cache(self, cache_key: str) -> Optional[CacheEntry]:
+        path = self._device_cache_path(cache_key)
+        if not path.exists():
+            return None
+        try:
+            with open(path, 'r', encoding='utf-8') as fp:
+                payload = json.load(fp)
+            cached_at = float(payload.get('_cached_at', 0))
+            data = payload.get('data', [])
+            if not cached_at:
+                return None
+            entry = CacheEntry(
+                data=data,
+                timestamp=cached_at,
+                ttl=self._ttl_config[CacheType.DEVICES],
+                cache_type=CacheType.DEVICES,
+                hash_value=None,
+                access_count=0,
+                last_access=time.time()
+            )
+            self._cache[cache_key] = entry
+            self._metadata[cache_key] = {
+                'timestamp': cached_at,
+                'ttl': entry.ttl,
+                'cache_type': CacheType.DEVICES.value,
+                'hash': None,
+                'source': 'disk'
+            }
+            self.logger.debug("📀 Loaded devices from disk cache")
+            return entry
+        except Exception as exc:
+            self.logger.debug(f"⚠️ Could not read device cache: {exc}")
+            return None
+
+    def _evict_if_needed(self) -> None:
+        if len(self._cache) <= self._max_entries:
+            return
+        surplus = len(self._cache) - self._max_entries
+        victims = sorted(
+            self._cache.items(),
+            key=lambda item: item[1].last_access or item[1].timestamp
+        )
+        for idx in range(surplus):
+            key, entry = victims[idx]
+            self.logger.debug(f"🧹 Evicting {key} ({entry.cache_type.value}) from cache")
+            self._cache.pop(key, None)
+            self._metadata.pop(key, None)
 
     def get_full_library(self, token: str, loader_func: callable, 
                         force_refresh: bool = False) -> Dict[str, Any]:
@@ -205,7 +324,12 @@ class MusicLibraryCache:
         if not force_refresh:
             cached_data = self.get(cache_key, CacheType.FULL_LIBRARY)
             if cached_data:
-                return self._add_cache_metadata(cached_data, cached=True)
+                result = self._add_cache_metadata(cached_data, cached=True)
+                meta = self.get_metadata(cache_key)
+                if meta:
+                    result['cache'] = meta
+                    result['lastUpdated'] = meta['timestamp']
+                return result
         
         # Load fresh data
         self.logger.info("🔄 Loading fresh complete music library...")
@@ -214,7 +338,7 @@ class MusicLibraryCache:
         # Cache the fresh data
         from ..utils.library_utils import compute_library_hash
         hash_value = compute_library_hash(fresh_data)
-        self.set(cache_key, fresh_data, CacheType.FULL_LIBRARY, hash_value)
+        self.set(cache_key, fresh_data, CacheType.FULL_LIBRARY, hash_value, source='network')
         
         # Also persist to disk for offline fallback
         try:
@@ -224,7 +348,12 @@ class MusicLibraryCache:
         except Exception as e:
             self.logger.warning(f"⚠️ Could not persist cache to disk: {e}")
         
-        return self._add_cache_metadata(fresh_data, cached=False)
+        result = self._add_cache_metadata(fresh_data, cached=False)
+        meta = self.get_metadata(cache_key)
+        if meta:
+            result['cache'] = meta
+            result['lastUpdated'] = meta['timestamp']
+        return result
 
     def get_library_sections(self, token: str, sections: List[str], 
                            section_loaders: Dict[str, callable], 
@@ -267,7 +396,7 @@ class MusicLibraryCache:
             
             try:
                 fresh_data = loader(token)
-                self.set(cache_key, fresh_data, cache_type)
+                self.set(cache_key, fresh_data, cache_type, source='network')
                 section_cache_status[section_name] = False
                 return fresh_data
             except Exception as e:
@@ -293,13 +422,19 @@ class MusicLibraryCache:
                 results[section] = []
         
         total_items = sum(len(results[s]) for s in wanted)
+        section_meta: Dict[str, Dict[str, Any]] = {}
+        for sec in wanted:
+            meta = self.get_metadata(self._scoped_cache_key(sec, token))
+            if meta:
+                section_meta[sec] = meta
         
         return {
             **results,
             "total": total_items,
             "partial": True,
             "sections": wanted,
-            "cached": section_cache_status
+            "cached": section_cache_status,
+            "cache": section_meta
         }
 
     def get_devices(self, token: str, loader_func: callable, 
@@ -315,20 +450,57 @@ class MusicLibraryCache:
             List of available devices
         """
         cache_key = self._scoped_cache_key("spotify_devices", token)
-        
+
+        disk_entry: Optional[CacheEntry] = None
+
         if not force_refresh:
             cached_devices = self.get(cache_key, CacheType.DEVICES)
             if cached_devices:
                 return cached_devices
-        
+            disk_entry = self._load_device_cache(cache_key)
+            if disk_entry:
+                return disk_entry.data
+
         try:
             fresh_devices = loader_func(token)
-            self.set(cache_key, fresh_devices, CacheType.DEVICES)
+            self.set(cache_key, fresh_devices, CacheType.DEVICES, source='network')
             return fresh_devices
         except Exception as e:
             self.logger.error(f"❌ Failed loading devices: {e}")
-            # Try to return stale cache as fallback
-            return self._cache.get(cache_key, CacheEntry([], 0, 0, CacheType.DEVICES)).data
+            if cache_key in self._cache:
+                return self._cache[cache_key].data
+            if not disk_entry:
+                disk_entry = self._load_device_cache(cache_key)
+            return disk_entry.data if disk_entry else []
+
+    def get_metadata(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Return metadata for a cached entry including freshness info."""
+        with self._lock:
+            entry = self._cache.get(cache_key)
+            meta = self._metadata.get(cache_key)
+            if not entry and not meta:
+                return None
+
+            if meta:
+                info = dict(meta)
+            else:
+                info = {
+                    'timestamp': entry.timestamp if entry else 0,
+                    'ttl': entry.ttl if entry else 0,
+                    'cache_type': entry.cache_type.value if entry else None,
+                    'hash': entry.hash_value if entry else None,
+                    'source': 'memory' if entry else 'unknown'
+                }
+
+            timestamp = float(info.get('timestamp') or (entry.timestamp if entry else 0))
+            ttl = int(info.get('ttl') or (entry.ttl if entry else 0))
+            now = time.time()
+            info['timestamp'] = timestamp
+            info['ttl'] = ttl
+            info['age'] = max(0.0, now - timestamp) if timestamp else 0.0
+            info['expires_in'] = (timestamp + ttl) - now if ttl else 0.0
+            info['stale'] = info['expires_in'] <= 0 if ttl else False
+            return info
 
     def get_offline_fallback(self) -> Optional[Dict[str, Any]]:
         """Get offline fallback data from persistent cache.
@@ -373,7 +545,10 @@ class MusicLibraryCache:
                     keys_to_remove.append(key)
             
             for key in keys_to_remove:
-                del self._cache[key]
+                entry = self._cache.pop(key, None)
+                self._metadata.pop(key, None)
+                if entry and entry.cache_type == CacheType.DEVICES:
+                    self._delete_device_cache_file(key)
             
             count = len(keys_to_remove)
             self.logger.info(f"🗑️ Invalidated {count} cache entries")
@@ -457,6 +632,7 @@ class MusicLibraryCache:
         
         for key in expired_keys:
             del self._cache[key]
+            self._metadata.pop(key, None)
         
         self._stats['last_cleanup'] = now
         
@@ -468,12 +644,18 @@ class MusicLibraryCache:
         with self._lock:
             count = len(self._cache)
             self._cache.clear()
+            self._metadata.clear()
             self._stats = {
                 'hits': 0,
                 'misses': 0,
                 'total_requests': 0,
                 'last_cleanup': time.time()
             }
+            try:
+                for file in self.cache_dir.glob("spotify_devices_*.json"):
+                    file.unlink()
+            except Exception as exc:
+                self.logger.debug(f"⚠️ Could not purge device cache files: {exc}")
             self.logger.info(f"🗑️ Cleared all cache data ({count} entries)")
 
 

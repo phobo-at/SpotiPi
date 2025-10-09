@@ -20,6 +20,9 @@
   "environment": "development",
   "debug": true,
   "log_level": "INFO",
+  "features": {
+    "recurring_alarm_enabled": false
+  },
   "sleep_shuffle": true,
   "port": 5001,
   "host": "127.0.0.1",
