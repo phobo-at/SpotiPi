@@ -9,8 +9,23 @@ import time
 import threading
 import logging
 from typing import Optional, Dict, Any, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+
+@dataclass
+class TokenResponse:
+    """Normalized token refresh response from Spotify."""
+    access_token: str
+    expires_in: int
+    refresh_token: Optional[str] = None
+    scope: Optional[str] = None
+    token_type: Optional[str] = None
+    received_at: float = field(default_factory=time.time)
+
+    @property
+    def expires_at(self) -> float:
+        return self.received_at + max(0, int(self.expires_in))
+
 
 @dataclass
 class CachedToken:
@@ -20,6 +35,8 @@ class CachedToken:
     refresh_token: str
     created_at: float  # Unix timestamp
     refresh_count: int = 0
+    scope: Optional[str] = None
+    token_type: Optional[str] = None
     
     @property
     def is_expired(self) -> bool:
@@ -54,7 +71,7 @@ class SpotifyTokenCache:
     - Error resilience with fallback
     """
     
-    def __init__(self, refresh_function: Callable[[], Optional[str]]):
+    def __init__(self, refresh_function: Callable[[], Optional[TokenResponse]]):
         """
         Initialize token cache.
         
@@ -64,6 +81,7 @@ class SpotifyTokenCache:
         self._refresh_function = refresh_function
         self._cached_token: Optional[CachedToken] = None
         self._lock = threading.RLock()
+        self._refresh_lock = threading.Lock()
         self._logger = logging.getLogger('app')
         
         # Performance metrics
@@ -85,23 +103,75 @@ class SpotifyTokenCache:
         Returns:
             Optional[str]: Valid access token or None if refresh fails
         """
+        warn_minutes_left: Optional[int] = None
+        token_value: Optional[str] = None
+
         with self._lock:
             self._metrics['total_requests'] += 1
-            
-            # Check if we have a valid cached token
+
             if self._cached_token and not self._cached_token.is_expired:
                 self._metrics['cache_hits'] += 1
-                
-                # Log near-expiry warning
+                token_value = self._cached_token.access_token
                 if self._cached_token.is_nearly_expired:
-                    minutes_left = self._cached_token.time_until_expiry // 60
-                    self._logger.debug(f"⚠️ Token expires in {minutes_left} minutes - will refresh soon")
-                
+                    warn_minutes_left = self._cached_token.time_until_expiry // 60
+            else:
+                self._metrics['cache_misses'] += 1
+
+        if token_value:
+            if warn_minutes_left is not None:
+                self._logger.debug(
+                    "⚠️ Token expires in %s minutes - will refresh soon",
+                    warn_minutes_left,
+                )
+            return token_value
+
+        return self._refresh_and_cache_token()
+
+    def needs_refresh(self, window_seconds: int) -> bool:
+        """Check whether the cached token will expire within the given window."""
+        with self._lock:
+            if self._cached_token is None:
+                return True
+            return self._cached_token.time_until_expiry <= window_seconds
+
+    def ensure_fresh(self, window_seconds: int) -> Optional[str]:
+        """
+        Ensure a token is valid for at least the given number of seconds.
+
+        Args:
+            window_seconds: Minimum required validity period in seconds
+
+        Returns:
+            Optional[str]: Valid access token or None if refresh fails
+        """
+        with self._lock:
+            self._metrics['total_requests'] += 1
+            if self._cached_token and self._cached_token.time_until_expiry > window_seconds:
+                self._metrics['cache_hits'] += 1
                 return self._cached_token.access_token
-            
-            # Token is expired or doesn't exist - refresh it
             self._metrics['cache_misses'] += 1
-            return self._refresh_and_cache_token()
+
+        return self._refresh_and_cache_token()
+
+    def seed(self, token_response: TokenResponse) -> None:
+        """
+        Seed the cache from a persisted token response.
+
+        Args:
+            token_response: Previously saved token response data
+        """
+        with self._lock:
+            received_at = token_response.received_at or time.time()
+            expires_in_seconds = max(60, int(token_response.expires_in))
+            self._cached_token = CachedToken(
+                access_token=token_response.access_token,
+                expires_at=received_at + expires_in_seconds,
+                refresh_token=token_response.refresh_token or "",
+                created_at=received_at,
+                refresh_count=0,
+                scope=token_response.scope,
+                token_type=token_response.token_type
+            )
     
     def _refresh_and_cache_token(self) -> Optional[str]:
         """
@@ -110,47 +180,56 @@ class SpotifyTokenCache:
         Returns:
             Optional[str]: New access token or None if refresh fails
         """
-        self._metrics['refresh_attempts'] += 1
-        old_token_info = ""
-        
-        if self._cached_token:
-            age_minutes = self._cached_token.age_seconds // 60
-            old_token_info = f" (replacing {age_minutes}min old token)"
-        
-        self._logger.debug(f"🔄 Refreshing Spotify access token{old_token_info}")
-        
-        try:
-            # Call the provided refresh function
-            new_access_token = self._refresh_function()
-            
-            if new_access_token:
-                # Cache the new token (Spotify tokens typically expire in 1 hour)
-                expires_in_seconds = 3600  # 1 hour
-                current_time = time.time()
-                
-                self._cached_token = CachedToken(
-                    access_token=new_access_token,
-                    expires_at=current_time + expires_in_seconds,
-                    refresh_token="",  # We don't need to store refresh token here
-                    created_at=current_time,
-                    refresh_count=self._cached_token.refresh_count + 1 if self._cached_token else 1
-                )
-                
-                self._metrics['refresh_successes'] += 1
-                
-                expires_at_str = datetime.fromtimestamp(self._cached_token.expires_at).strftime("%H:%M:%S")
-                self._logger.debug(f"✅ Token refreshed successfully (expires at {expires_at_str})")
-                
-                return new_access_token
-            else:
-                self._metrics['refresh_failures'] += 1
+        with self._refresh_lock:
+            with self._lock:
+                if self._cached_token and not self._cached_token.is_expired:
+                    return self._cached_token.access_token
+
+            with self._lock:
+                self._metrics['refresh_attempts'] += 1
+                if self._cached_token:
+                    age_minutes = self._cached_token.age_seconds // 60
+                    old_token_info = f" (replacing {age_minutes}min old token)"
+                else:
+                    old_token_info = ""
+
+            self._logger.debug("🔄 Refreshing Spotify access token%s", old_token_info)
+
+            try:
+                token_response = self._refresh_function()
+            except Exception as exc:
+                with self._lock:
+                    self._metrics['refresh_failures'] += 1
+                self._logger.error("❌ Token refresh failed with exception: %s", exc)
+                return None
+
+            if not token_response:
+                with self._lock:
+                    self._metrics['refresh_failures'] += 1
                 self._logger.error("❌ Token refresh failed - no token returned")
                 return None
-                
-        except Exception as e:
-            self._metrics['refresh_failures'] += 1
-            self._logger.error(f"❌ Token refresh failed with exception: {e}")
-            return None
+
+            expires_in_seconds = max(60, int(token_response.expires_in))
+            received_at = token_response.received_at or time.time()
+
+            with self._lock:
+                previous_refresh_count = self._cached_token.refresh_count if self._cached_token else 0
+                refresh_token = token_response.refresh_token or (self._cached_token.refresh_token if self._cached_token else "")
+                self._cached_token = CachedToken(
+                    access_token=token_response.access_token,
+                    expires_at=received_at + expires_in_seconds,
+                    refresh_token=refresh_token,
+                    created_at=received_at,
+                    refresh_count=previous_refresh_count + 1,
+                    scope=token_response.scope,
+                    token_type=token_response.token_type
+                )
+                self._metrics['refresh_successes'] += 1
+                expires_at_str = datetime.fromtimestamp(self._cached_token.expires_at).strftime("%H:%M:%S")
+                token_value = self._cached_token.access_token
+
+            self._logger.debug("✅ Token refreshed successfully (expires at %s)", expires_at_str)
+            return token_value
     
     def force_refresh(self) -> Optional[str]:
         """
@@ -159,9 +238,8 @@ class SpotifyTokenCache:
         Returns:
             Optional[str]: New access token or None if refresh fails
         """
-        with self._lock:
-            self._logger.debug("🔄 Force refreshing token")
-            return self._refresh_and_cache_token()
+        self._logger.debug("🔄 Force refreshing token")
+        return self._refresh_and_cache_token()
     
     def invalidate_cache(self) -> None:
         """Invalidate the current cached token."""
@@ -237,7 +315,7 @@ class SpotifyTokenCache:
 # Global token cache instance (will be initialized in spotify.py)
 _token_cache: Optional[SpotifyTokenCache] = None
 
-def initialize_token_cache(refresh_function: Callable[[], Optional[str]]) -> None:
+def initialize_token_cache(refresh_function: Callable[[], Optional[TokenResponse]]) -> None:
     """
     Initialize the global token cache.
     
@@ -265,13 +343,53 @@ def force_token_refresh() -> Optional[str]:
     Force refresh the cached token.
     
     Returns:
-        Optional[str]: New access token or None
+        Optional[str]: New access token or None if refresh fails
     """
     if _token_cache is None:
         logging.getLogger('app').error("❌ Token cache not initialized!")
         return None
     
     return _token_cache.force_refresh()
+
+def ensure_token_valid(window_seconds: int) -> Optional[str]:
+    """
+    Ensure the cached token remains valid for the given window.
+
+    Args:
+        window_seconds: Minimum required validity window in seconds
+
+    Returns:
+        Optional[str]: Access token or None if refresh fails
+    """
+    if _token_cache is None:
+        logging.getLogger('app').error("❌ Token cache not initialized!")
+        return None
+
+    return _token_cache.ensure_fresh(window_seconds)
+
+def token_needs_refresh(window_seconds: int) -> bool:
+    """
+    Check whether the token will expire within the given window.
+
+    Args:
+        window_seconds: Time window in seconds
+
+    Returns:
+        bool: True if a refresh is required
+    """
+    if _token_cache is None:
+        return True
+    return _token_cache.needs_refresh(window_seconds)
+
+def seed_token_cache(token_response: TokenResponse) -> None:
+    """
+    Seed the cache with a persisted token response.
+
+    Args:
+        token_response: Token response data
+    """
+    if _token_cache is not None:
+        _token_cache.seed(token_response)
 
 def invalidate_token_cache() -> None:
     """Invalidate the current token cache."""

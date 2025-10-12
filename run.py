@@ -14,6 +14,7 @@ sys.path.insert(0, str(project_root))
 # Import the configured app from src structure
 from src.app import app, start_alarm_scheduler
 from src.config import load_config
+from src.utils.wsgi_logging import TidyRequestHandler
 
 try:
     from waitress import serve
@@ -49,7 +50,8 @@ if __name__ == "__main__":
         app.run(
             host=host,
             port=port,
-            debug=debug_mode
+            debug=debug_mode,
+            request_handler=TidyRequestHandler,
         )
     else:
         threads = int(os.environ.get("SPOTIPI_WAITRESS_THREADS", "4"))

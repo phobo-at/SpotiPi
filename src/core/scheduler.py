@@ -10,11 +10,11 @@ Provides comprehensive scheduling functionality including:
 """
 
 import datetime
-from zoneinfo import ZoneInfo
 from typing import Dict, List, Optional, Tuple, Union
 
+from ..utils.timezone import get_local_timezone
 
-LOCAL_TZ = ZoneInfo("Europe/Vienna")
+LOCAL_TZ = get_local_timezone()
 
 class WeekdayScheduler:
     """Handles weekday-based alarm scheduling with comprehensive validation."""

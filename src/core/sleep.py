@@ -81,8 +81,19 @@ def _get_status_snapshot(force_refresh: bool = False) -> Dict[str, Any]:
 def _write_status(data: Dict[str, Any]) -> None:
     global _STATUS_CACHE, _STATUS_CACHE_TS
     with _STATUS_LOCK:
-        with open(STATUS_PATH, "w", encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
+        tmp_path = f"{STATUS_PATH}.tmp"
+        try:
+            with open(tmp_path, "w", encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, STATUS_PATH)
+        except Exception as exc:  # pragma: no cover - file system errors
+            logger.error("Failed to persist sleep status: %s", exc)
+            try:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except OSError:
+                pass
+            return
         _STATUS_CACHE = dict(data)
         _STATUS_CACHE_TS = time.monotonic()
 

@@ -12,12 +12,20 @@ let alarmSaveTimeout = null;
 let lastAlarmSaveTime = 0;
 const ALARM_SAVE_COOLDOWN = 2000; // 2 seconds between saves
 
-function throttledSaveAlarmSettings() {
+function throttledSaveAlarmSettings(options = {}) {
+    const immediate = Boolean(options.immediate);
     const now = Date.now();
     
     // Clear existing timeout
     if (alarmSaveTimeout) {
         clearTimeout(alarmSaveTimeout);
+    }
+
+    if (immediate) {
+        lastAlarmSaveTime = now;
+        console.log('🚨 Immediate alarm save (forced)');
+        saveAlarmSettings();
+        return;
     }
     
     // If enough time has passed since last save, save immediately
@@ -108,7 +116,7 @@ export function initializeEventListeners() {
     if (elements.alarmEnabled) {
         elements.alarmEnabled.addEventListener('change', function() {
             console.log('🚨 Alarm enabled changed:', this.checked);
-            throttledSaveAlarmSettings();
+            throttledSaveAlarmSettings({ immediate: true });
         });
     }
     if (elements.alarmEnabledActive) {
@@ -118,7 +126,7 @@ export function initializeEventListeners() {
             if (configToggle) {
                 configToggle.checked = this.checked;
             }
-            throttledSaveAlarmSettings();
+            throttledSaveAlarmSettings({ immediate: true });
         });
     }
 

@@ -329,6 +329,8 @@ class MusicLibraryCache:
                 if meta:
                     result['cache'] = meta
                     result['lastUpdated'] = meta['timestamp']
+                    if 'hash' not in result and meta.get('hash'):
+                        result['hash'] = meta['hash']
                 return result
         
         # Load fresh data
@@ -337,7 +339,11 @@ class MusicLibraryCache:
         
         # Cache the fresh data
         from ..utils.library_utils import compute_library_hash
-        hash_value = compute_library_hash(fresh_data)
+        hash_value = fresh_data.get("hash") if isinstance(fresh_data, dict) else None
+        if not hash_value:
+            hash_value = compute_library_hash(fresh_data)
+            if isinstance(fresh_data, dict):
+                fresh_data["hash"] = hash_value
         self.set(cache_key, fresh_data, CacheType.FULL_LIBRARY, hash_value, source='network')
         
         # Also persist to disk for offline fallback
@@ -353,6 +359,10 @@ class MusicLibraryCache:
         if meta:
             result['cache'] = meta
             result['lastUpdated'] = meta['timestamp']
+            if meta.get('hash'):
+                result['hash'] = meta['hash']
+        elif isinstance(fresh_data, dict) and fresh_data.get("hash"):
+            result['hash'] = fresh_data["hash"]
         return result
 
     def get_library_sections(self, token: str, sections: List[str], 

@@ -21,10 +21,14 @@ class ServiceManager:
         self.logger = logging.getLogger("service_manager")
         
         # Initialize services
-        self.system = SystemService()
         self.alarm = AlarmService()
         self.spotify = SpotifyService()
         self.sleep = SleepService()
+        self.system = SystemService(
+            alarm_service=self.alarm,
+            spotify_service=self.spotify,
+            sleep_service=self.sleep
+        )
         
         # Service registry
         self.services = {
@@ -42,6 +46,9 @@ class ServiceManager:
         
         for name, service in self.services.items():
             try:
+                if service.is_initialized():
+                    self.logger.debug("ℹ️ %s service already initialized", name)
+                    continue
                 result = service.initialize()
                 if result.success:
                     self.logger.info(f"✅ {name} service initialized")

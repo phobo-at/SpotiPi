@@ -9,6 +9,7 @@ import logging
 import copy
 from typing import Dict, Any, Optional
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 class ConfigManager:
     """Manages configuration loading and validation"""
@@ -104,6 +105,7 @@ class ConfigManager:
             "weekdays": [],
             "debug": False,
             "log_level": "INFO",
+            "timezone": os.getenv("SPOTIPI_TIMEZONE", "Europe/Vienna"),
             "features": {
                 "recurring_alarm_enabled": False
             },
@@ -141,7 +143,21 @@ class ConfigManager:
             datetime.strptime(config["time"], "%H:%M")
         except ValueError:
             config["time"] = "07:00"
-        
+
+        # Validate timezone
+        tz_value = str(config.get("timezone") or "").strip()
+        if not tz_value:
+            tz_value = "Europe/Vienna"
+        try:
+            ZoneInfo(tz_value)
+            config["timezone"] = tz_value
+        except (ZoneInfoNotFoundError, ValueError):
+            logging.getLogger(__name__).warning(
+                "Invalid timezone '%s' in config – falling back to Europe/Vienna",
+                tz_value,
+            )
+            config["timezone"] = "Europe/Vienna"
+
         return config
     
     def save_config(self, config: Dict[str, Any], config_name: Optional[str] = None) -> bool:

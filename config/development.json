@@ -1,11 +1,11 @@
 {
-  "enabled": false,
-  "time": "10:03",
-  "playlist_uri": "spotify:playlist:4I33WFTJXYssFCJzfL1YY1",
-  "device_name": "phobo",
+  "enabled": true,
+  "time": "07:00",
+  "playlist_uri": "",
+  "device_name": "",
   "alarm_volume": 50,
-  "fade_in": true,
-  "shuffle": true,
+  "fade_in": false,
+  "shuffle": false,
   "weekdays": [
     1,
     2,
@@ -27,5 +27,6 @@
   "port": 5001,
   "host": "127.0.0.1",
   "test_volume": 44,
-  "volume": 50
+  "volume": 50,
+  "timezone": "Europe/Vienna"
 }

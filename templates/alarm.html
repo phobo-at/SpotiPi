@@ -134,15 +134,6 @@
 
 <div id="active-alarm-mode" class="{% if not config.get('enabled', False) %}hidden{% endif %}">
   <h2 class="form-title">{{ t('alarm_active_title') }}</h2>
-  <p class="muted-text" id="alarm-active-info-text">{{ t('alarm_active_info', time=config.time) }}</p>
-  <p class="muted-text">
-    {{ t('alarm_device_label') }}
-    <span id="alarm-device-name">{{ config.get('device_name') or t('alarm_device_unknown') }}</span>
-  </p>
-  <p class="muted-text">
-    {{ t('alarm_next_label') }}
-    <span id="next-alarm-summary">{{ next_alarm_info or t('alarm_next_unknown') }}</span>
-  </p>
 
   <div class="toggle-switch enable-container">
     <span class="enable-label">{{ t('enable_alarm') }}</span>

@@ -74,6 +74,7 @@ RSYNC_ARGS=(
   --delete
   --prune-empty-dirs
   --itemize-changes
+  '--out-format=%i %f'
   --checksum
   --stats
   --exclude='*.pyc'
@@ -126,8 +127,19 @@ if [ $RSYNC_STATUS -ne 0 ]; then
 fi
 
 # Prepare summary data from itemized output
-UPDATED=$(awk '$1 ~ /^>f/ {count++} END {print count+0}' "$TMP_OUTPUT")
-NEW_FILES=$(awk '$1 ~ /^>f\++/ {count++} END {print count+0}' "$TMP_OUTPUT")
+UPDATED=0
+NEW_FILES=0
+while IFS= read -r line; do
+  tag="${line:0:11}"
+  case "$tag" in
+    ">f"*)
+      UPDATED=$((UPDATED + 1))
+      if [[ "$tag" == ">f+++++++++"* ]]; then
+        NEW_FILES=$((NEW_FILES + 1))
+      fi
+      ;;
+  esac
+done < "$TMP_OUTPUT"
 
 EXISTING_UPDATED=$((UPDATED - NEW_FILES))
 if [ $EXISTING_UPDATED -lt 0 ]; then EXISTING_UPDATED=0; fi
@@ -155,9 +167,11 @@ fi
 echo ""
 if [ "$UPDATED" -gt 0 ]; then
   echo "📁 Updated files:"
-  grep -E "^>f" "$TMP_OUTPUT" | head -10 | sed 's/^>f.* \(.*\)$/   ✅ \1/'
-  if [ "$UPDATED" -gt 10 ]; then
-    echo "   ... and $(($UPDATED - 10)) more files"
+  UPDATED_LIST=$(grep -E "^>f" "$TMP_OUTPUT" | cut -c 12-)
+  echo "$UPDATED_LIST" | head -10 | sed 's/^/   ✅ /'
+  REMAINING=$((UPDATED - 10))
+  if [ $REMAINING -gt 0 ]; then
+    echo "   ... and $REMAINING more files"
   fi
   if [ "$NEW_FILES" -gt 0 ]; then
     echo "📁 New files created: $NEW_FILES"

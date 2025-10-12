@@ -13,17 +13,17 @@ import os
 import datetime
 import time
 from typing import Any, Dict, List, Optional
-from zoneinfo import ZoneInfo
 
 from ..api.spotify import get_access_token, get_device_id, start_playback, set_volume
 from ..constants import ALARM_TRIGGER_WINDOW_MINUTES
 from ..config import load_config, save_config
 from ..utils.logger import setup_logger
 from ..utils.thread_safety import config_transaction
+from ..utils.timezone import get_local_timezone
 
 # Get logger for alarm module
 logger = setup_logger(__name__)
-LOCAL_TZ = ZoneInfo("Europe/Vienna")
+LOCAL_TZ = get_local_timezone()
 
 def log(message: str) -> None:
     """Log message using centralized logger.
@@ -115,7 +115,7 @@ def execute_alarm() -> bool:
     try:
         target_time = datetime.datetime.strptime(config["time"], "%H:%M")
     except (ValueError, KeyError) as e:
-        log(f"❌ Invalid time format in config: {config.get('time')} - {e}")
+        logger.error(f"❌ Invalid time format in config: {config.get('time')} - {e}")
         return False
 
     target_today = now.replace(
@@ -141,17 +141,17 @@ def execute_alarm() -> bool:
     try:
         token = get_access_token()
         if not token:
-            log("❌ Failed to retrieve token.")
+            logger.warning("❌ Failed to retrieve token for alarm execution.")
             return False
 
         device_name = config.get("device_name", "")
         if not device_name:
-            log("❌ No device name configured.")
+            logger.warning("❌ No device name configured for the alarm.")
             return False
 
         device_id = get_device_id(token, device_name)
         if not device_id:
-            log(f"❌ Device '{device_name}' not found.")
+            logger.warning(f"❌ Device '{device_name}' not found.")
             return False
 
         target_volume = config.get("alarm_volume", 50)
@@ -168,14 +168,14 @@ def execute_alarm() -> bool:
         try:
             preset_success = set_volume(token, initial_volume, device_id)
         except Exception as preset_err:
-            log(f"⚠️ Error presetting volume: {preset_err}")
+            logger.warning(f"⚠️ Error presetting volume: {preset_err}")
 
         if not preset_success:
-            log(f"⚠️ Could not preset volume to {initial_volume}% before playback")
+            logger.warning(f"⚠️ Could not preset volume to {initial_volume}% before playback")
             if fade_in:
                 fade_in = False
                 initial_volume = target_volume
-                log("⚠️ Fade-in disabled because initial volume could not be set safely")
+                logger.warning("⚠️ Fade-in disabled because initial volume could not be set safely")
 
         if not fade_in:
             start_playback(

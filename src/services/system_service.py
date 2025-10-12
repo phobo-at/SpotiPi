@@ -9,7 +9,7 @@ performance tracking, service coordination, and maintenance tasks.
 import os
 import psutil
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 
 from . import BaseService, ServiceResult
@@ -25,11 +25,21 @@ LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'ye
 class SystemService(BaseService):
     """Service for system-wide management and monitoring."""
     
-    def __init__(self):
+    def __init__(
+        self,
+        alarm_service: Optional[AlarmService] = None,
+        spotify_service: Optional[SpotifyService] = None,
+        sleep_service: Optional[SleepService] = None,
+    ):
         super().__init__("system")
-        self.alarm_service = AlarmService()
-        self.spotify_service = SpotifyService()
-        self.sleep_service = SleepService()
+        self.alarm_service = alarm_service or AlarmService()
+        self.spotify_service = spotify_service or SpotifyService()
+        self.sleep_service = sleep_service or SleepService()
+        self._managed_services = {
+            "alarm": self.alarm_service,
+            "spotify": self.spotify_service,
+            "sleep": self.sleep_service,
+        }
         self.start_time = datetime.now()
         self._resource_cache: Dict[str, Any] | None = None
         self._resource_cache_ts: float = 0.0
@@ -39,17 +49,13 @@ class SystemService(BaseService):
         self._initialize_services()
     
     def _initialize_services(self) -> None:
-        """Initialize all sub-services."""
-        services = [
-            self.alarm_service,
-            self.spotify_service,
-            self.sleep_service
-        ]
-        
-        for service in services:
+        """Initialize dependent services if not already initialised."""
+        for service in self._managed_services.values():
+            if service.is_initialized():
+                continue
             result = service.initialize()
             if not result.success:
-                self.logger.warning(f"Failed to initialize {service.name}: {result.message}")
+                self.logger.warning("Failed to initialize %s: %s", service.name, result.message)
     
     def get_system_health(self) -> ServiceResult:
         """Get comprehensive system health status."""
@@ -58,13 +64,7 @@ class SystemService(BaseService):
             service_health = {}
             overall_healthy = True
             
-            services = {
-                "alarm": self.alarm_service,
-                "spotify": self.spotify_service,
-                "sleep": self.sleep_service
-            }
-            
-            for name, service in services.items():
+            for name, service in self._managed_services.items():
                 health = service.health_check()
                 service_health[name] = health.data if health.success else {
                     "status": "error",

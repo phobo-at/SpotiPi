@@ -47,9 +47,20 @@ SPOTIPI_RASPBERRY_PI=1  # Forces Pi behavior
 ```
 - **Function:** Simulates Raspberry Pi behavior on any system
 - **Use Cases:**
-  - Test Pi-optimized logging settings
-  - Simulate production behavior on development machine
-  - CI/CD pipeline testing
+- Test Pi-optimized logging settings
+- Simulate production behavior on development machine
+- CI/CD pipeline testing
+
+#### **SPOTIPI_TIMEZONE** - Runtime Timezone Override
+```bash
+SPOTIPI_TIMEZONE="Europe/Berlin"
+```
+- **Function:** Overrides the configured timezone used for alarms, scheduler and sleep timer calculations
+- **Defaults:** Falls back to the `timezone` field in the SpotiPi config (`Europe/Vienna` if unset)
+- **Use Cases:**
+  - Deployments outside Central Europe requiring accurate local time handling
+  - Runtime overrides in containerised environments without writing config files
+  - Testing alarm behaviour for different locales without editing JSON configs
 
 #### **PORT** - Port Override
 ```bash

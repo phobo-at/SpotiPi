@@ -4,6 +4,7 @@ Flask web application with new modular structure
 """
 
 import os
+import copy
 import datetime
 import uuid
 from threading import Thread
@@ -44,6 +45,7 @@ from .core.sleep import (
     save_sleep_settings
 )
 from .utils.perf_monitor import perf_monitor
+from .utils.wsgi_logging import TidyRequestHandler
 
 # Initialize Flask app with correct paths
 project_root = Path(__file__).parent.parent  # Go up from src/ to project root
@@ -80,6 +82,28 @@ rate_limiter = get_rate_limiter()
 
 # Initialize service manager
 service_manager = get_service_manager()
+
+_default_dashboard_ttl = 1.5 if LOW_POWER_MODE else 0.75
+_default_playback_status_ttl = 1.5 if LOW_POWER_MODE else 0.75
+
+try:
+    DASHBOARD_CACHE_TTL = max(
+        0.1,
+        float(os.getenv("SPOTIPI_STATUS_CACHE_SECONDS", str(_default_dashboard_ttl))),
+    )
+except ValueError:
+    DASHBOARD_CACHE_TTL = _default_dashboard_ttl
+
+try:
+    PLAYBACK_STATUS_CACHE_TTL = max(
+        0.1,
+        float(os.getenv("SPOTIPI_PLAYBACK_STATUS_CACHE_SECONDS", str(_default_playback_status_ttl))),
+    )
+except ValueError:
+    PLAYBACK_STATUS_CACHE_TTL = _default_playback_status_ttl
+
+_dashboard_status_cache = {"data": None, "expires": 0.0}
+_playback_status_cache = {"data": None, "expires": 0.0}
 
 
 @app.before_request
@@ -566,6 +590,15 @@ def alarm_status():
 @rate_limit("status_check")
 def api_dashboard_status():
     """Aggregate dashboard status (alarm, sleep, playback) in a single response."""
+    now = time.time()
+    force_refresh = request.args.get('refresh') in ('1', 'true', 'yes')
+    if not force_refresh and now < _dashboard_status_cache["expires"]:
+        cached = _dashboard_status_cache["data"]
+        if cached is not None:
+            cached_copy = copy.deepcopy(cached)
+            cached_copy["timestamp"] = datetime.datetime.utcnow().isoformat() + 'Z'
+            return api_response(True, data=cached_copy)
+
     config = load_config()
 
     recurring_enabled = bool(config.get("features", {}).get("recurring_alarm_enabled", False))
@@ -608,6 +641,9 @@ def api_dashboard_status():
         "sleep": sleep_payload,
         "playback": playback_payload
     }
+
+    _dashboard_status_cache["data"] = copy.deepcopy(response_payload)
+    _dashboard_status_cache["expires"] = time.time() + DASHBOARD_CACHE_TTL
 
     return api_response(True, data=response_payload)
 
@@ -661,7 +697,9 @@ def api_music_library():
             )
 
         # Compute hash for ETag/conditional requests
-        hash_val = compute_library_hash(library_data)
+        hash_val = library_data.get("hash") if isinstance(library_data, dict) else None
+        if not hash_val:
+            hash_val = compute_library_hash(library_data)
         
         # Conditional request short-circuit
         if if_modified and if_modified == hash_val:
@@ -880,17 +918,32 @@ def log_token_performance():
 @rate_limit("spotify_api")
 def playback_status():
     """Get current Spotify playback status"""
+    now = time.time()
+    force_refresh = request.args.get('refresh') in ('1', 'true', 'yes')
+    if not force_refresh and now < _playback_status_cache["expires"]:
+        cached = _playback_status_cache["data"]
+        if cached is not None:
+            return api_response(True, data=copy.deepcopy(cached), message=t_api("ok", request))
+
     token = get_access_token()
     if not token:
+        _playback_status_cache["data"] = None
+        _playback_status_cache["expires"] = 0.0
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
     try:
         combined = get_combined_playback(token)
         if combined:
+            _playback_status_cache["data"] = copy.deepcopy(combined)
+            _playback_status_cache["expires"] = time.time() + PLAYBACK_STATUS_CACHE_TTL
             return api_response(True, data=combined, message=t_api("ok", request))
+        _playback_status_cache["data"] = None
+        _playback_status_cache["expires"] = 0.0
         return api_response(False, message=t_api("no_active_playback", request), status=200, error_code="no_playback")
     except Exception as e:
         logging.exception("Error getting playback status")
+        _playback_status_cache["data"] = None
+        _playback_status_cache["expires"] = 0.0
         return api_response(False, message=str(e), status=503, error_code="playback_status_error")
 
 @app.route("/api/spotify/health")
@@ -1491,7 +1544,13 @@ def api_devices_refresh():
 def run_app(host="0.0.0.0", port=5001, debug=False):
     """Run the Flask app with event-driven alarm scheduler."""
     start_event_alarm_scheduler()
-    app.run(host=host, port=port, debug=debug, threaded=True)
+    app.run(
+        host=host,
+        port=port,
+        debug=debug,
+        threaded=True,
+        request_handler=TidyRequestHandler,
+    )
 
 # Do not start scheduler at import time to avoid duplicate threads in WSGI
 
@@ -1499,11 +1558,11 @@ if __name__ == "__main__":
     logging.info(f"🎵 Starting {get_app_info()}")
     logging.info(f"📁 Project root: {project_root}")
     logging.info(f"⚙️ Config loaded: {bool(load_config())}")
-    
+
     # Development vs Production
     config = load_config()
     debug_mode = config.get("debug", False)
     port = int(os.getenv("PORT", 5000))
-    
+
     # Start with new event-driven scheduler
     run_app(host="0.0.0.0", port=port, debug=debug_mode)

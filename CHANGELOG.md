@@ -5,6 +5,19 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2025-10-12
+
+### 🎯 Highlights
+- Made the runtime timezone configurable via `SPOTIPI_TIMEZONE` or the persisted config; alarm, scheduler and sleep timer now pick up changes immediately through a config-listener.
+- Hardened the Spotify token cache with a dedicated refresh lock and thread-safe metrics updates, eliminating duplicate refreshes under load.
+- Reworked play/pause handling: the toggle now inspects the active device, passes it to the Spotify API and treats all 2xx responses as success, fixing the stuck-in-pause behaviour.
+- Tuned low-power defaults by extending playback/dashboard cache TTLs and relaxing playback request caching to reduce repeated Spotify calls on the Pi.
+- Trimmed TLS handshake noise by downgrading the HTTP-port warnings to debug in `TidyRequestHandler`.
+- Deployment script now parses rsync’s output format reliably, so the summary shows real counts for updated/created/deleted files.
+
+### 🧪 Tests
+- `pytest`
+
 ## [1.3.3] - 2025-10-07
 
 ### ⏰ Alarm & Sleep UX Polishing

@@ -3,6 +3,10 @@
 ## Overview
 Successfully implemented comprehensive thread safety for SpotiPi to prevent race conditions between Flask requests, alarm scheduler, and concurrent API operations.
 
+## 2025 Update Highlights
+- ⏱️ Timezone consumers now subscribe to the central change notification system so alarm and scheduler timezones update immediately after config edits  
+- 🔁 Token cache refresh logic runs metrics updates under the same lock to prevent counter drift in multi-threaded workloads
+
 ## Problem Analysis
 
 ### **Before Thread Safety:**

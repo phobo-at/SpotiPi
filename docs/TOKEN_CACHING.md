@@ -3,6 +3,12 @@
 ## Overview
 Successfully implemented intelligent Spotify token caching to dramatically reduce API calls and improve performance.
 
+## 2025 Hardening Updates
+- 🔒 Added a dedicated refresh lock so only one thread performs a network refresh at a time while others reuse the new token
+- 📈 Metrics updates now happen under lock guards, ensuring cache hit/miss counters remain accurate even under load
+- ⚠️ Near-expiry warnings are preserved, but refresh collisions and duplicated attempts are eliminated
+- ♻️ Force refresh paths and the Spotify API integration reuse the shared cache invalidation helpers for 401 responses
+
 ## Performance Impact
 
 ### **Before Token Caching:**

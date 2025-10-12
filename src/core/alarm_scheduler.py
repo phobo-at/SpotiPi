@@ -6,10 +6,10 @@
 - Uses ALARM_TRIGGER_WINDOW_MINUTES for final execution window
 """
 from __future__ import annotations
+import os
 import threading
 import time
 import datetime as _dt
-from zoneinfo import ZoneInfo
 from typing import Optional
 import logging
 
@@ -18,9 +18,12 @@ from .scheduler import WeekdayScheduler, AlarmTimeValidator
 from ..config import load_config
 from ..constants import ALARM_TRIGGER_WINDOW_MINUTES
 from ..utils.thread_safety import get_thread_safe_config_manager
+from ..utils.timezone import get_local_timezone
+from ..api.spotify import ensure_token_valid
 
 _logger = logging.getLogger("alarm_scheduler")
-LOCAL_TZ = ZoneInfo("Europe/Vienna")
+LOCAL_TZ = get_local_timezone()
+PREWARM_SECONDS = max(30, int(os.getenv("SPOTIPI_PREWARM_SECONDS", "120")))
 
 class AlarmScheduler:
     def __init__(self):
@@ -89,11 +92,39 @@ class AlarmScheduler:
                 time.sleep(2)
                 continue
 
-            # We sleep until we enter the execution window
             trigger_window_seconds = ALARM_TRIGGER_WINDOW_MINUTES * 60
+            if PREWARM_SECONDS > 0 and seconds_until > PREWARM_SECONDS:
+                prewarm_wait = max(0.0, seconds_until - PREWARM_SECONDS)
+                _logger.debug(
+                    "Next alarm at %s (in %ss). Pre-warm in %ss.",
+                    next_alarm.isoformat(),
+                    int(seconds_until),
+                    int(prewarm_wait),
+                )
+                woke_early = self._wake_event.wait(timeout=prewarm_wait)
+                if woke_early:
+                    _logger.debug("Woken before pre-warm due to config change – recompute.")
+                    continue
+                try:
+                    ensure_token_valid()
+                    _logger.info("Spotify token pre-warm executed (T-%ss).", PREWARM_SECONDS)
+                except Exception as exc:
+                    _logger.warning("Token pre-warm failed: %s", exc)
+
+                now = _dt.datetime.now(tz=LOCAL_TZ)
+                seconds_until = (next_alarm - now).total_seconds()
+                if seconds_until <= 0:
+                    continue
+
+            # Sleep until the execution window opens
             sleep_until_window = max(0, seconds_until - trigger_window_seconds)
             if sleep_until_window > 0:
-                _logger.debug(f"Next alarm at {next_alarm.isoformat()} (in {int(seconds_until)}s). Sleeping {int(sleep_until_window)}s.")
+                _logger.debug(
+                    "Next alarm at %s (in %ss). Sleeping %ss until execution window.",
+                    next_alarm.isoformat(),
+                    int(seconds_until),
+                    int(sleep_until_window),
+                )
                 woke_early = self._wake_event.wait(timeout=sleep_until_window)
                 if woke_early:
                     _logger.debug("Woken early due to config change – recompute.")

@@ -419,10 +419,7 @@ export function applyAlarmStatus(data) {
       enabledToggle: '#enabled',
       enabledToggleActive: '#enabled_active',
       alarmForm: '#alarm-form',
-      activeAlarmMode: '#active-alarm-mode',
-      nextAlarmSummary: '#next-alarm-summary',
-      alarmActiveInfo: '#alarm-active-info-text',
-      alarmDeviceName: '#alarm-device-name'
+      activeAlarmMode: '#active-alarm-mode'
     });
 
     if (elements.enabledToggle && typeof data.enabled === 'boolean') {
@@ -446,29 +443,20 @@ export function applyAlarmStatus(data) {
       const baseLabel = t('alarm_set_for') || 'Alarm set for';
       const noAlarmLabel = t('no_alarm_active') || 'No alarm active';
       const volumeLabel = t('volume') || 'Volume';
+      const devicePrefix = t('alarm_device_label') || 'Device:';
 
-      const statusMessage = data.enabled
-        ? `${baseLabel} ${data.time}<br><span class="volume-info">${volumeLabel}: ${data.alarm_volume}%</span>`
-        : noAlarmLabel;
-      elements.alarmTimer.innerHTML = statusMessage;
-    }
+      const resolvedVolume = typeof data.alarm_volume === 'number'
+        ? data.alarm_volume
+        : (typeof data.volume === 'number' ? data.volume : 50);
 
-    if (elements.nextAlarmSummary) {
-      const nextInfo = data.next_alarm && typeof data.next_alarm === 'string' && data.next_alarm.trim()
-        ? data.next_alarm
-        : (t('alarm_next_unknown') || 'Pending');
-      elements.nextAlarmSummary.textContent = nextInfo;
-    }
-
-    if (elements.alarmActiveInfo && data.time) {
-      elements.alarmActiveInfo.textContent = t('alarm_active_info', { time: data.time }) || `Alarm scheduled for ${data.time}`;
-    }
-
-    if (elements.alarmDeviceName) {
       const deviceLabel = data.device_name && data.device_name.trim()
         ? data.device_name
         : (t('alarm_device_unknown') || 'Unknown device');
-      elements.alarmDeviceName.textContent = deviceLabel;
+
+      const statusMessage = data.enabled
+        ? `${baseLabel} ${data.time}<br><span class="volume-info">${volumeLabel}: ${resolvedVolume}%</span><br><span class="device-info">${devicePrefix} ${deviceLabel}</span>`
+        : noAlarmLabel;
+      elements.alarmTimer.innerHTML = statusMessage;
     }
 }
 

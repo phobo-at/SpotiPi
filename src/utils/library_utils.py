@@ -59,7 +59,8 @@ def prepare_library_payload(raw: Dict[str, Any], *, basic: bool) -> Dict[str, An
     for coll in ("playlists", "albums", "tracks", "artists"):
         col_items = raw.get(coll, []) or []
         payload[coll] = slim_collection(col_items) if basic else col_items
-    payload["hash"] = compute_library_hash(raw)
+    existing_hash = raw.get("hash") if isinstance(raw, dict) else None
+    payload["hash"] = existing_hash or compute_library_hash(raw)
     if "cached" in raw:
         payload["cached"] = bool(raw.get("cached"))
     if "offline_mode" in raw:

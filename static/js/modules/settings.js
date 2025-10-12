@@ -62,15 +62,28 @@ export function saveAlarmSettings() {
     console.log('DEBUG: Parsed data:', data);
     
     if (data && data.success) {
-      const timeValue = formData.get('time') || t('unknown') || 'unknown';
-      const volumeValue = alarmVolume || '50';
-      const statusMessage = formData.get('enabled') === 'on' 
-        ? `${t('alarm_set_for') || 'Alarm set for'} ${timeValue}<br><span class="volume-info">${t('volume') || 'Volume'}: ${volumeValue}%</span>`
+      const payload = data.data || {};
+      const alarmData = payload.alarm || payload;
+
+      const timeValue = alarmData.time || formData.get('time') || t('unknown') || 'unknown';
+      const volumeValue = typeof alarmData.alarm_volume === 'number'
+        ? alarmData.alarm_volume
+        : (alarmVolume || '50');
+
+      const devicePrefix = t('alarm_device_label') || 'Device:';
+      const deviceValue = (formData.get('device_name') || '').trim() || t('alarm_device_unknown') || 'Unknown device';
+
+      const enabledFlag = typeof alarmData.enabled === 'boolean'
+        ? alarmData.enabled
+        : (formData.get('enabled') === 'on');
+
+      const statusMessage = enabledFlag
+        ? `${t('alarm_set_for') || 'Alarm set for'} ${timeValue}<br><span class="volume-info">${t('volume') || 'Volume'}: ${volumeValue}%</span><br><span class="device-info">${devicePrefix} ${deviceValue}</span>`
         : t('no_alarm_active') || 'No alarm active';
         
       updateStatus('alarm-timer', statusMessage, true);
       console.log('✅ Alarm settings saved successfully');
-      updateAlarmStatus();
+      await updateAlarmStatus();
     } else {
       console.error('Error saving settings:', data ? data.message : 'No data received');
       statusElement.innerHTML = originalStatus;

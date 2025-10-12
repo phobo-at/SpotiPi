@@ -10,31 +10,44 @@ Provides comprehensive Spotify Web API functionality including:
 
 import os
 import json
-import requests
-from dotenv import load_dotenv
-from concurrent.futures import ThreadPoolExecutor
-import time
-from functools import lru_cache
-import logging
-import threading
-from typing import Dict, List, Optional, Any, Union, Tuple
-from requests.adapters import HTTPAdapter
-from urllib3.util import Retry
+import random
 import socket
 import copy
+import time
+import logging
+import threading
+import re
+from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import requests
+from dotenv import load_dotenv
+
+from .http import SESSION, DEFAULT_TIMEOUT
 
 # Use the new centralized config system
 from ..config import load_config, save_config
 # Import token caching system
-from ..utils.token_cache import initialize_token_cache, get_cached_token, force_token_refresh
+from ..utils.token_cache import (
+    TokenResponse,
+    ensure_token_valid as cache_ensure_token_valid,
+    force_token_refresh,
+    get_cached_token,
+    initialize_token_cache,
+    seed_token_cache,
+    token_needs_refresh,
+    invalidate_token_cache,
+)
 from ..utils.cache_migration import get_cache_migration_layer
 from ..utils.perf_monitor import perf_monitor
 
 # Use the new central#  Exportable functions - Updated for new config system
 __all__ = [
-    "refresh_access_token", "get_access_token", "force_refresh_token",
+    "refresh_access_token", "ensure_token_valid", "get_access_token", "force_refresh_token",
     "get_playlists", "get_devices", "get_device_id",
-    "start_playback", "stop_playback", "resume_playback", "toggle_playback",
+    "start_playback", "play_with_retry", "stop_playback", "resume_playback", "toggle_playback",
     "get_current_playback", "get_current_track", "get_current_spotify_volume", 
     "get_saved_albums", "get_user_saved_tracks", "get_followed_artists",
     "set_volume", "get_playback_status", "get_user_library", "get_combined_playback",
@@ -61,6 +74,8 @@ REFRESH_TOKEN = os.getenv("SPOTIFY_REFRESH_TOKEN")
 USERNAME = os.getenv("SPOTIFY_USERNAME")
 _LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
 
+TOKEN_STATE_PATH = Path(_get_app_config_dir()) / "spotify_token.json"
+
 
 def _coerce_float(value: Optional[str], default: float) -> float:
     try:
@@ -69,13 +84,29 @@ def _coerce_float(value: Optional[str], default: float) -> float:
         return default
 
 
-DEFAULT_HTTP_TIMEOUT = _coerce_float(os.getenv('SPOTIPI_HTTP_TIMEOUT'), 3.0)
+DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT = DEFAULT_TIMEOUT
+DEFAULT_HTTP_TIMEOUT = _coerce_float(os.getenv('SPOTIPI_HTTP_TIMEOUT'), DEFAULT_READ_TIMEOUT)
 LONG_HTTP_TIMEOUT = _coerce_float(
     os.getenv('SPOTIPI_HTTP_LONG_TIMEOUT'),
-    max(DEFAULT_HTTP_TIMEOUT * 2, 6.0)
+    max(DEFAULT_HTTP_TIMEOUT * 1.5, DEFAULT_READ_TIMEOUT * 1.5, 20.0)
 )
-SPOTIFY_API_TIMEOUT = max(DEFAULT_HTTP_TIMEOUT, LONG_HTTP_TIMEOUT)
+SPOTIFY_API_TIMEOUT = max(DEFAULT_HTTP_TIMEOUT, LONG_HTTP_TIMEOUT, DEFAULT_READ_TIMEOUT)
 
+TOKEN_REFRESH_MAX_ATTEMPTS = max(1, int(os.getenv('SPOTIPI_TOKEN_REFRESH_ATTEMPTS', '3')))
+TOKEN_REFRESH_BACKOFF_BASE = _coerce_float(os.getenv('SPOTIPI_TOKEN_REFRESH_BACKOFF', None), 0.5)
+TOKEN_REFRESH_BACKOFF_JITTER = _coerce_float(os.getenv('SPOTIPI_TOKEN_REFRESH_JITTER', None), 0.4)
+TOKEN_SAFETY_WINDOW = max(30, int(os.getenv('SPOTIPI_TOKEN_SAFETY_WINDOW', '120')))
+PREWARM_SECONDS = max(30, int(os.getenv('SPOTIPI_PREWARM_SECONDS', str(TOKEN_SAFETY_WINDOW))))
+
+PLAYER_MAX_ATTEMPTS = max(1, int(os.getenv('SPOTIPI_PLAYER_RETRIES', '3')))
+PLAYER_BACKOFF_BASE = _coerce_float(os.getenv('SPOTIPI_PLAYER_BACKOFF', None), 1.0)
+PLAYER_BACKOFF_JITTER = _coerce_float(os.getenv('SPOTIPI_PLAYER_JITTER', None), 0.35)
+FALLBACK_DEVICE_NAME = os.getenv('SPOTIPI_FALLBACK_DEVICE')
+
+PLAYBACK_VERIFY_ATTEMPTS = max(2, int(os.getenv('SPOTIPI_PLAYBACK_VERIFY_ATTEMPTS', '6')))
+PLAYBACK_VERIFY_WAIT = max(0.2, _coerce_float(os.getenv('SPOTIPI_PLAYBACK_VERIFY_WAIT', None), 1.0))
+SHUFFLE_RETRY_ATTEMPTS = max(1, int(os.getenv('SPOTIPI_SHUFFLE_RETRY_ATTEMPTS', '2')))
+SHUFFLE_RETRY_DELAY = max(0.2, _coerce_float(os.getenv('SPOTIPI_SHUFFLE_RETRY_DELAY', None), 0.75))
 
 def _max_concurrency() -> int:
     override = os.getenv('SPOTIPI_MAX_CONCURRENCY')
@@ -97,13 +128,20 @@ _SINGLE_FLIGHT_LOCK = threading.Lock()
 _IN_FLIGHT: Dict[Tuple[str, str, Tuple[Any, ...]], "_SingleFlight"] = {}
 
 
-def _coerce_timeout(value: Optional[Union[int, float]]) -> float:
+def _coerce_timeout(value: Optional[Union[int, float, Tuple[float, float]]]) -> Optional[Union[float, Tuple[float, float]]]:
     if value is None:
-        return DEFAULT_HTTP_TIMEOUT
+        return None
+    if isinstance(value, tuple):
+        try:
+            connect = max(0.2, float(value[0]))
+            read = max(0.2, float(value[1]))
+            return connect, read
+        except (TypeError, ValueError, IndexError):
+            return None
     try:
         return max(0.2, float(value))
     except (TypeError, ValueError):
-        return DEFAULT_HTTP_TIMEOUT
+        return None
 
 
 def _get_library_worker_limit() -> int:
@@ -121,31 +159,188 @@ def _get_library_worker_limit() -> int:
     base = 2 if _LOW_POWER_MODE else 3
     return max(1, min(base, MAX_CONCURRENCY))
 
-# 🔑 Token function
-def refresh_access_token() -> Optional[str]:
-    """Refresh Spotify access token using refresh token.
-    
-    Returns:
-        Optional[str]: New access token if successful, None otherwise
-    """
-    # Optional offline short-circuit for tests or restricted environments
-    if os.getenv("SPOTIPI_OFFLINE") == "1":
-        return None
+
+def _compute_backoff(base: float, attempt: int, jitter: float, cap: float = 15.0) -> float:
+    """Compute exponential backoff with jitter."""
+    delay = base * (2 ** max(attempt - 1, 0))
+    jitter_value = random.uniform(0, delay * max(jitter, 0.0))
+    return min(delay + jitter_value, cap)
+
+
+def _save_token_atomically(payload: Dict[str, Any]) -> None:
+    """Persist token payload atomically to avoid corruption."""
     try:
-        with _REQUEST_SEMAPHORE:
-            r = SESSION.post(
-                "https://accounts.spotify.com/api/token",
-                data={"grant_type": "refresh_token", "refresh_token": REFRESH_TOKEN},
-                auth=(CLIENT_ID, CLIENT_SECRET),
-                timeout=SPOTIFY_API_TIMEOUT
-            )
-        if r.status_code == 200:
-            return r.json().get("access_token")
-        else:
-            logging.getLogger('spotify').error(f"❌ Token refresh failed: {r.text}")
+        TOKEN_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = TOKEN_STATE_PATH.with_suffix(".tmp")
+        with tmp_path.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+        os.replace(tmp_path, TOKEN_STATE_PATH)
+    except Exception as exc:
+        logging.getLogger('spotify').warning("Failed to persist token payload: %s", exc)
+
+
+def _load_persisted_token() -> Optional[TokenResponse]:
+    """Load persisted token data from disk if available and not expired."""
+    try:
+        if not TOKEN_STATE_PATH.exists():
             return None
-    except Exception as e:
-        logging.getLogger('spotify').exception(f"❌ Exception during token refresh: {e}")
+        with TOKEN_STATE_PATH.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+
+        access_token = data.get("access_token")
+        expires_at = float(data.get("expires_at", 0))
+        received_at = float(data.get("received_at", data.get("created_at", time.time())))
+        refresh_token = data.get("refresh_token")
+        scope = data.get("scope")
+        token_type = data.get("token_type")
+
+        if not access_token or not expires_at:
+            return None
+        if expires_at <= time.time():
+            return None
+
+        expires_in = int(max(60, expires_at - received_at))
+        return TokenResponse(
+            access_token=access_token,
+            expires_in=expires_in,
+            refresh_token=refresh_token,
+            scope=scope,
+            token_type=token_type,
+            received_at=received_at,
+        )
+    except Exception as exc:
+        logging.getLogger('spotify').debug("Could not load persisted token: %s", exc)
+        return None
+
+# 🔑 Token functions
+_TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token"
+
+
+def _refresh_access_token_impl(with_retries: bool = True) -> Optional[TokenResponse]:
+    """Internal helper performing the token refresh with retries and persistence."""
+    logger = logging.getLogger('spotify')
+
+    if os.getenv("SPOTIPI_OFFLINE") == "1":
+        logger.debug("token.refresh.skip_offline")
+        return None
+
+    if not all([CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN]):
+        raise RuntimeError("Spotify credentials missing for token refresh")
+
+    attempts = 0
+    last_exc: Optional[Exception] = None
+
+    while True:
+        attempts += 1
+        start = time.perf_counter()
+
+        try:
+            with _REQUEST_SEMAPHORE:
+                response = SESSION.post(
+                    _TOKEN_ENDPOINT,
+                    data={"grant_type": "refresh_token", "refresh_token": REFRESH_TOKEN},
+                    auth=(CLIENT_ID, CLIENT_SECRET),
+                    timeout=SPOTIFY_API_TIMEOUT,
+                )
+
+            elapsed = time.perf_counter() - start
+            status = response.status_code
+
+            if status in (429, 500, 502, 503, 504):
+                raise requests.HTTPError(f"retryable status {status}", response=response)
+
+            response.raise_for_status()
+            payload = response.json()
+            token = payload.get("access_token")
+            if not token:
+                raise RuntimeError("Token response missing access_token")
+
+            expires_in = int(payload.get("expires_in", 3600))
+
+            token_response = TokenResponse(
+                access_token=token,
+                expires_in=expires_in,
+                refresh_token=payload.get("refresh_token"),
+                scope=payload.get("scope"),
+                token_type=payload.get("token_type"),
+                received_at=time.time(),
+            )
+
+            persist_payload = dict(payload)
+            persist_payload["received_at"] = token_response.received_at
+            persist_payload["expires_at"] = token_response.received_at + expires_in
+            if REFRESH_TOKEN and "refresh_token" not in persist_payload:
+                persist_payload["refresh_token"] = REFRESH_TOKEN
+
+            _save_token_atomically(persist_payload)
+
+            logger.info(
+                "token.refresh.ok",
+                extra={"attempts": attempts, "elapsed": round(elapsed, 3)},
+            )
+            return token_response
+
+        except (requests.ReadTimeout, requests.ConnectionError) as exc:
+            last_exc = exc
+            elapsed = time.perf_counter() - start
+            logger.warning(
+                "token.refresh.retry",
+                extra={
+                    "attempt": attempts,
+                    "elapsed": round(elapsed, 3),
+                    "reason": exc.__class__.__name__,
+                },
+            )
+
+        except requests.HTTPError as exc:
+            last_exc = exc
+            status_code = exc.response.status_code if exc.response is not None else None
+            elapsed = time.perf_counter() - start
+            retryable = status_code in (429, 500, 502, 503, 504)
+            level = logging.WARNING if retryable else logging.ERROR
+            logger.log(
+                level,
+                "token.refresh.http_error",
+                extra={
+                    "attempt": attempts,
+                    "status": status_code,
+                    "elapsed": round(elapsed, 3),
+                },
+            )
+            if not retryable:
+                raise
+
+        except (ValueError, json.JSONDecodeError, RuntimeError) as exc:
+            last_exc = exc
+            logger.error(
+                "token.refresh.parse_error",
+                extra={"attempt": attempts, "cause": str(exc)},
+            )
+            raise
+
+        if not with_retries or attempts >= TOKEN_REFRESH_MAX_ATTEMPTS:
+            break
+
+        delay = _compute_backoff(TOKEN_REFRESH_BACKOFF_BASE, attempts, TOKEN_REFRESH_BACKOFF_JITTER)
+        time.sleep(delay)
+
+    if last_exc:
+        logger.error(
+            "token.refresh.fail",
+            extra={"attempts": attempts, "error": str(last_exc)},
+        )
+        raise last_exc
+
+    raise RuntimeError("Token refresh failed without specific error")
+
+
+def refresh_access_token(with_retries: bool = True) -> Optional[str]:
+    """Public wrapper returning the raw token string for legacy callers."""
+    try:
+        token_response = _refresh_access_token_impl(with_retries=with_retries)
+        return token_response.access_token if token_response else None
+    except Exception as exc:
+        logging.getLogger('spotify').debug("token.refresh.wrapper_failure: %s", exc)
         return None
 
 # 🎟️ Cached token functions
@@ -165,38 +360,36 @@ def force_refresh_token() -> Optional[str]:
     """
     return force_token_refresh()
 
+
+def ensure_token_valid(min_ttl: int = TOKEN_SAFETY_WINDOW) -> Optional[str]:
+    """Ensure the cached token remains valid for at least ``min_ttl`` seconds."""
+    window = max(30, min_ttl)
+    try:
+        if token_needs_refresh(window):
+            logging.getLogger('spotify').info(
+                "token.refresh.prewarm",
+                extra={"window": window},
+            )
+        return cache_ensure_token_valid(window)
+    except Exception as exc:
+        logging.getLogger('spotify').error(
+            "token.refresh.ensure_failed",
+            extra={"error": str(exc)},
+        )
+        return None
+
 # Initialize token cache when module is imported
-initialize_token_cache(refresh_access_token)
+initialize_token_cache(lambda: _refresh_access_token_impl(with_retries=True))
+_persisted = _load_persisted_token()
+if _persisted:
+    seed_token_cache(_persisted)
+    logging.getLogger('spotify').debug(
+        "token.cache.seeded",
+        extra={"expires_in": _persisted.expires_in, "received_at": _persisted.received_at},
+    )
 
 # Initialize cache migration layer
 cache_migration = get_cache_migration_layer()
-
-# =============================
-# 🌐 HTTP Session + Circuit Breaker
-# =============================
-
-def _build_session() -> requests.Session:
-    session = requests.Session()
-    retry = Retry(
-        total=int(os.getenv('SPOTIPI_HTTP_RETRY_TOTAL', '2')),
-        backoff_factor=float(os.getenv('SPOTIPI_HTTP_BACKOFF', '0.3')),
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=('GET', 'HEAD', 'OPTIONS'),
-        respect_retry_after_header=True,
-    )
-    pool_size = max(4, MAX_CONCURRENCY * 4)
-    adapter = HTTPAdapter(max_retries=retry, pool_connections=pool_size, pool_maxsize=pool_size)
-    session.mount('https://', adapter)
-    session.mount('http://', adapter)
-    session.headers.update({
-        'Connection': 'keep-alive',
-        'Accept': 'application/json',
-    })
-    session.trust_env = False
-    return session
-
-SESSION = _build_session()
-
 
 class _SingleFlight:
     """Track in-flight GET requests to deduplicate identical calls."""
@@ -280,7 +473,7 @@ def _spotify_request(
     headers: Dict[str, str],
     params: Optional[Dict[str, Any]] = None,
     json: Optional[Dict[str, Any]] = None,
-    timeout: Optional[Union[int, float]] = None
+    timeout: Optional[Union[int, float, Tuple[float, float]]] = None
 ) -> requests.Response:
     if _breaker_open():
         raise RuntimeError("Spotify API temporarily unavailable (circuit breaker open)")
@@ -303,22 +496,41 @@ def _spotify_request(
                 raise RuntimeError("Single-flight response missing")
             return sf_slot.response
 
+    path_fragment = url.split("/v1/")[-1].split("?")[0]
+    metric_label = f"spotify.http.{method_upper.lower()}.{path_fragment.replace('/', '.') or 'root'}"
+
+    request_params: Dict[str, Any] = {
+        "method": method_upper,
+        "url": url,
+        "headers": headers,
+        "params": params,
+        "json": json,
+    }
+    if request_timeout is not None:
+        request_params["timeout"] = request_timeout
+
+    start = time.perf_counter()
+
     try:
         with _REQUEST_SEMAPHORE:
-            resp = SESSION.request(
-                method=method_upper,
-                url=url,
-                headers=headers,
-                params=params,
-                json=json,
-                timeout=request_timeout
-            )
+            with perf_monitor.time_block(metric_label):
+                resp = SESSION.request(**request_params)
         _breaker_on_success()
         if method_upper == 'GET' and is_leader and sf_slot:
             sf_slot.response = resp
         return resp
     except requests.exceptions.RequestException as exc:
         _breaker_on_failure()
+        elapsed = time.perf_counter() - start
+        logging.getLogger('spotify').warning(
+            "spotify.request.error",
+            extra={
+                "method": method_upper,
+                "url": url,
+                "elapsed": round(elapsed, 3),
+                "error": exc.__class__.__name__,
+            },
+        )
         if method_upper == 'GET' and is_leader and sf_slot:
             sf_slot.error = exc
         raise
@@ -703,6 +915,51 @@ def get_devices(token: str) -> List[Dict[str, Any]]:
     # Use unified cache system for devices
     return cache_migration.get_devices_cached(token, load_devices_from_api)
 
+
+_DEVICE_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _normalize_device_name(value: Any) -> str:
+    """Normalize device names for robust comparison."""
+    if not isinstance(value, str):
+        return ""
+    collapsed = _DEVICE_WHITESPACE_RE.sub(" ", value).strip()
+    return collapsed.casefold()
+
+
+def _pick_device_by_name(
+    devices: List[Dict[str, Any]],
+    normalized_target: str,
+    *,
+    allow_partial: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Find a device by normalized name, optionally allowing partial matches."""
+    for device in devices:
+        if _normalize_device_name(device.get("name")) == normalized_target:
+            return device
+
+    if not allow_partial or not normalized_target:
+        return None
+
+    candidates: List[Tuple[Tuple[int, int], Dict[str, Any]]] = []
+    for device in devices:
+        normalized_name = _normalize_device_name(device.get("name"))
+        if not normalized_name:
+            continue
+        if normalized_target in normalized_name or normalized_name in normalized_target:
+            weight = (
+                0 if device.get("is_active") else 1,
+                abs(len(normalized_name) - len(normalized_target)),
+            )
+            candidates.append((weight, device))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda entry: entry[0])
+    return candidates[0][1]
+
+
 def get_device_id(token: str, device_name: str) -> Optional[str]:
     """Get device ID by device name.
     
@@ -713,141 +970,395 @@ def get_device_id(token: str, device_name: str) -> Optional[str]:
     Returns:
         Optional[str]: Device ID if found, None otherwise
     """
+    logger = logging.getLogger('spotify')
+    normalized_requested = _normalize_device_name(device_name)
+    if not normalized_requested:
+        return None
+
     devices = get_devices(token)
-    for d in devices:
-        if d["name"] == device_name:
-            return d["id"]
+    device = _pick_device_by_name(devices, normalized_requested)
+
+    if device is None:
+        try:
+            cache_migration.invalidate_devices()
+        except Exception as exc:
+            logger.debug(
+                "spotify.device.cache_invalidate_failed",
+                extra={"error": str(exc)},
+            )
+        devices = get_devices(token)
+        device = _pick_device_by_name(devices, normalized_requested)
+
+    if device is None:
+        device = _pick_device_by_name(devices, normalized_requested, allow_partial=True)
+
+    if device:
+        matched_name = device.get("name", "")
+        device_id = device.get("id")
+        if not device_id:
+            logger.warning(
+                "spotify.device.missing_id",
+                extra={"requested": device_name, "matched": matched_name},
+            )
+            return None
+        if _normalize_device_name(matched_name) != normalized_requested:
+            logger.warning(
+                "spotify.device.partial_match",
+                extra={"requested": device_name, "matched": matched_name, "device_id": device_id},
+            )
+        return device_id
+
+    available_names = [
+        d.get("name") for d in devices if isinstance(d.get("name"), str)
+    ]
+    logger.warning(
+        "spotify.device.not_found",
+        extra={
+            "requested": device_name,
+            "available": available_names[:8],
+            "total_devices": len(available_names),
+        },
+    )
     return None
 
 # ▶️ Playback
-def start_playback(token: str, device_id: str, playlist_uri: str = "", volume_percent: int = 50, shuffle: bool = False) -> bool:
-    """Start playback on specified device with optional playlist and volume
-    
-    Args:
-        token: Spotify access token
-        device_id: Target device ID
-        playlist_uri: Optional playlist/album/track URI to play
-        volume_percent: Volume level (0-100)
-        shuffle: Enable shuffle mode
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    if not token or not device_id:
-        logging.getLogger('spotify').error("❌ Missing token or device_id for playback")
-        return False
+def _start_playback_on_device(
+    token: str,
+    device_id: str,
+    playlist_uri: str,
+    volume_percent: int,
+    shuffle: bool,
+) -> bool:
+    """Issue the sequence of Spotify API calls to start playback on a device."""
+    logger = logging.getLogger('spotify')
+    headers = {"Authorization": f"Bearer {token}"}
 
     try:
-        # 1. Transfer playback to device
         transfer_resp = _spotify_request(
             'PUT',
             "https://api.spotify.com/v1/me/player",
             json={"device_ids": [device_id], "play": False},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10
+            headers=headers,
+            timeout=10,
         )
-        if transfer_resp.status_code != 204:
-            logging.getLogger('spotify').warning(f"⚠️ Could not transfer playback to device: {transfer_resp.text}")
+        if transfer_resp.status_code not in (200, 202, 204):
+            logger.warning("⚠️ Transfer playback failed: %s", transfer_resp.text)
+    except requests.exceptions.RequestException:
+        raise
 
-        # 2. Set volume
-        try:
-            vol_resp = _spotify_request(
-                'PUT',
-                "https://api.spotify.com/v1/me/player/volume",
-                params={"volume_percent": volume_percent},
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=10
-            )
-            if vol_resp.status_code != 204:
-                logging.getLogger('spotify').warning(f"⚠️ Could not set volume: {vol_resp.text}")
-        except Exception as e:
-            logging.getLogger('spotify').exception(f"❌ Error setting volume: {e}")
+    try:
+        if not set_volume(token, volume_percent, device_id):
+            logger.warning("⚠️ Could not preset volume to %s%%", volume_percent)
+    except Exception as exc:
+        logger.warning("⚠️ Error setting volume: %s", exc)
 
-        # 3. (Optional) Enable shuffle BEFORE starting playback so first track is randomized
-        shuffle_enabled_before = False
-        if shuffle:
-            try:
-                shuffle_resp = _spotify_request(
-                    'PUT',
-                    f"https://api.spotify.com/v1/me/player/shuffle?state=true",
-                    headers={"Authorization": f"Bearer {token}"},
-                    timeout=10
-                )
-                if shuffle_resp.status_code == 204:
-                    logging.getLogger('spotify').info("🔀 Shuffle mode enabled (pre-play)")
-                    shuffle_enabled_before = True
-                else:
-                    logging.getLogger('spotify').warning(f"⚠️ Could not enable shuffle pre-play: {shuffle_resp.text}")
-            except Exception as e:
-                logging.getLogger('spotify').warning(f"⚠️ Error enabling shuffle pre-play: {e}")
-
-        # 4. Start playback (with optional random offset when shuffle active)
-        if playlist_uri and playlist_uri.strip():
-            if playlist_uri.startswith("spotify:track:"):
-                # For individual tracks, use "uris" parameter
-                payload = {"uris": [playlist_uri]}
-                logging.getLogger('spotify').info(f"▶️ Starting track playback: {playlist_uri}")
-            else:
-                # For playlists/albums, use "context_uri" parameter
-                payload = {"context_uri": playlist_uri}
-                # Randomize first track if shuffle requested: pick random offset
-                if shuffle and shuffle_enabled_before:
-                    import random
-                    try:
-                        if playlist_uri.startswith("spotify:playlist:"):
-                            total = _get_track_total_cached(token, playlist_uri, 'playlist')
-                            if total > 1:
-                                pos = random.randint(0, total - 1)
-                                payload['offset'] = {"position": pos}
-                                logging.getLogger('spotify').info(f"🎲 Starting at random playlist position {pos} of {total}")
-                        elif playlist_uri.startswith("spotify:album:"):
-                            total = _get_track_total_cached(token, playlist_uri, 'album')
-                            if total > 1:
-                                pos = random.randint(0, total - 1)
-                                payload['offset'] = {"position": pos}
-                                logging.getLogger('spotify').info(f"🎲 Starting at random album position {pos} of {total}")
-                    except Exception as e:
-                        logging.getLogger('spotify').warning(f"⚠️ Could not apply random offset: {e}")
-                logging.getLogger('spotify').info(f"▶️ Starting context playback: {playlist_uri}")
+    payload: Dict[str, Any] = {}
+    playlist_uri = playlist_uri.strip()
+    if playlist_uri:
+        if playlist_uri.startswith("spotify:track:"):
+            payload["uris"] = [playlist_uri]
+            logger.info("▶️ Starting track playback: %s", playlist_uri)
         else:
-            payload = {}
-            logging.getLogger('spotify').info("▶️ Resuming playback with specified volume")
-        
+            payload["context_uri"] = playlist_uri
+            if shuffle:
+                try:
+                    total = 0
+                    if playlist_uri.startswith("spotify:playlist:"):
+                        total = _get_track_total_cached(token, playlist_uri, 'playlist')
+                    elif playlist_uri.startswith("spotify:album:"):
+                        total = _get_track_total_cached(token, playlist_uri, 'album')
+                    if total > 1:
+                        pos = random.randint(0, total - 1)
+                        payload["offset"] = {"position": pos}
+                        logger.info("🎲 Randomised offset %s/%s", pos, total)
+                except Exception as exc:
+                    logger.debug("Shuffle offset calculation failed: %s", exc)
+            logger.info("▶️ Starting context playback: %s", playlist_uri)
+    else:
+        logger.info("▶️ Resuming playback without context URI")
+
+    try:
         play_resp = _spotify_request(
             'PUT',
             f"https://api.spotify.com/v1/me/player/play?device_id={device_id}",
-            json=payload,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10
+            json=payload if payload else None,
+            headers=headers,
+            timeout=LONG_HTTP_TIMEOUT,
         )
-        
-        if play_resp.status_code == 204:
-            # Fallback: if shuffle requested but pre-play enable failed, retry once now
-            if shuffle and not shuffle_enabled_before:
-                try:
-                    shuffle_resp = _spotify_request(
-                        'PUT',
-                        f"https://api.spotify.com/v1/me/player/shuffle?state=true",
-                        headers={"Authorization": f"Bearer {token}"},
-                        timeout=10
-                    )
-                    if shuffle_resp.status_code == 204:
-                        logging.getLogger('spotify').info("🔀 Shuffle mode enabled (post-play fallback)")
-                    else:
-                        logging.getLogger('spotify').warning(f"⚠️ Could not enable shuffle (fallback): {shuffle_resp.text}")
-                except Exception as e:
-                    logging.getLogger('spotify').warning(f"⚠️ Error enabling shuffle (fallback): {e}")
-            _invalidate_playback_cache()
-            return True
-        else:
-            logging.getLogger('spotify').error(f"❌ Error starting playback: {play_resp.text}")
-            _invalidate_playback_cache()
-            return False
-            
-    except Exception as e:
-        logging.getLogger('spotify').error(f"❌ Error in start_playback: {e}")
+    except requests.exceptions.RequestException:
+        raise
+
+    if play_resp.status_code not in (200, 202, 204):
+        logger.warning("❌ Error starting playback: %s", play_resp.text)
         _invalidate_playback_cache()
         return False
+
+    _invalidate_playback_cache()
+    return True
+
+
+def _set_shuffle_state(token: str, state: bool, *, retries: int = SHUFFLE_RETRY_ATTEMPTS, delay: float = SHUFFLE_RETRY_DELAY) -> bool:
+    """Attempt to toggle Spotify shuffle state with small retries."""
+    logger = logging.getLogger('spotify')
+    headers = {"Authorization": f"Bearer {token}"}
+    target = "true" if state else "false"
+
+    for attempt in range(1, retries + 1):
+        try:
+            resp = _spotify_request(
+                'PUT',
+                "https://api.spotify.com/v1/me/player/shuffle",
+                headers=headers,
+                params={"state": target},
+                timeout=10,
+            )
+            if resp.status_code == 204:
+                if attempt > 1:
+                    logger.debug(
+                        "shuffle.state.ok_after_retry",
+                        extra={"attempt": attempt},
+                    )
+                return True
+            logger.debug(
+                "shuffle.state.failed",
+                extra={"status": resp.status_code, "attempt": attempt, "body": resp.text[:120]},
+            )
+        except requests.exceptions.RequestException as exc:
+            logger.debug(
+                "shuffle.state.error",
+                extra={"error": exc.__class__.__name__, "attempt": attempt},
+            )
+        if attempt < retries:
+            time.sleep(delay)
+    return False
+
+
+def _verify_playback_state(
+    token: str,
+    expected_device_id: str,
+    playlist_uri: str,
+    attempts: int = PLAYBACK_VERIFY_ATTEMPTS,
+    wait_seconds: float = PLAYBACK_VERIFY_WAIT,
+) -> bool:
+    """Poll the player API to ensure playback is active on the expected device."""
+    logger = logging.getLogger('spotify')
+    context_uri_expected = playlist_uri if playlist_uri and not playlist_uri.startswith("spotify:track:") else None
+
+    for attempt in range(max(1, attempts)):
+        try:
+            playback = get_current_playback(token)
+        except Exception as exc:
+            logger.debug("verify_playback fetch failed: %s", exc)
+            playback = None
+
+        if playback:
+            device_info = playback.get("device") or {}
+            active_device_id = device_info.get("id")
+            item = playback.get("item") or {}
+            item_uri = item.get("uri")
+            is_playing = bool(playback.get("is_playing"))
+            progress_ms = playback.get("progress_ms") or 0
+            if expected_device_id and active_device_id != expected_device_id:
+                logger.debug(
+                    "Playback active on unexpected device %s (expected %s)",
+                    active_device_id,
+                    expected_device_id,
+                )
+            else:
+                matched = False
+                if context_uri_expected:
+                    context_uri = (playback.get("context") or {}).get("uri")
+                    if context_uri and context_uri == context_uri_expected:
+                        matched = True
+                    elif context_uri:
+                        logger.debug("Playback context mismatch (got %s)", context_uri)
+                elif playlist_uri.startswith("spotify:track:"):
+                    matched = item_uri == playlist_uri
+                else:
+                    matched = bool(item_uri)
+
+                if matched and (is_playing or progress_ms > 0):
+                    return True
+
+        if attempt + 1 < attempts:
+            time.sleep(wait_seconds)
+
+    return False
+
+
+def play_with_retry(
+    token: str,
+    device_id: str,
+    playlist_uri: str = "",
+    volume_percent: int = 50,
+    shuffle: bool = False,
+    *,
+    fallback_device: Optional[str] = None,
+) -> bool:
+    """Start playback with retries, verification, and optional fallback device."""
+    logger = logging.getLogger('spotify')
+
+    if not token or not device_id:
+        logger.error("❌ Missing token or device_id for playback")
+        return False
+
+    fallback_name = fallback_device or FALLBACK_DEVICE_NAME
+    targets: List[Tuple[str, bool]] = [(device_id, False)]
+    fallback_attempted = False
+    total_attempts = 0
+    idx = 0
+
+    while idx < len(targets):
+        target_device_id, is_fallback = targets[idx]
+        idx += 1
+
+        for attempt in range(1, PLAYER_MAX_ATTEMPTS + 1):
+            total_attempts += 1
+
+            refreshed = ensure_token_valid()
+            if refreshed:
+                token = refreshed
+
+            logger.info(
+                "alarm.start.attempt",
+                extra={
+                    "device": target_device_id,
+                    "attempt": attempt,
+                    "fallback": is_fallback,
+                },
+            )
+
+            start_time = time.perf_counter()
+
+            try:
+                started = _start_playback_on_device(
+                    token,
+                    target_device_id,
+                    playlist_uri,
+                    volume_percent,
+                    shuffle,
+                )
+                if not started:
+                    raise RuntimeError("playback_start_failed")
+
+                if _verify_playback_state(token, target_device_id, playlist_uri):
+                    elapsed = time.perf_counter() - start_time
+                    try:
+                        if not set_volume(token, volume_percent, target_device_id):
+                            logger.debug(
+                                "alarm.start.volume_postcheck_failed",
+                                extra={"device": target_device_id, "volume": volume_percent},
+                            )
+                    except Exception as exc:
+                        logger.debug(
+                            "alarm.start.volume_postcheck_error",
+                            extra={"device": target_device_id, "error": str(exc)},
+                        )
+                    if shuffle:
+                        shuffle_ok = _set_shuffle_state(token, True)
+                        if not shuffle_ok:
+                            logger.debug(
+                                "shuffle.state.final_failed",
+                                extra={"device": target_device_id},
+                            )
+                    logger.info(
+                        "alarm.start.ok",
+                        extra={
+                            "attempts": total_attempts,
+                            "device": target_device_id,
+                            "fallback": is_fallback,
+                            "elapsed": round(elapsed, 3),
+                        },
+                    )
+                    return True
+
+                logger.warning(
+                    "alarm.start.unverified",
+                    extra={
+                        "device": target_device_id,
+                        "attempt": attempt,
+                        "waited_seconds": round(PLAYBACK_VERIFY_ATTEMPTS * PLAYBACK_VERIFY_WAIT, 2),
+                    },
+                )
+            except requests.exceptions.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else None
+                if status not in (429, 500, 502, 503, 504):
+                    raise
+                logger.warning(
+                    "alarm.start.retry",
+                    extra={
+                        "device": target_device_id,
+                        "attempt": attempt,
+                        "status": status,
+                    },
+                )
+            except requests.exceptions.RequestException as exc:
+                logger.warning(
+                    "alarm.start.retry",
+                    extra={
+                        "device": target_device_id,
+                        "attempt": attempt,
+                        "error": exc.__class__.__name__,
+                    },
+                )
+            except Exception as exc:
+                logger.warning(
+                    "alarm.start.retry",
+                    extra={
+                        "device": target_device_id,
+                        "attempt": attempt,
+                        "error": str(exc),
+                    },
+                )
+
+            delay = _compute_backoff(PLAYER_BACKOFF_BASE, attempt, PLAYER_BACKOFF_JITTER, cap=10.0)
+            time.sleep(delay)
+
+        if not fallback_attempted and fallback_name:
+            fallback_attempted = True
+            try:
+                fallback_id = get_device_id(token, fallback_name)
+            except Exception as exc:
+                logger.warning(
+                    "alarm.start.fallback_lookup_failed",
+                    extra={"device": fallback_name, "error": str(exc)},
+                )
+                fallback_id = None
+
+            existing_ids = {d for d, _ in targets}
+            if fallback_id and fallback_id not in existing_ids:
+                logger.warning(
+                    "alarm.start.fallback_activate",
+                    extra={"device": fallback_name, "device_id": fallback_id},
+                )
+                targets.append((fallback_id, True))
+
+    logger.error(
+        "alarm.start.fail",
+        extra={
+            "attempts": total_attempts,
+            "device": device_id,
+            "fallback": fallback_name,
+        },
+    )
+    return False
+
+
+def start_playback(
+    token: str,
+    device_id: str,
+    playlist_uri: str = "",
+    volume_percent: int = 50,
+    shuffle: bool = False,
+) -> bool:
+    """Backward-compatible wrapper that delegates to play_with_retry."""
+    return play_with_retry(
+        token,
+        device_id,
+        playlist_uri=playlist_uri,
+        volume_percent=volume_percent,
+        shuffle=shuffle,
+    )
 
 # --- Track count caching for random offset (playlist/album) ---
 @lru_cache(maxsize=256)
@@ -875,7 +1386,7 @@ def _get_track_total_cached(token: str, uri: str, kind: str) -> int:
         pass
     return 0
 
-def stop_playback(token: str) -> bool:
+def stop_playback(token: str, device_id: Optional[str] = None) -> bool:
     """Stop Spotify playback.
     
     Args:
@@ -884,26 +1395,47 @@ def stop_playback(token: str) -> bool:
     Returns:
         bool: True if successful, False otherwise
     """
+    logger = logging.getLogger('spotify')
     try:
-        r = _spotify_request(
+        params: Dict[str, Any] = {}
+        if device_id:
+            params["device_id"] = device_id
+
+        response = _spotify_request(
             'PUT',
             "https://api.spotify.com/v1/me/player/pause",
             headers={"Authorization": f"Bearer {token}"},
+            params=params if params else None,
             timeout=DEFAULT_HTTP_TIMEOUT
         )
-        if r.status_code == 204:
-            _invalidate_playback_cache()
-            return True
-        else:
-            _invalidate_playback_cache()
-            print("❌ Error stopping playback:", r.text)
-            return False
-    except Exception as e:
-        _invalidate_playback_cache()
-        print(f"❌ Exception stopping playback: {e}")
+    except requests.exceptions.RequestException as exc:
+        logger.error(
+            "spotify.playback.stop.request_error",
+            extra={"error": str(exc)},
+        )
+        if getattr(exc, "response", None) is not None and exc.response.status_code == 401:  # type: ignore[attr-defined]
+            invalidate_token_cache()
         return False
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.exception("spotify.playback.stop.unexpected", extra={"error": str(exc)})
+        return False
+    finally:
+        _invalidate_playback_cache()
 
-def resume_playback(token: str) -> bool:
+    if 200 <= response.status_code < 300:
+        return True
+
+    if response.status_code == 401:
+        invalidate_token_cache()
+
+    logger.warning(
+        "spotify.playback.stop.failed status=%s body=%s",
+        response.status_code,
+        response.text[:200],
+    )
+    return False
+
+def resume_playback(token: str, device_id: Optional[str] = None) -> bool:
     """Resume/start playback.
     
     Args:
@@ -912,24 +1444,45 @@ def resume_playback(token: str) -> bool:
     Returns:
         bool: True if successful, False otherwise
     """
+    logger = logging.getLogger('spotify')
     try:
-        r = _spotify_request(
+        params: Dict[str, Any] = {}
+        if device_id:
+            params["device_id"] = device_id
+
+        response = _spotify_request(
             'PUT',
             "https://api.spotify.com/v1/me/player/play",
             headers={"Authorization": f"Bearer {token}"},
+            params=params if params else None,
             timeout=DEFAULT_HTTP_TIMEOUT
         )
-        if r.status_code == 204:
-            _invalidate_playback_cache()
-            return True
-        else:
-            _invalidate_playback_cache()
-            print("❌ Error resuming playback:", r.text)
-            return False
-    except Exception as e:
-        _invalidate_playback_cache()
-        print(f"❌ Exception resuming playback: {e}")
+    except requests.exceptions.RequestException as exc:
+        logger.error(
+            "spotify.playback.resume.request_error",
+            extra={"error": str(exc)},
+        )
+        if getattr(exc, "response", None) is not None and exc.response.status_code == 401:  # type: ignore[attr-defined]
+            invalidate_token_cache()
         return False
+    except Exception as exc:  # pragma: no cover
+        logger.exception("spotify.playback.resume.unexpected", extra={"error": str(exc)})
+        return False
+    finally:
+        _invalidate_playback_cache()
+
+    if 200 <= response.status_code < 300:
+        return True
+
+    if response.status_code == 401:
+        invalidate_token_cache()
+
+    logger.warning(
+        "spotify.playback.resume.failed status=%s body=%s",
+        response.status_code,
+        response.text[:200],
+    )
+    return False
 
 def toggle_playback(token: str) -> Dict[str, Union[bool, str]]:
     """Toggle between play and pause.
@@ -940,19 +1493,28 @@ def toggle_playback(token: str) -> Dict[str, Union[bool, str]]:
     Returns:
         Dict[str, Union[bool, str]]: Result dictionary with action and success status
     """
+    logger = logging.getLogger('spotify')
     try:
         playback = get_current_playback(token)
+    except Exception as exc:
+        logger.error("spotify.playback.toggle.status_failed", extra={"error": str(exc)})
+        return {"success": False, "error": str(exc)}
+
+    device_id = None
+    if playback and isinstance(playback, dict):
+        device = playback.get("device")
+        if isinstance(device, dict):
+            device_id = device.get("id")
+
+    try:
         if playback and playback.get("is_playing", False):
-            # Currently playing, so pause
-            success = stop_playback(token)
+            success = stop_playback(token, device_id=device_id)
             return {"action": "paused", "success": success}
-        else:
-            # Not playing, so resume/start
-            success = resume_playback(token)
-            return {"action": "playing", "success": success}
-    except Exception as e:
-        print(f"❌ Error toggling playback: {e}")
-        return {"success": False, "error": str(e)}
+        success = resume_playback(token, device_id=device_id)
+        return {"action": "playing", "success": success}
+    except Exception as exc:  # pragma: no cover
+        logger.exception("spotify.playback.toggle.unexpected", extra={"error": str(exc)})
+        return {"success": False, "error": str(exc)}
 
 
 def toggle_playback_fast(token: str) -> Dict[str, Union[bool, str]]:
@@ -965,53 +1527,7 @@ def toggle_playback_fast(token: str) -> Dict[str, Union[bool, str]]:
     Returns:
         Dict[str, Union[bool, str]]: Result dictionary with action and success status
     """
-    try:
-        # Try pause first (most common case when music is playing)
-        try:
-            pause_resp = _spotify_request(
-                'PUT',
-                "https://api.spotify.com/v1/me/player/pause",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=5
-            )
-            if pause_resp.status_code == 204:
-                _invalidate_playback_cache()
-                return {"action": "paused", "success": True}
-            elif pause_resp.status_code == 403:
-                # 403 means no active device or already paused - try play
-                play_resp = _spotify_request(
-                    'PUT',
-                    "https://api.spotify.com/v1/me/player/play", 
-                    headers={"Authorization": f"Bearer {token}"},
-                    timeout=5
-                )
-                if play_resp.status_code == 204:
-                    _invalidate_playback_cache()
-                    return {"action": "playing", "success": True}
-                else:
-                    return {"success": False, "error": f"Play failed: {play_resp.status_code}"}
-            else:
-                return {"success": False, "error": f"Pause failed: {pause_resp.status_code}"}
-        except Exception as e:
-            # If pause fails, try play
-            try:
-                play_resp = _spotify_request(
-                    'PUT',
-                    "https://api.spotify.com/v1/me/player/play",
-                    headers={"Authorization": f"Bearer {token}"},
-                    timeout=5
-                )
-                if play_resp.status_code == 204:
-                    _invalidate_playback_cache()
-                    return {"action": "playing", "success": True}
-                else:
-                    return {"success": False, "error": f"Play fallback failed: {play_resp.status_code}"}
-            except Exception as play_error:
-                return {"success": False, "error": f"Both pause and play failed: {e}, {play_error}"}
-                
-    except Exception as e:
-        print(f"❌ Error in fast toggle playback: {e}")
-        return {"success": False, "error": str(e)}
+    return toggle_playback(token)
 
 #  Exportable functions - Updated for new config system
 __all__ = [
@@ -1033,18 +1549,38 @@ def get_current_spotify_volume(token: str) -> int:
     Returns:
         int: Current volume percentage (0-100), defaults to 50
     """
+    logger = logging.getLogger('spotify')
     try:
-        r = _spotify_request(
+        response = _spotify_request(
             'GET',
             "https://api.spotify.com/v1/me/player",
             headers={"Authorization": f"Bearer {token}"},
             timeout=10
         )
-        if r.status_code == 200:
-            data = r.json()
+    except requests.exceptions.RequestException as exc:
+        logger.warning("spotify.volume.request_error", extra={"error": str(exc)})
+        if getattr(exc, "response", None) is not None and exc.response.status_code == 401:  # type: ignore[attr-defined]
+            invalidate_token_cache()
+        return 50
+    except Exception as exc:  # pragma: no cover
+        logger.exception("spotify.volume.unexpected", extra={"error": str(exc)})
+        return 50
+
+    if response.status_code == 200:
+        try:
+            data = response.json()
             return int(data.get("device", {}).get("volume_percent", 50))
-    except Exception as e:
-        print(f"⚠️ Could not get current volume: {e}")
+        except (ValueError, TypeError):
+            logger.debug("spotify.volume.invalid_payload")
+            return 50
+
+    if response.status_code == 401:
+        invalidate_token_cache()
+
+    logger.debug(
+        "spotify.volume.fallback",
+        extra={"status": response.status_code, "body_preview": response.text[:200]},
+    )
     return 50
 
 def get_current_playback(token: str, device_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -1115,10 +1651,13 @@ def get_current_track(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 def _playback_cache_ttl() -> float:
+    default_ttl = 2.0 if _LOW_POWER_MODE else 0.75
+    ttl_env = os.getenv('SPOTIPI_PLAYBACK_CACHE_TTL', str(default_ttl))
     try:
-        return max(0.0, float(os.getenv('SPOTIPI_PLAYBACK_CACHE_TTL', '3.0')))
-    except ValueError:
-        return 3.0
+        ttl = float(ttl_env)
+    except (TypeError, ValueError):
+        ttl = default_ttl
+    return max(0.0, ttl)
 
 
 def get_combined_playback(token: str, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
@@ -1212,25 +1751,32 @@ def load_music_library_parallel(token: str) -> Dict[str, Any]:
     }
     max_workers = max(1, min(len(section_funcs), _get_library_worker_limit()))
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            name: executor.submit(load_with_error_handling, func, label)
+    if max_workers == 1:
+        results = {
+            name: load_with_error_handling(func, label)
             for name, (func, label) in section_funcs.items()
         }
-
-        results = {key: future.result() for key, future in futures.items()}
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                name: executor.submit(load_with_error_handling, func, label)
+                for name, (func, label) in section_funcs.items()
+            }
+            results = {key: future.result() for key, future in futures.items()}
     
     end_time = time.time()
     total_items = sum(len(data) for data in results.values())
     logger.info(f"🎉 Parallel loading completed in {end_time - start_time:.2f} seconds - {total_items} total items")
     
-    return {
+    payload = {
         "playlists": results['playlists'],
         "albums": results['albums'], 
         "tracks": results['tracks'],
         "artists": results['artists'],
         "total": total_items
     }
+    payload["hash"] = compute_library_hash(payload)
+    return payload
 
 # Additional functions for the new modular app.py
 
@@ -1245,6 +1791,7 @@ def set_volume(token: str, volume_percent: int, device_id: Optional[str] = None)
     Returns:
         bool: True if successful, False otherwise
     """
+    logger = logging.getLogger('spotify')
     try:
         params: Dict[str, Any] = {"volume_percent": int(volume_percent)}
         if device_id:
@@ -1260,11 +1807,28 @@ def set_volume(token: str, volume_percent: int, device_id: Optional[str] = None)
         
         if response.status_code == 204:
             return True
-        else:
-            print(f"Error setting volume: {response.status_code}")
-            return False
-    except Exception as e:
-        print(f"Error setting volume: {str(e)}")
+        logger.warning(
+            "spotify.volume.failed",
+            extra={
+                "status": response.status_code,
+                "device_id": device_id,
+                "requested_volume": params["volume_percent"],
+            },
+        )
+        if response.status_code == 404 and device_id:
+            try:
+                cache_migration.invalidate_devices()
+            except Exception as exc:
+                logger.debug(
+                    "spotify.device.cache_invalidate_failed",
+                    extra={"error": str(exc)},
+                )
+        return False
+    except Exception as exc:
+        logger.warning(
+            "spotify.volume.exception",
+            extra={"error": str(exc), "device_id": device_id},
+        )
         return False
 
 def get_playback_status(token: str) -> Optional[Dict[str, Any]]:

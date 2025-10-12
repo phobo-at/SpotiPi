@@ -48,6 +48,7 @@ SPOTIFY_USERNAME=your_username
 
 # Optional: Pi Zero / low-power mode optimisations
 SPOTIPI_LOW_POWER=1
+SPOTIPI_TIMEZONE=Europe/Vienna                 # Override detected timezone for alarms & scheduler
 SPOTIPI_DEFAULT_ORIGIN=http://spotipi.local   # CORS allowlist fallback for LAN UI
 SPOTIPI_PLAYBACK_CACHE_TTL=3.0                # Seconds to cache /me/player snapshot
 SPOTIPI_DEVICE_TTL=10                         # Device cache TTL in seconds (5-15 on Pi Zero)
@@ -56,6 +57,23 @@ SPOTIPI_MAX_CONCURRENCY=2                     # Global HTTP concurrency limit on
 ```
 
 Everything else is auto-configured with smart defaults.
+
+### Tuning auf Pi Zero W
+
+Für stabile Wiedergabe auf dem Pi Zero W haben sich folgende Umgebungsvariablen bewährt:
+
+```env
+SPOTIPI_HTTP_TIMEOUTS=5,18                 # Großzügige Netzwerk- und Lese-Timeouts
+SPOTIPI_STATUS_CACHE_SECONDS=0.8           # Dashboard-Cache (Server) zur Entlastung
+SPOTIPI_PLAYBACK_STATUS_CACHE_SECONDS=0.6  # Playback-Cache (Server) < 1 Sekunde
+SPOTIPI_PREWARM_SECONDS=150                # Token-Prewarm vor Alarmstart
+SPOTIPI_PLAYER_RETRIES=3                   # Wiedergabeversuche inkl. Backoff
+SPOTIPI_PLAYER_BACKOFF=1.0                 # Start-Backoff in Sekunden
+SPOTIPI_PLAYER_JITTER=0.4                  # Zufälliger Jitter für Backoff
+SPOTIPI_DEVICE_TTL=10                      # Spotify-Gerätecache in Sekunden
+```
+
+Sie lassen sich feinjustieren, ohne den Code anzupassen – einmal im `.env` setzen und rebooten.
 
 ### Alarm Behaviour Flags
 
