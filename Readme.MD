@@ -46,7 +46,7 @@ SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret  
 SPOTIFY_USERNAME=your_username
 
-# Optional: Pi Zero / low-power mode optimisations
+# Optional: Pi Zero / low-power mode optimizations
 SPOTIPI_LOW_POWER=1
 SPOTIPI_TIMEZONE=Europe/Vienna                 # Override detected timezone for alarms & scheduler
 SPOTIPI_DEFAULT_ORIGIN=http://spotipi.local   # CORS allowlist fallback for LAN UI
@@ -58,22 +58,22 @@ SPOTIPI_MAX_CONCURRENCY=2                     # Global HTTP concurrency limit on
 
 Everything else is auto-configured with smart defaults.
 
-### Tuning auf Pi Zero W
+### Pi Zero W Tuning
 
-Für stabile Wiedergabe auf dem Pi Zero W haben sich folgende Umgebungsvariablen bewährt:
+For stable playback on the Pi Zero W, these environment variables work well:
 
 ```env
-SPOTIPI_HTTP_TIMEOUTS=5,18                 # Großzügige Netzwerk- und Lese-Timeouts
-SPOTIPI_STATUS_CACHE_SECONDS=0.8           # Dashboard-Cache (Server) zur Entlastung
-SPOTIPI_PLAYBACK_STATUS_CACHE_SECONDS=0.6  # Playback-Cache (Server) < 1 Sekunde
-SPOTIPI_PREWARM_SECONDS=150                # Token-Prewarm vor Alarmstart
-SPOTIPI_PLAYER_RETRIES=3                   # Wiedergabeversuche inkl. Backoff
-SPOTIPI_PLAYER_BACKOFF=1.0                 # Start-Backoff in Sekunden
-SPOTIPI_PLAYER_JITTER=0.4                  # Zufälliger Jitter für Backoff
-SPOTIPI_DEVICE_TTL=10                      # Spotify-Gerätecache in Sekunden
+SPOTIPI_HTTP_TIMEOUTS=5,18                 # Generous network/connect + read timeouts
+SPOTIPI_STATUS_CACHE_SECONDS=0.8           # Server-side dashboard cache to lighten load
+SPOTIPI_PLAYBACK_STATUS_CACHE_SECONDS=0.6  # Server-side playback cache (< 1 second)
+SPOTIPI_PREWARM_SECONDS=150                # Token prewarm window ahead of alarm trigger
+SPOTIPI_PLAYER_RETRIES=3                   # Playback attempts including exponential backoff
+SPOTIPI_PLAYER_BACKOFF=1.0                 # Initial backoff delay in seconds
+SPOTIPI_PLAYER_JITTER=0.4                  # Random jitter factor for backoff
+SPOTIPI_DEVICE_TTL=10                      # Spotify device cache TTL in seconds
 ```
 
-Sie lassen sich feinjustieren, ohne den Code anzupassen – einmal im `.env` setzen und rebooten.
+Adjust them freely without touching the code—set the values in `.env`, restart the service, and you’re done.
 
 ### Alarm Behaviour Flags
 

@@ -3,6 +3,14 @@
 ## Project Overview
 SpotiPi is a Raspberry Pi-optimized Spotify alarm clock with Flask web interface. The architecture is modular with service-oriented design and robust thread safety for concurrent alarm scheduling and web requests.
 
+### Release 1.3.4 Highlights
+- Timezone handling now flows through `src/utils/timezone.py`; `SPOTIPI_TIMEZONE` or the persisted config drives alarm/scheduler time calculations and is hot-reloaded via config listeners.
+- Spotify playback helpers accept an optional `device_id`; use `toggle_playback()`/`stop_playback()`/`resume_playback()` to ensure commands target the active device and treat any 2xx response as success.
+- Token caching is protected by a dedicated refresh lock; call the cache helpers instead of rolling your own token storage.
+- Low-power defaults include longer dashboard/playback TTLs; prefer `_playback_cache_ttl()` and the server-side caches before adding new polling endpoints.
+- TLS handshakes on the HTTP port are logged at DEBUG only—no warning noise expected in normal runs.
+- Deployment summaries rely on rsync’s itemize output (`--out-format=%i %f`); avoid post-processing that breaks this format.
+
 ## Core Architecture
 
 ### Modular Structure (src/ based)
@@ -52,6 +60,7 @@ SPOTIPI_PURGE_UNUSED=1 ./scripts/deploy_to_pi.sh  # optional cleanup of legacy f
 ### Configuration Management
 - **Environment Detection**: Auto-detects Pi vs development (`src/config.py`)
 - **Low-Power Mode**: `SPOTIPI_LOW_POWER=1` toggles gzip off and limits worker pools (Pi Zero)
+- **Timezone Override**: `SPOTIPI_TIMEZONE` or the config `timezone` field feeds `src/utils/timezone.py`; always fetch timezones via `get_local_timezone()`
 - **Thread-Safe Config**: Use `load_config()`/`save_config()` with transaction support
 - **Environment Files**: `.env` for Spotify credentials (not synced to Pi)
 
@@ -87,8 +96,9 @@ return ServiceResult(
 - **Rate Limiting**: Built-in retry logic with exponential backoff
 - **Parallel Loading**: Worker limits via `_get_library_worker_limit()` (respects low-power mode)
 - **Network Health**: `spotify_network_health()` for diagnostics
-- **Performance Optimization**: `toggle_playback_fast()` for immediate UI response
-- **Targeted Volume Control**: Volume endpoint accepts `device_id` to hit the active player
+- **Playback Control**: Use `toggle_playback()` (preferred by `toggle_playback_fast`) so device IDs are respected and all 2xx responses count as success
+- **Targeted Volume Control**: Volume endpoint accepts `device_id` to hit the active player; reuse `set_volume(token, device_id=...)`
+- **Caching**: `_playback_cache_ttl()` honours low-power defaults and `SPOTIPI_PLAYBACK_CACHE_TTL`; avoid bespoke caches
 
 ### Alarm Scheduling (`src/core/alarm_scheduler.py`)
 - **Weekday Logic**: Monday=0, Sunday=6 (Python datetime standard)
@@ -105,6 +115,7 @@ return ServiceResult(
 - **Service Layer Tests**: Mock external dependencies, test business logic
 - **Thread Safety Tests**: Concurrent access validation in `tests/`
 - **Rate Limiting Tests**: Decorator and throttling validation
+- **Mandatory Run**: Always execute `pytest` before deployment
 
 ## Flask Route Patterns
 
