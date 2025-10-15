@@ -66,13 +66,12 @@ def test_save_alarm_success_roundtrip(client):
     resp = client.post('/save_alarm', data={
         'time': '07:30',
         'enabled': 'true',
-        'alarm_volume': '55',
-        'weekdays': '1,2,3'
+        'alarm_volume': '55'
     })
     data = assert_api_envelope(resp, expect_success=True)
     payload = data['data']
     assert payload['time'] == '07:30'
-    assert isinstance(payload['weekdays'], list)
+    assert 'next_alarm' in payload
 
 
 def test_devices_auth_required(client):

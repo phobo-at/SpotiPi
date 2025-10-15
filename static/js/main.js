@@ -7,7 +7,6 @@ import { DOM, CONFIG } from './modules/state.js';
 import { getPlaybackStatus, fetchAPI, playMusic, getDashboardStatus } from './modules/api.js';
 import { PlaylistSelector } from './modules/playlistSelector.js';
 import { saveAlarmSettings, activateSleepTimerDirect, deactivateSleepTimerDirect } from './modules/settings.js';
-import { initializeWeekdayBubbles } from './modules/weekdays.js';
 import { initializeDeviceManager } from './modules/deviceManager.js';
 import { loadMusicLibraryProgressively } from './modules/streamingLoader.js';
 import { t } from './modules/translation.js';
@@ -293,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (alarmForm) {
         const formElements = alarmForm.querySelectorAll('input:not([type="checkbox"]), select');
         formElements.forEach(element => {
-            if (element.id !== 'playlist_uri' && element.id !== 'weekdays') {
+            if (element.id !== 'playlist_uri') {
                 element.addEventListener('change', saveAlarmSettings);
             }
         });
@@ -335,7 +334,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    initializeWeekdayBubbles();
 
     // Initialize automatic device management
     initializeDeviceManager();

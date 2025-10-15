@@ -1,7 +1,7 @@
 """Event-driven alarm scheduler to replace minute-based polling.
 
-- Computes next alarm timestamp using existing WeekdayScheduler
-- Sleeps until just before trigger window instead of waking every minute
+- Computes next alarm timestamp using `AlarmTimeValidator`
+- Sleeps until just before the trigger window instead of waking every minute
 - Reacts immediately to config changes via thread-safe config change listener
 - Uses ALARM_TRIGGER_WINDOW_MINUTES for final execution window
 """
@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any
 import logging
 
 from .alarm import execute_alarm
-from .scheduler import WeekdayScheduler, AlarmTimeValidator
+from .scheduler import AlarmTimeValidator
 from ..config import load_config
 from ..constants import ALARM_TRIGGER_WINDOW_MINUTES
 from ..utils.thread_safety import get_thread_safe_config_manager
@@ -66,11 +66,8 @@ class AlarmScheduler:
         alarm_time = cfg.get("time")
         if not alarm_time or not AlarmTimeValidator.validate_time_format(alarm_time):
             return None
-        features = cfg.get("features", {})
-        recurring_enabled = bool(features.get("recurring_alarm_enabled", False))
-        weekdays = cfg.get("weekdays", []) if recurring_enabled else []
         try:
-            next_dt = WeekdayScheduler.get_next_alarm_date(alarm_time, weekdays)
+            next_dt = AlarmTimeValidator.get_next_alarm_date(alarm_time)
             return next_dt
         except Exception as e:
             _logger.warning(f"Failed to compute next alarm: {e}")

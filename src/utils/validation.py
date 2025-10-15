@@ -12,7 +12,7 @@ Provides comprehensive input validation for all user inputs including:
 
 import re
 import datetime
-from typing import Union, Optional, List, Dict, Any
+from typing import Union, Optional, Dict, Any
 from dataclasses import dataclass
 
 @dataclass
@@ -215,51 +215,6 @@ class InputValidator:
         return ValidationResult(True, value, "", field_name)
     
     @classmethod
-    def validate_weekdays(cls, value: Union[str, List[int], None], field_name: str = "weekdays") -> ValidationResult:
-        """Validate weekday selection.
-        
-        Args:
-            value: Weekdays to validate (comma-separated string or list)
-            field_name: Name of the field for error messages
-            
-        Returns:
-            ValidationResult: Validation result with cleaned value or error
-        """
-        if not value:
-            return ValidationResult(True, [], "", field_name)
-        
-        try:
-            if isinstance(value, str):
-                # Parse comma-separated string
-                if not value.strip():
-                    return ValidationResult(True, [], "", field_name)
-                weekdays = [int(day.strip()) for day in value.split(',') if day.strip()]
-            elif isinstance(value, list):
-                weekdays = [int(day) for day in value]
-            else:
-                return ValidationResult(False, None, f"{field_name} must be a string or list", field_name)
-            
-            # Validate weekday values (0-6)
-            invalid_days = [day for day in weekdays if day < 0 or day > 6]
-            if invalid_days:
-                return ValidationResult(
-                    False, None, 
-                    f"{field_name} contains invalid weekday values: {invalid_days} (must be 0-6)", 
-                    field_name
-                )
-            
-            # Remove duplicates and sort
-            clean_weekdays = sorted(list(set(weekdays)))
-            return ValidationResult(True, clean_weekdays, "", field_name)
-            
-        except (ValueError, TypeError) as e:
-            return ValidationResult(
-                False, None, 
-                f"{field_name} contains invalid values (must be numbers 0-6)", 
-                field_name
-            )
-    
-    @classmethod
     def validate_boolean(cls, value: Union[str, bool, None], field_name: str = "enabled") -> ValidationResult:
         """Validate boolean input.
         
@@ -336,21 +291,6 @@ def validate_alarm_config(form_data: Dict[str, Any]) -> Dict[str, Any]:
     if not device_result.is_valid:
         raise ValidationError(device_result.field_name, device_result.error)
     validated['device_name'] = device_result.value
-    
-    # Weekdays validation (preserve existing config when field omitted)
-    weekdays_raw = form_data.get('weekdays')
-    weekdays_result = InputValidator.validate_weekdays(weekdays_raw, 'weekdays')
-    if not weekdays_result.is_valid:
-        raise ValidationError(weekdays_result.field_name, weekdays_result.error)
-    weekdays_value = weekdays_result.value
-    if weekdays_raw is None:
-        try:
-            from ..config import load_config  # Local import to avoid circular dependency
-            existing_config = load_config()
-            weekdays_value = existing_config.get('weekdays', weekdays_value)
-        except Exception:
-            pass
-    validated['weekdays'] = weekdays_value
     
     # Boolean fields
     for field in ['enabled', 'fade_in', 'shuffle']:

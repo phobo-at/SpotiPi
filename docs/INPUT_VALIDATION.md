@@ -53,13 +53,6 @@ validated_data = validate_alarm_config(request.form)  # ✅ Comprehensive valida
 ❌ "Device<>Name" -> "device_name contains invalid characters"
 ```
 
-#### **Weekday Validation**
-```python
-# Weekdays as integers 0-6 (Monday-Sunday)
-✅ [0,1,2,3,4] -> Valid (Weekdays)
-❌ [0,1,2,3,4,7,8] -> "weekdays contains invalid weekday values: [7, 8]"
-```
-
 ### 3. **Updated Endpoints**
 
 #### **Before (Vulnerable)**

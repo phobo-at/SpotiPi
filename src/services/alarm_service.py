@@ -6,15 +6,14 @@ Handles all alarm-related business logic including scheduling,
 validation, execution, and status management.
 """
 
-import time
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Dict, Any, Optional
+from dataclasses import dataclass
 
 from . import BaseService, ServiceResult
 from ..config import load_config, save_config
 from ..core.alarm import execute_alarm
-from ..core.scheduler import WeekdayScheduler, AlarmTimeValidator
+from ..core.scheduler import AlarmTimeValidator
 from ..utils.validation import validate_alarm_config, ValidationError
 
 @dataclass
@@ -22,29 +21,18 @@ class AlarmInfo:
     """Structured alarm information."""
     enabled: bool
     time: Optional[str]
-    weekdays: List[int]
     device_name: Optional[str]
-    device_id: Optional[str]
     playlist_uri: Optional[str]
     volume: int
     next_execution: Optional[datetime]
     is_scheduled: bool
-    recurring_enabled: bool = False
-    active_weekdays: List[int] = field(default_factory=list)
 
 class AlarmService(BaseService):
     """Service for managing alarms and scheduling."""
     
     def __init__(self):
         super().__init__("alarm")
-        self.scheduler = WeekdayScheduler()
         self.validator = AlarmTimeValidator()
-    
-    @staticmethod
-    def _is_recurring_enabled(config: Dict[str, Any]) -> bool:
-        """Feature toggle for recurring alarm support."""
-        features = config.get("features", {})
-        return bool(features.get("recurring_alarm_enabled", False))
     
     def get_alarm_status(self) -> ServiceResult:
         """Get comprehensive alarm status information."""
@@ -54,28 +42,18 @@ class AlarmService(BaseService):
             # Calculate next alarm execution
             next_alarm = None
             is_scheduled = False
-            recurring_enabled = self._is_recurring_enabled(config)
-            stored_weekdays = config.get("weekdays", [])
-            active_weekdays = stored_weekdays if recurring_enabled else []
-            
             if config.get("enabled") and config.get("time"):
-                next_alarm = self.scheduler.get_next_alarm_date(
-                    config["time"], active_weekdays
-                )
+                next_alarm = AlarmTimeValidator.get_next_alarm_date(config["time"])
                 is_scheduled = next_alarm is not None
             
             alarm_info = AlarmInfo(
                 enabled=config.get("enabled", False),
                 time=config.get("time"),
-                weekdays=stored_weekdays,
                 device_name=config.get("device_name"),
-                device_id=config.get("device_id"),
                 playlist_uri=config.get("playlist_uri"),
-                volume=config.get("volume", 50),
+                volume=config.get("alarm_volume", 50),
                 next_execution=next_alarm,
-                is_scheduled=is_scheduled,
-                recurring_enabled=recurring_enabled,
-                active_weekdays=active_weekdays
+                is_scheduled=is_scheduled
             )
             
             return self._success_result(
@@ -178,52 +156,6 @@ class AlarmService(BaseService):
         except Exception as e:
             return self._handle_error(e, "validate_alarm_time")
     
-    def get_next_alarms(self, days: int = 7) -> ServiceResult:
-        """Get next scheduled alarms for the specified number of days."""
-        try:
-            config = load_config()
-            
-            if not config.get("enabled") or not config.get("time"):
-                return self._success_result(
-                    data=[],
-                    message="No alarms scheduled"
-                )
-            
-            recurring_enabled = self._is_recurring_enabled(config)
-            weekdays = config.get("weekdays", [])
-            if not recurring_enabled or not weekdays:
-                return self._success_result(
-                    data=[],
-                    message="Recurring alarms are disabled"
-                )
-            
-            next_alarms = []
-            current_date = datetime.now().date()
-            
-            for i in range(days):
-                check_date = current_date + timedelta(days=i)
-                weekday_index = check_date.weekday()
-
-                if weekday_index in weekdays:
-                    alarm_datetime = self.scheduler.get_next_alarm_date(
-                        config["time"], [weekday_index]
-                    )
-                    if alarm_datetime:
-                        next_alarms.append({
-                            "date": check_date.isoformat(),
-                            "weekday": WeekdayScheduler.get_weekday_name(weekday_index),
-                            "time": config["time"],
-                            "datetime": alarm_datetime.isoformat()
-                        })
-            
-            return self._success_result(
-                data=next_alarms,
-                message=f"Found {len(next_alarms)} scheduled alarms in the next {days} days"
-            )
-            
-        except Exception as e:
-            return self._handle_error(e, "get_next_alarms")
-    
     def disable_alarm(self) -> ServiceResult:
         """Disable the alarm system."""
         try:
@@ -248,14 +180,6 @@ class AlarmService(BaseService):
                 return self._error_result(
                     "Cannot enable alarm: No time configured",
                     error_code="MISSING_TIME"
-                )
-            
-            recurring_enabled = self._is_recurring_enabled(config)
-            
-            if recurring_enabled and not config.get("weekdays"):
-                return self._error_result(
-                    "Cannot enable alarm: No weekdays selected",
-                    error_code="MISSING_WEEKDAYS"
                 )
             
             if not (config.get("device_name") or config.get("device_id")):
@@ -285,21 +209,19 @@ class AlarmService(BaseService):
             if not base_health.success:
                 return base_health
             
-            # Check scheduler
-            scheduler_ok = self.scheduler is not None
-            validator_ok = self.validator is not None
-            
-            # Check config accessibility
             config = load_config()
             config_ok = config is not None
+            time_ok = False
+            if config_ok:
+                time_value = config.get("time")
+                time_ok = bool(time_value) and self.validator.validate_time_format(time_value)
             
             health_data = {
                 "service": "alarm",
-                "status": "healthy" if all([scheduler_ok, validator_ok, config_ok]) else "degraded",
+                "status": "healthy" if all([config_ok, time_ok]) else "degraded",
                 "components": {
-                    "scheduler": "ok" if scheduler_ok else "error",
-                    "validator": "ok" if validator_ok else "error",
-                    "config": "ok" if config_ok else "error"
+                    "config": "ok" if config_ok else "error",
+                    "time_format": "ok" if time_ok else "error",
                 }
             }
             

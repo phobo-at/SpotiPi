@@ -11,7 +11,7 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 ## ✨ Features
 
 - 🎵 **Spotify Integration** - Wake up to any playlist, album, or track
-- ⏰ **Smart Alarms** - One-shot alarms by default with optional recurring scheduling (feature flag)
+- ⏰ **Smart Alarms** - Single-use alarms that automatically disable after ringing
 - 😴 **Sleep Timer** - Peaceful fade-out for better sleep
 - 📱 **Mobile First** - Responsive web interface, PWA support
 - 🍓 **Pi Optimized** - Auto-detection and SD-card protection
@@ -74,18 +74,6 @@ SPOTIPI_DEVICE_TTL=10                      # Spotify device cache TTL in seconds
 ```
 
 Adjust them freely without touching the code—set the values in `.env`, restart the service, and you’re done.
-
-### Alarm Behaviour Flags
-
-Recurring alarms are currently hidden behind a feature flag so they stay ready for a future configuration screen:
-
-```json
-"features": {
-  "recurring_alarm_enabled": false
-}
-```
-
-Leave the flag at `false` for the single-use experience. When you flip it to `true`, the stored weekday list becomes active again and the scheduler resumes recurring operation.
 
 ## 🍓 Raspberry Pi Setup
 

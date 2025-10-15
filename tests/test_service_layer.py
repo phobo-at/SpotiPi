@@ -65,7 +65,7 @@ def test_alarm_service_integration(client):
     assert response.status_code == 200
 
     alarm = response.get_json()["data"]
-    for field in ["enabled", "time", "weekdays", "alarm_volume"]:
+    for field in ["enabled", "time", "alarm_volume", "next_alarm"]:
         assert field in alarm
 
 

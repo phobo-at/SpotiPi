@@ -27,19 +27,12 @@ export function saveAlarmSettings() {
   const playlistUri = DOM.getElement('playlist_uri')?.value || '';
   formData.set('playlist_uri', playlistUri);
   
-  // Weekdays from hidden field
-  const weekdaysElement = DOM.getElement('weekdays');
-  if (weekdaysElement) {
-    formData.set('weekdays', weekdaysElement.value || '');
-  }
-  
   // Debug output
   console.log('💾 Saving alarm settings:', {
     enabled: formData.get('enabled'),
     time: formData.get('time'),
     device_name: formData.get('device_name'),
     playlist_uri: formData.get('playlist_uri'),
-    weekdays: formData.get('weekdays'),
     fade_in: formData.get('fade_in'),
     shuffle: formData.get('shuffle'),
     alarm_volume: formData.get('alarm_volume')

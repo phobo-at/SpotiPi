@@ -6,13 +6,6 @@
   "alarm_volume": 50,
   "fade_in": false,
   "shuffle": false,
-  "weekdays": [
-    1,
-    2,
-    3,
-    4,
-    5
-  ],
   "sleep_volume": 25,
   "sleep_default_duration": 15,
   "sleep_playlist_uri": "",
@@ -20,9 +13,6 @@
   "environment": "development",
   "debug": true,
   "log_level": "INFO",
-  "features": {
-    "recurring_alarm_enabled": false
-  },
   "sleep_shuffle": true,
   "port": 5001,
   "host": "127.0.0.1",

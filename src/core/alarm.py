@@ -33,31 +33,6 @@ def log(message: str) -> None:
     """
     logger.info(message)
 
-def is_weekday_enabled(config: Dict[str, Any], current_weekday: int) -> bool:
-    """Check if alarm should trigger for current weekday.
-    
-    Args:
-        config: Alarm configuration dictionary
-        current_weekday: Current weekday (0=Monday, 6=Sunday)
-    
-    Returns:
-        bool: True if alarm should trigger today, False otherwise
-    """
-    features = config.get("features", {})
-    recurring_enabled = bool(features.get("recurring_alarm_enabled", False))
-    weekdays = config.get("weekdays", []) if recurring_enabled else []
-    
-    # If recurring alarms are disabled via feature flag, treat alarm as single-use
-    if not recurring_enabled:
-        return True
-    
-    # If no specific weekdays set, alarm triggers daily
-    if not weekdays:
-        return True
-    
-    # Check if current weekday is in enabled list
-    return current_weekday in weekdays
-
 def execute_alarm(*, force: bool = False) -> bool:
     """Main alarm execution function.
 
@@ -91,11 +66,6 @@ def execute_alarm(*, force: bool = False) -> bool:
         debug("Alarm not enabled -> skip")
         return False
 
-    current_weekday = now.weekday()  # 0=Mon, 6=Sun
-    if not force and not is_weekday_enabled(config, current_weekday):
-        debug(f"Weekday {current_weekday} not enabled (weekdays={config.get('weekdays')})")
-        return False
-
     # From here on we log normal info
     log("🚀 SpotiPi Wakeup started")
     log(f"👤 User: {os.getenv('USER', 'Unknown')}")
@@ -104,14 +74,11 @@ def execute_alarm(*, force: bool = False) -> bool:
 
     now_str = now.strftime("%H:%M")
     log(f"⏰ Current time: {now_str}")
-    log(f"📅 Current weekday: {current_weekday} (0=Mon, 6=Sun)")
     # Log only key fields to reduce noise
-    recurring_enabled = bool(config.get("features", {}).get("recurring_alarm_enabled", False))
     safe_cfg = {
         k: config.get(k)
-        for k in ["enabled", "time", "weekdays", "device_name", "playlist_uri", "alarm_volume", "fade_in", "shuffle"]
+        for k in ["enabled", "time", "device_name", "playlist_uri", "alarm_volume", "fade_in", "shuffle"]
     }
-    safe_cfg["recurring_alarm_enabled"] = recurring_enabled
     safe_cfg["has_cached_device"] = bool(config.get("last_known_devices"))
     log(f"📄 Loaded config (sanitized): {safe_cfg}")
 
@@ -243,18 +210,3 @@ def execute_alarm(*, force: bool = False) -> bool:
         return False
     finally:
         debug("Alarm evaluation finished")
-
-
-def get_weekday_name(weekday: int) -> str:
-    """Get weekday name from number.
-    
-    Args:
-        weekday: Weekday number (0=Monday, 6=Sunday)
-        
-    Returns:
-        str: Human-readable weekday name
-    """
-    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    return weekdays[weekday] if 0 <= weekday <= 6 else "Unknown"
-
-## Removed legacy validate_alarm_config (duplicated by utils.validation.validate_alarm_config)

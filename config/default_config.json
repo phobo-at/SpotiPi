@@ -6,15 +6,11 @@
   "alarm_volume": 20,
   "fade_in": false,
   "shuffle": false,
-  "weekdays": [],
   "sleep_volume": 30,
   "sleep_default_duration": 30,
   "sleep_playlist_uri": "",
   "sleep_device_name": "",
   "environment": "default",
   "debug": false,
-  "log_level": "INFO",
-  "features": {
-    "recurring_alarm_enabled": false
-  }
+  "log_level": "INFO"
 }

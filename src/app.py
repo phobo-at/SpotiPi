@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 # Import from new structure - use relative imports since we're in src/
 from .config import load_config, save_config
 from .core.alarm import execute_alarm
-from .core.scheduler import WeekdayScheduler, AlarmTimeValidator
+from .core.scheduler import AlarmTimeValidator
 from .core.alarm_scheduler import start_alarm_scheduler as start_event_alarm_scheduler
 from .utils.logger import setup_logger, setup_logging
 from .utils.validation import validate_alarm_config, validate_sleep_config, validate_volume_only, ValidationError
@@ -316,7 +316,6 @@ def inject_global_vars():
         'translations': translations,
         't': template_t,
         'lang': user_language,
-        'weekday_scheduler': WeekdayScheduler,
         'static_css_path': '/static/css/',
         'static_js_path': '/static/js/',
         'static_icons_path': '/static/icons/',
@@ -404,18 +403,11 @@ def index():
     playlists = []
     current_track = None
     
-    # Determine active weekdays based on feature flag
-    recurring_enabled = bool(config.get('features', {}).get('recurring_alarm_enabled', False))
-    active_weekdays = config.get('weekdays', []) if recurring_enabled else []
-    
     # Calculate next alarm time
     next_alarm_info = ""
     if config.get('enabled') and config.get('time'):
         try:
-            next_alarm_info = AlarmTimeValidator.format_time_until_alarm(
-                config['time'],
-                active_weekdays
-            )
+            next_alarm_info = AlarmTimeValidator.format_time_until_alarm(config['time'])
         except Exception:
             next_alarm_info = "Next alarm calculation error"
     
@@ -428,19 +420,12 @@ def index():
         from .utils.translations import t
         return t(key, user_language, **kwargs)
     
-    if recurring_enabled:
-        weekdays_display = WeekdayScheduler.format_weekdays_display(active_weekdays)
-    else:
-        weekdays_display = template_t('single_alarm_mode_label')
-    
     template_data = {
         'config': config,
         'devices': devices,
         'playlists': playlists,
         'current_track': current_track,
-        'weekdays_display': weekdays_display,
         'next_alarm_info': next_alarm_info,
-        'recurring_alarm_enabled': recurring_enabled,
         'initial_volume': initial_volume,
         'error_message': session.pop('error_message', None),
         'success_message': session.pop('success_message', None),
@@ -512,28 +497,23 @@ def save_alarm():
             return api_response(False, message=t_api("invalid_time_format", request), status=400, error_code="time_format")
         if not save_config(config):
             return api_response(False, message=t_api("failed_save_config", request), status=500, error_code="save_failed")
-        recurring_enabled = bool(config.get('features', {}).get('recurring_alarm_enabled', False))
-        active_weekdays = config.get('weekdays', []) if recurring_enabled else []
-        if recurring_enabled:
-            weekdays_info = WeekdayScheduler.format_weekdays_display(active_weekdays)
-        else:
-            weekdays_info = t_api("single_alarm_mode_label", request)
         logging.info(
-            "Alarm settings saved: Active=%s Time=%s Volume=%s%% Mode=%s Weekdays=%s",
+            "Alarm settings saved: Active=%s Time=%s Volume=%s%% Device=%s",
             config['enabled'],
             config['time'],
             config['alarm_volume'],
-            "recurring" if recurring_enabled else "single-run",
-            active_weekdays if recurring_enabled else []
+            config.get("device_name", "")
         )
+        next_alarm_text = ""
+        if config.get("enabled") and config.get("time"):
+            next_alarm_text = AlarmTimeValidator.format_time_until_alarm(config["time"])
         return api_response(True, data={
             "enabled": config["enabled"],
             "time": config["time"],
             "alarm_volume": config["alarm_volume"],
-            "weekdays": config["weekdays"],
-            "active_weekdays": active_weekdays,
-            "recurring_alarm_enabled": recurring_enabled,
-            "weekdays_display": weekdays_info
+            "next_alarm": next_alarm_text,
+            "playlist_uri": config.get("playlist_uri", ""),
+            "device_name": config.get("device_name", "")
         }, message=t_api("alarm_settings_saved", request))
     except ValidationError as e:
         logging.warning("Alarm validation error: %s - %s", e.field_name, e.message)
@@ -571,22 +551,13 @@ def alarm_status():
                               error_code="alarm_status_exception")
     else:
         # Basic status (legacy format)
-        recurring_enabled = bool(config.get("features", {}).get("recurring_alarm_enabled", False))
-        active_weekdays = config.get("weekdays", []) if recurring_enabled else []
         next_alarm_time = ""
         if config.get("enabled") and config.get("time"):
-            next_alarm_time = AlarmTimeValidator.format_time_until_alarm(
-                config["time"], 
-                active_weekdays
-            )
+            next_alarm_time = AlarmTimeValidator.format_time_until_alarm(config["time"])
         return api_response(True, data={
             "enabled": config.get("enabled", False),
             "time": config.get("time", "07:00"),
             "alarm_volume": config.get("alarm_volume", 50),
-            "weekdays": config.get("weekdays", []),
-            "active_weekdays": active_weekdays,
-            "recurring_alarm_enabled": recurring_enabled,
-            "weekdays_display": WeekdayScheduler.format_weekdays_display(active_weekdays) if recurring_enabled else t_api("single_alarm_mode_label", request),
             "next_alarm": next_alarm_time,
             "playlist_uri": config.get("playlist_uri", ""),
             "device_name": config.get("device_name", ""),
@@ -610,23 +581,14 @@ def api_dashboard_status():
 
     config = load_config()
 
-    recurring_enabled = bool(config.get("features", {}).get("recurring_alarm_enabled", False))
-    active_weekdays = config.get("weekdays", []) if recurring_enabled else []
     next_alarm_time = ""
     if config.get("enabled") and config.get("time"):
-        next_alarm_time = AlarmTimeValidator.format_time_until_alarm(
-            config["time"],
-            active_weekdays
-        )
+        next_alarm_time = AlarmTimeValidator.format_time_until_alarm(config["time"])
 
     alarm_payload = {
         "enabled": config.get("enabled", False),
         "time": config.get("time", "07:00"),
         "alarm_volume": config.get("alarm_volume", 50),
-        "weekdays": config.get("weekdays", []),
-        "active_weekdays": active_weekdays,
-        "recurring_alarm_enabled": recurring_enabled,
-        "weekdays_display": WeekdayScheduler.format_weekdays_display(active_weekdays) if recurring_enabled else t_api("single_alarm_mode_label", request),
         "next_alarm": next_alarm_time,
         "playlist_uri": config.get("playlist_uri", ""),
         "device_name": config.get("device_name", "")
@@ -1268,7 +1230,6 @@ def not_found_error(error):
                          config={},
                          devices=[],
                          playlists=[],
-                         weekdays_display="",
                          next_alarm_info="",
                          sleep_status={}), 404
 
@@ -1280,7 +1241,6 @@ def internal_error(error):
                          config={},
                          devices=[],
                          playlists=[],
-                         weekdays_display="",
                          next_alarm_info="",
                          sleep_status={}), 500
 

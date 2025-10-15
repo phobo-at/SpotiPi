@@ -51,8 +51,7 @@ def test_status_check_rate_limit(client):
 def test_config_change_rate_limit(client):
     payload = {
         "time": "07:00",
-        "enabled": "true",
-        "weekdays": "1,2,3,4,5"
+        "enabled": "true"
     }
 
     responses = [client.post('/save_alarm', data=payload) for _ in range(5)]

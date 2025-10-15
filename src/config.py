@@ -102,14 +102,10 @@ class ConfigManager:
             "alarm_volume": 50,
             "fade_in": False,
             "shuffle": False,
-            "weekdays": [],
             "debug": False,
             "log_level": "INFO",
             "timezone": os.getenv("SPOTIPI_TIMEZONE", "Europe/Vienna"),
             "last_known_devices": {},
-            "features": {
-                "recurring_alarm_enabled": False
-            },
         }
         
         for key, default_value in defaults.items():
@@ -122,27 +118,11 @@ class ConfigManager:
         except (ValueError, TypeError):
             config["alarm_volume"] = 50
         
-        # Validate feature flags
-        features = config.get("features", {})
-        if not isinstance(features, dict):
-            features = {}
-        features["recurring_alarm_enabled"] = bool(features.get("recurring_alarm_enabled", False))
-        config["features"] = features
-
         # Validate last known devices cache
         last_known_devices = config.get("last_known_devices", {})
         if not isinstance(last_known_devices, dict):
             last_known_devices = {}
         config["last_known_devices"] = last_known_devices
-        
-        # Validate weekdays
-        weekdays = config.get("weekdays", [])
-        if isinstance(weekdays, list):
-            # Remove duplicates and filter valid weekdays (0-6)
-            valid_weekdays = list(set([day for day in weekdays if isinstance(day, int) and 0 <= day <= 6]))
-            config["weekdays"] = sorted(valid_weekdays)
-        else:
-            config["weekdays"] = []
         
         # Validate time format
         try:
