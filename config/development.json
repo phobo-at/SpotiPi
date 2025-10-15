@@ -1,11 +1,11 @@
 {
-  "enabled": false,
-  "time": "20:00",
-  "playlist_uri": "spotify:playlist:4I33WFTJXYssFCJzfL1YY1",
-  "device_name": "Forte",
-  "alarm_volume": 34,
-  "fade_in": true,
-  "shuffle": true,
+  "enabled": true,
+  "time": "07:00",
+  "playlist_uri": "",
+  "device_name": "",
+  "alarm_volume": 50,
+  "fade_in": false,
+  "shuffle": false,
   "weekdays": [
     1,
     2,

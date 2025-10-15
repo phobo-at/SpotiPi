@@ -328,8 +328,9 @@ from typing import Any
 
 
 def _iso_timestamp_now() -> str:
-    """Return ISO 8601 timestamp in the configured local timezone."""
-    return datetime.datetime.now(tz=get_local_timezone()).isoformat()
+    """Return ISO 8601 timestamp in UTC with a trailing Z."""
+    now_utc = datetime.datetime.now(tz=datetime.timezone.utc)
+    return now_utc.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def api_response(success: bool, *, data: Any | None = None, message: str = "", status: int = 200, error_code: str | None = None):

@@ -152,10 +152,27 @@ class MusicLibraryCache:
             CacheType.ARTISTS: section_ttl_seconds,
             CacheType.DEVICES: device_ttl,
         }
-        
+
         # Auto-cleanup interval
         self._cleanup_interval = 300  # 5 minutes
-        
+
+        # Device cache persistence controls (reduce SD-card wear on Pi)
+        self._device_persist_enabled = os.getenv("SPOTIPI_DEVICE_DISK_CACHE", "1") != "0"
+        try:
+            self._device_persist_interval = max(
+                30, int(os.getenv("SPOTIPI_DEVICE_DISK_PERSIST_SECONDS", "180"))
+            )
+        except ValueError:
+            self._device_persist_interval = 180
+        try:
+            self._device_disk_min_ttl = max(
+                30, int(os.getenv("SPOTIPI_DEVICE_DISK_MIN_TTL", "60"))
+            )
+        except ValueError:
+            self._device_disk_min_ttl = 60
+        self._device_last_persist: Dict[str, float] = {}
+        self._device_last_digest: Dict[str, str] = {}
+
         self.logger.info("🎵 Unified Music Library Cache initialized")
 
     def _scoped_cache_key(self, namespace: str, token: Optional[str]) -> str:
@@ -232,7 +249,7 @@ class MusicLibraryCache:
                 'source': source,
             }
             self.logger.debug(f"💾 Cached {cache_key} ({cache_type.value}) TTL={ttl}s")
-            
+
             if cache_type == CacheType.DEVICES:
                 self._persist_device_cache(cache_key, data)
 
@@ -244,8 +261,40 @@ class MusicLibraryCache:
         return self.cache_dir / f"{cache_key}.json"
 
     def _persist_device_cache(self, cache_key: str, data: Any) -> None:
+        if not self._device_persist_enabled:
+            return
+
+        ttl = self._ttl_config.get(CacheType.DEVICES, 0)
+        if ttl < self._device_disk_min_ttl:
+            # TTL too short to justify disk writes (prevents hot-loop writes on Pi Zero)
+            return
+
+        now = time.time()
+        last_ts = self._device_last_persist.get(cache_key, 0.0)
+        if now - last_ts < self._device_persist_interval:
+            return
+
+        digest: Optional[str] = None
+        try:
+            normalized = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
+            digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        except (TypeError, ValueError):
+            # Fall back to time-based gating when data is not JSON-serialisable
+            pass
+
+        if digest and self._device_last_digest.get(cache_key) == digest:
+            self._device_last_persist[cache_key] = now
+            return
+
         try:
             write_json_cache(str(self._device_cache_path(cache_key)), data)
+            self._device_last_persist[cache_key] = now
+            if digest:
+                self._device_last_digest[cache_key] = digest
+            meta = self._metadata.get(cache_key)
+            if meta is not None:
+                meta["source"] = "memory+disk"
+                meta["disk_persisted_at"] = now
             self.logger.debug("💾 Persisted devices to disk cache")
         except Exception as exc:
             self.logger.debug(f"⚠️ Could not persist device cache: {exc}")
@@ -285,8 +334,16 @@ class MusicLibraryCache:
                 'ttl': entry.ttl,
                 'cache_type': CacheType.DEVICES.value,
                 'hash': None,
-                'source': 'disk'
+                'source': 'disk',
+                'disk_persisted_at': cached_at
             }
+            self._device_last_persist[cache_key] = cached_at
+            try:
+                normalized = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
+                digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+                self._device_last_digest[cache_key] = digest
+            except (TypeError, ValueError):
+                pass
             self.logger.debug("📀 Loaded devices from disk cache")
             return entry
         except Exception as exc:

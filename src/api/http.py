@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Centralised HTTP session configuration for Spotify API access."""
+"""Centralised, thread-safe HTTP session configuration for Spotify API access."""
 
 import logging
 import os
 import platform
+import threading
+import weakref
 from threading import RLock
 from typing import Any, Callable, Optional, Tuple, Union
 
@@ -15,7 +17,7 @@ TimeoutValue = Union[float, Tuple[float, float]]
 
 _LOGGER = logging.getLogger("spotify.http")
 _SESSION_LOCK = RLock()
-_SESSION: Optional[requests.Session] = None
+_SESSION_PROXY: Optional["ThreadLocalSessionProxy"] = None
 _CONFIG_LOGGED = False
 
 
@@ -159,14 +161,62 @@ def build_session() -> requests.Session:
     return session
 
 
+class ThreadLocalSessionProxy:
+    """Provide a requests.Session-like interface backed by thread-local sessions."""
+
+    def __init__(self, factory: Callable[[], requests.Session]):
+        self._factory = factory
+        self._local = threading.local()
+        self._sessions = weakref.WeakSet()
+        self._sessions_lock = RLock()
+
+    def _ensure_session(self) -> requests.Session:
+        session = getattr(self._local, "session", None)
+        if session is None:
+            session = self._factory()
+            self._local.session = session
+            with self._sessions_lock:
+                self._sessions.add(session)
+        return session
+
+    def configure(self, factory: Callable[[], requests.Session]) -> None:
+        """Replace the session factory and drop any existing sessions."""
+        with self._sessions_lock:
+            for session in list(self._sessions):
+                try:
+                    session.close()
+                except Exception:
+                    pass
+            self._sessions = weakref.WeakSet()
+        self._factory = factory
+        self._local = threading.local()
+
+    def close_all(self) -> None:
+        """Close all tracked sessions (used during shutdown/tests)."""
+        with self._sessions_lock:
+            for session in list(self._sessions):
+                try:
+                    session.close()
+                except Exception:
+                    pass
+            self._sessions = weakref.WeakSet()
+        self._local = threading.local()
+
+    def request(self, *args: Any, **kwargs: Any) -> requests.Response:
+        return self._ensure_session().request(*args, **kwargs)
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(self._ensure_session(), item)
+
+
 def get_http_session() -> requests.Session:
-    """Return the shared HTTP session, creating it if necessary."""
-    global _SESSION
-    if _SESSION is None:
+    """Return a thread-safe session proxy, creating it if necessary."""
+    global _SESSION_PROXY
+    if _SESSION_PROXY is None:
         with _SESSION_LOCK:
-            if _SESSION is None:
-                _SESSION = build_session()
-    return _SESSION
+            if _SESSION_PROXY is None:
+                _SESSION_PROXY = ThreadLocalSessionProxy(build_session)
+    return _SESSION_PROXY
 
 
 def set_http_session(session: requests.Session) -> None:
@@ -176,9 +226,12 @@ def set_http_session(session: requests.Session) -> None:
     Args:
         session: Preconfigured session instance
     """
-    global _SESSION, _CONFIG_LOGGED
+    global _SESSION_PROXY, _CONFIG_LOGGED
     with _SESSION_LOCK:
-        _SESSION = session
+        if _SESSION_PROXY is None:
+            _SESSION_PROXY = ThreadLocalSessionProxy(lambda: session)
+        else:
+            _SESSION_PROXY.configure(lambda: session)
         _CONFIG_LOGGED = False
         _log_configuration(session)
 

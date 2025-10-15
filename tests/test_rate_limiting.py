@@ -15,13 +15,6 @@ import pytest
 from src.app import app
 
 
-@pytest.fixture(scope="module")
-def client():
-    app.config["TESTING"] = True
-    with app.test_client() as client:
-        yield client
-
-
 @pytest.fixture(autouse=True)
 def reset_rate_limits(client):
     """Ensure each test starts with a clean rate limiter state."""

@@ -1,20 +1,8 @@
-import json
-from typing import List
-from flask import Flask
-import pytest
-
-# Import the app
-from src.app import app as flask_app
-
-@pytest.fixture(scope="module")
-def client():
-    flask_app.config.update({"TESTING": True})
-    with flask_app.test_client() as c:
-        yield c
+from typing import Optional
 
 # Helper to assert unified response shape
 
-def assert_api_envelope(resp, *, expect_success: bool | None = None):
+def assert_api_envelope(resp, *, expect_success: Optional[bool] = None):
     assert resp.status_code >= 200
     data = resp.get_json()
     assert isinstance(data, dict), "Response must be JSON object"
@@ -103,4 +91,3 @@ def test_sleep_status_contract(client):
     resp = client.get('/sleep_status')
     data = assert_api_envelope(resp, expect_success=True)
     assert 'data' in data
-
