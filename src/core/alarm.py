@@ -58,8 +58,11 @@ def is_weekday_enabled(config: Dict[str, Any], current_weekday: int) -> bool:
     # Check if current weekday is in enabled list
     return current_weekday in weekdays
 
-def execute_alarm() -> bool:
+def execute_alarm(*, force: bool = False) -> bool:
     """Main alarm execution function.
+
+    Args:
+        force: Skip enable/time window guards (used for manual triggers).
 
     Returns:
         bool: True if playback was started, False otherwise
@@ -84,12 +87,12 @@ def execute_alarm() -> bool:
         debug("Config is empty or could not be loaded")
         return False
 
-    if not config.get("enabled", False):
+    if not config.get("enabled", False) and not force:
         debug("Alarm not enabled -> skip")
         return False
 
     current_weekday = now.weekday()  # 0=Mon, 6=Sun
-    if not is_weekday_enabled(config, current_weekday):
+    if not force and not is_weekday_enabled(config, current_weekday):
         debug(f"Weekday {current_weekday} not enabled (weekdays={config.get('weekdays')})")
         return False
 
@@ -109,14 +112,19 @@ def execute_alarm() -> bool:
         for k in ["enabled", "time", "weekdays", "device_name", "playlist_uri", "alarm_volume", "fade_in", "shuffle"]
     }
     safe_cfg["recurring_alarm_enabled"] = recurring_enabled
+    safe_cfg["has_cached_device"] = bool(config.get("last_known_devices"))
     log(f"📄 Loaded config (sanitized): {safe_cfg}")
 
     # Time check
     try:
-        target_time = datetime.datetime.strptime(config["time"], "%H:%M")
+        time_str = config["time"]
+        target_time = datetime.datetime.strptime(time_str, "%H:%M")
     except (ValueError, KeyError) as e:
-        logger.error(f"❌ Invalid time format in config: {config.get('time')} - {e}")
-        return False
+        if not force:
+            logger.error(f"❌ Invalid time format in config: {config.get('time')} - {e}")
+            return False
+        debug(f"Invalid or missing time '{config.get('time')}' – forcing execution anyway")
+        target_time = now
 
     target_today = now.replace(
         hour=target_time.hour,
@@ -126,14 +134,14 @@ def execute_alarm() -> bool:
     )
     diff_minutes = (now - target_today).total_seconds() / 60
 
-    log(f"🎯 Target time: {config['time']}")
+    log(f"🎯 Target time: {config.get('time', 'unset')}")
     log(f"📏 Time difference: {diff_minutes:.2f} minutes")
 
-    if diff_minutes < 0:
+    if diff_minutes < 0 and not force:
         debug(f"Not yet within trigger window. diff={diff_minutes:.2f}m")
         return False
 
-    if diff_minutes > ALARM_TRIGGER_WINDOW_MINUTES:
+    if diff_minutes > ALARM_TRIGGER_WINDOW_MINUTES and not force:
         debug(f"Not within trigger window (+{ALARM_TRIGGER_WINDOW_MINUTES}m). diff={diff_minutes:.2f}m")
         return False
 
@@ -217,14 +225,15 @@ def execute_alarm() -> bool:
         log("✅ Playback started.")
 
         # Auto-disable alarm
-        try:
-            with config_transaction() as transaction:
-                current_config = transaction.load()
-                current_config["enabled"] = False
-                transaction.save(current_config)
-            log("🔄 Alarm automatically disabled after triggering (thread-safe)")
-        except Exception as e:
-            log(f"❌ Error disabling the alarm: {e}")
+        if not force:
+            try:
+                with config_transaction() as transaction:
+                    current_config = transaction.load()
+                    current_config["enabled"] = False
+                    transaction.save(current_config)
+                log("🔄 Alarm automatically disabled after triggering (thread-safe)")
+            except Exception as e:
+                log(f"❌ Error disabling the alarm: {e}")
 
         return True
 

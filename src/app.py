@@ -27,6 +27,7 @@ from .utils.validation import validate_alarm_config, validate_sleep_config, vali
 from .version import get_app_info, VERSION
 from .utils.translations import get_translations, get_user_language, t_api
 from .utils.library_utils import compute_library_hash, prepare_library_payload, slim_collection
+from .utils.timezone import get_local_timezone
 from .constants import ALARM_TRIGGER_WINDOW_MINUTES
 from .api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
@@ -324,9 +325,16 @@ def inject_global_vars():
 
 # Unified API response helper
 from typing import Any
+
+
+def _iso_timestamp_now() -> str:
+    """Return ISO 8601 timestamp in the configured local timezone."""
+    return datetime.datetime.now(tz=get_local_timezone()).isoformat()
+
+
 def api_response(success: bool, *, data: Any | None = None, message: str = "", status: int = 200, error_code: str | None = None):
     req_id = str(uuid.uuid4())
-    timestamp = datetime.datetime.utcnow().isoformat() + 'Z'
+    timestamp = _iso_timestamp_now()
     payload = {
         "success": success,
         "timestamp": timestamp,
@@ -596,7 +604,7 @@ def api_dashboard_status():
         cached = _dashboard_status_cache["data"]
         if cached is not None:
             cached_copy = copy.deepcopy(cached)
-            cached_copy["timestamp"] = datetime.datetime.utcnow().isoformat() + 'Z'
+            cached_copy["timestamp"] = _iso_timestamp_now()
             return api_response(True, data=cached_copy)
 
     config = load_config()
@@ -636,7 +644,7 @@ def api_dashboard_status():
         playback_payload = {"auth_required": True}
 
     response_payload = {
-        "timestamp": datetime.datetime.utcnow().isoformat() + 'Z',
+        "timestamp": _iso_timestamp_now(),
         "alarm": alarm_payload,
         "sleep": sleep_payload,
         "playback": playback_payload
@@ -1432,7 +1440,7 @@ def api_perf_metrics():
     try:
         metrics = perf_monitor.snapshot()
         payload = {
-            "timestamp": datetime.datetime.utcnow().isoformat() + 'Z',
+            "timestamp": _iso_timestamp_now(),
             "metrics": metrics
         }
         return api_response(True, data=payload)
@@ -1453,7 +1461,7 @@ def api_alarm_execute():
     configuration or verifying logging. Returns JSON with success flag.
     """
     try:
-        result = execute_alarm()
+        result = execute_alarm(force=True)
         return api_response(bool(result), data={"executed": bool(result)}, message="Alarm executed" if result else "Alarm conditions not met or failed", status=200 if result else 400, error_code=None if result else "alarm_not_executed")
     except Exception as e:
         logger.error(f"Error executing alarm manually: {e}")

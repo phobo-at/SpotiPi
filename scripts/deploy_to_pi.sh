@@ -23,7 +23,7 @@ LOCAL_PATH="${SPOTIPI_LOCAL_PATH:-$DEFAULT_LOCAL_PATH}"
 PI_PATH="${SPOTIPI_PI_PATH:-/home/pi/$APP_NAME}"
 
 # Service name (systemd)
-SERVICE_NAME="${SPOTIPI_SERVICE_NAME:-spotify-web.service}"
+SERVICE_NAME="${SPOTIPI_SERVICE_NAME:-spotipi.service}"
 
 REQUIRED_PATHS=(
   "run.py"

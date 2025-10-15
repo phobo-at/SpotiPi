@@ -135,7 +135,7 @@ class AlarmService(BaseService):
                 )
             
             # Execute the alarm
-            success = execute_alarm()
+            success = execute_alarm(force=True)
             
             if success:
                 return self._success_result(

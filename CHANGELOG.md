@@ -10,8 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🎯 Highlights
 - Made the runtime timezone configurable via `SPOTIPI_TIMEZONE` or the persisted config; alarm, scheduler and sleep timer now pick up changes immediately through a config-listener.
 - Hardened the Spotify token cache with a dedicated refresh lock and thread-safe metrics updates, eliminating duplicate refreshes under load.
+- Cached the last known Spotify device ID and reuse it when `/me/player/devices` times out, so alarms still fire even if Spotify is flaky overnight.
 - Reworked play/pause handling: the toggle now inspects the active device, passes it to the Spotify API and treats all 2xx responses as success, fixing the stuck-in-pause behaviour.
 - Tuned low-power defaults by extending playback/dashboard cache TTLs and relaxing playback request caching to reduce repeated Spotify calls on the Pi.
+- `.env` fallback: the Spotify API loader now falls back to the project root `.env` when the home-directory file is absent, fixing token refresh failures on local dev machines.
 - Trimmed TLS handshake noise by downgrading the HTTP-port warnings to debug in `TidyRequestHandler`.
 - Deployment script now parses rsync’s output format reliably, so the summary shows real counts for updated/created/deleted files.
 

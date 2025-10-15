@@ -106,6 +106,7 @@ class ConfigManager:
             "debug": False,
             "log_level": "INFO",
             "timezone": os.getenv("SPOTIPI_TIMEZONE", "Europe/Vienna"),
+            "last_known_devices": {},
             "features": {
                 "recurring_alarm_enabled": False
             },
@@ -127,6 +128,12 @@ class ConfigManager:
             features = {}
         features["recurring_alarm_enabled"] = bool(features.get("recurring_alarm_enabled", False))
         config["features"] = features
+
+        # Validate last known devices cache
+        last_known_devices = config.get("last_known_devices", {})
+        if not isinstance(last_known_devices, dict):
+            last_known_devices = {}
+        config["last_known_devices"] = last_known_devices
         
         # Validate weekdays
         weekdays = config.get("weekdays", [])

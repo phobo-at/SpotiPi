@@ -6,11 +6,12 @@
 - Uses ALARM_TRIGGER_WINDOW_MINUTES for final execution window
 """
 from __future__ import annotations
+import copy
 import os
 import threading
 import time
 import datetime as _dt
-from typing import Optional
+from typing import Optional, Dict, Any
 import logging
 
 from .alarm import execute_alarm
@@ -19,7 +20,7 @@ from ..config import load_config
 from ..constants import ALARM_TRIGGER_WINDOW_MINUTES
 from ..utils.thread_safety import get_thread_safe_config_manager
 from ..utils.timezone import get_local_timezone
-from ..api.spotify import ensure_token_valid
+from ..api.spotify import ensure_token_valid, get_access_token, get_device_id
 
 _logger = logging.getLogger("alarm_scheduler")
 LOCAL_TZ = get_local_timezone()
@@ -33,6 +34,7 @@ class AlarmScheduler:
         self._lock = threading.RLock()
         self._running = False
         self._last_computed: Optional[_dt.datetime] = None
+        self._last_config_snapshot: Optional[Dict[str, Any]] = None
 
     def start(self) -> None:
         with self._lock:
@@ -58,6 +60,7 @@ class AlarmScheduler:
 
     def _compute_next_alarm(self) -> Optional[_dt.datetime]:
         cfg = load_config()
+        self._last_config_snapshot = copy.deepcopy(cfg)
         if not cfg.get("enabled"):
             return None
         alarm_time = cfg.get("time")
@@ -72,6 +75,18 @@ class AlarmScheduler:
         except Exception as e:
             _logger.warning(f"Failed to compute next alarm: {e}")
             return None
+
+    def _prewarm_device_cache(self, token: str) -> None:
+        config_snapshot = self._last_config_snapshot or {}
+        device_name = config_snapshot.get("device_name")
+        if not device_name:
+            return
+        try:
+            device_id = get_device_id(token, device_name)
+            if device_id:
+                _logger.debug("Device cache prewarm succeeded for %s", device_name)
+        except Exception as exc:  # pragma: no cover - best-effort
+            _logger.debug("Device cache prewarm failed for %s: %s", device_name, exc)
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -105,11 +120,16 @@ class AlarmScheduler:
                 if woke_early:
                     _logger.debug("Woken before pre-warm due to config change – recompute.")
                     continue
+                token_value: Optional[str] = None
                 try:
-                    ensure_token_valid()
+                    token_value = ensure_token_valid()
                     _logger.info("Spotify token pre-warm executed (T-%ss).", PREWARM_SECONDS)
                 except Exception as exc:
                     _logger.warning("Token pre-warm failed: %s", exc)
+                if not token_value:
+                    token_value = get_access_token()
+                if token_value:
+                    self._prewarm_device_cache(token_value)
 
                 now = _dt.datetime.now(tz=LOCAL_TZ)
                 seconds_until = (next_alarm - now).total_seconds()

@@ -40,7 +40,7 @@ Access at `http://localhost:5001` (development) or `http://spotipi.local:5000` (
 
 ## 🔧 Configuration
 
-Create `.env` file:
+Create `.env` file (either in the project root for local development or in `~/.spotipi/.env` for deployments):
 ```env
 SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret  

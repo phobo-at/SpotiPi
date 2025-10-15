@@ -42,6 +42,7 @@ from ..utils.token_cache import (
 )
 from ..utils.cache_migration import get_cache_migration_layer
 from ..utils.perf_monitor import perf_monitor
+from ..utils.thread_safety import config_transaction, load_config_safe
 
 # Use the new central#  Exportable functions - Updated for new config system
 __all__ = [
@@ -67,7 +68,10 @@ def _get_env_path():
 ENV_PATH = _get_env_path()
 
 # 🌍 Load environment variables
-load_dotenv(dotenv_path=ENV_PATH)
+if os.path.exists(ENV_PATH):
+    load_dotenv(dotenv_path=ENV_PATH)
+# Also allow project-root .env to supply overrides (common in dev setups)
+load_dotenv()
 CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("SPOTIFY_REFRESH_TOKEN")
@@ -917,6 +921,58 @@ def get_devices(token: str) -> List[Dict[str, Any]]:
 
 
 _DEVICE_WHITESPACE_RE = re.compile(r"\s+")
+_MAX_CACHED_DEVICES = 8
+
+
+def _remember_device_mapping(requested_name: str, actual_name: str, device_id: Optional[str]) -> None:
+    if not device_id:
+        return
+    normalized_key = _normalize_device_name(actual_name or requested_name)
+    if not normalized_key:
+        return
+    try:
+        with config_transaction() as transaction:
+            cfg = transaction.load()
+            cache = cfg.get("last_known_devices")
+            if not isinstance(cache, dict):
+                cache = {}
+            cache[normalized_key] = {
+                "id": device_id,
+                "name": actual_name or requested_name,
+                "requested_name": requested_name,
+                "updated_at": time.time(),
+            }
+            if len(cache) > _MAX_CACHED_DEVICES:
+                sorted_items = sorted(
+                    cache.items(),
+                    key=lambda item: item[1].get("updated_at", 0.0),
+                    reverse=True,
+                )[:_MAX_CACHED_DEVICES]
+                cache = {key: value for key, value in sorted_items}
+            cfg["last_known_devices"] = cache
+            transaction.save(cfg)
+    except Exception as exc:  # pragma: no cover - fallback on best-effort cache
+        logging.getLogger('spotify').debug("device.cache.store_failed %s", exc)
+
+
+def _load_cached_device_mapping(device_name: str) -> Optional[Dict[str, Any]]:
+    normalized_key = _normalize_device_name(device_name)
+    if not normalized_key:
+        return None
+    try:
+        cfg = load_config_safe()
+    except Exception:
+        try:
+            cfg = load_config()
+        except Exception:
+            return None
+    cache = cfg.get("last_known_devices")
+    if not isinstance(cache, dict):
+        return None
+    entry = cache.get(normalized_key)
+    if isinstance(entry, dict) and entry.get("id"):
+        return entry
+    return None
 
 
 def _normalize_device_name(value: Any) -> str:
@@ -1006,7 +1062,19 @@ def get_device_id(token: str, device_name: str) -> Optional[str]:
                 "spotify.device.partial_match",
                 extra={"requested": device_name, "matched": matched_name, "device_id": device_id},
             )
+        _remember_device_mapping(device_name, matched_name or device_name, device_id)
         return device_id
+
+    cached_entry = _load_cached_device_mapping(device_name)
+    if cached_entry:
+        cached_id = cached_entry.get("id")
+        cached_name = cached_entry.get("name", device_name)
+        if cached_id:
+            logger.info(
+                "spotify.device.cached_id_used",
+                extra={"requested": device_name, "cached_name": cached_name, "device_id": cached_id},
+            )
+            return cached_id
 
     available_names = [
         d.get("name") for d in devices if isinstance(d.get("name"), str)

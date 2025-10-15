@@ -7,6 +7,7 @@ SpotiPi is a Raspberry Pi-optimized Spotify alarm clock with Flask web interface
 - Timezone handling now flows through `src/utils/timezone.py`; `SPOTIPI_TIMEZONE` or the persisted config drives alarm/scheduler time calculations and is hot-reloaded via config listeners.
 - Spotify playback helpers accept an optional `device_id`; use `toggle_playback()`/`stop_playback()`/`resume_playback()` to ensure commands target the active device and treat any 2xx response as success.
 - Token caching is protected by a dedicated refresh lock; call the cache helpers instead of rolling your own token storage.
+- Alarms remember the last known Spotify device ID and reuse it if `/me/player/devices` is temporarily unavailable.
 - Low-power defaults include longer dashboard/playback TTLs; prefer `_playback_cache_ttl()` and the server-side caches before adding new polling endpoints.
 - TLS handshakes on the HTTP port are logged at DEBUG only—no warning noise expected in normal runs.
 - Deployment summaries rely on rsync’s itemize output (`--out-format=%i %f`); avoid post-processing that breaks this format.
