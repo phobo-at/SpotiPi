@@ -15,6 +15,7 @@ sys.path.insert(0, str(project_root))
 from src.app import app, start_alarm_scheduler
 from src.config import load_config
 from src.utils.wsgi_logging import TidyRequestHandler
+from src.utils.logger import setup_logger
 
 try:
     from waitress import serve
@@ -22,6 +23,7 @@ except ImportError:  # pragma: no cover - waitress installed in deployment
     serve = None
 
 if __name__ == "__main__":
+    logger = setup_logger("runner")
     # Load configuration for port and debug settings
     config = load_config()
     
@@ -43,8 +45,9 @@ if __name__ == "__main__":
     # Ensure background scheduler is started for run.py based runs
     try:
         start_alarm_scheduler()
-    except Exception:
-        pass
+        logger.info("⏰ Alarm scheduler started (run.py)")
+    except Exception as exc:
+        logger.exception("Failed to start alarm scheduler via run.py", exc_info=exc)
 
     if debug_mode or serve is None:
         app.run(
