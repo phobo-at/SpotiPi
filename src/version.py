@@ -9,13 +9,13 @@ from typing import Dict, Union, Optional
 # MAJOR: Breaking changes
 # MINOR: New features (backward compatible)
 # PATCH: Bug fixes (backward compatible)
-VERSION = "1.3.4"
+VERSION = "1.3.5"
 
 # Additional version info
 VERSION_INFO: Dict[str, Union[int, Optional[str]]] = {
     "major": 1,
     "minor": 3,
-    "patch": 4,
+    "patch": 5,
     "pre_release": None,  # e.g., "alpha", "beta", "rc1"
     "build": None
 }

@@ -1,4 +1,4 @@
-## SpotiPi • Codex Guidance
+## SpotiPi • Codex Guidance (v1.3.5)
 
 ### Quick Context
 - Platform: Flask app (`run.py` → `src/app.py`) serving as Spotify alarm clock for Raspberry Pi Zero W.

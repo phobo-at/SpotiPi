@@ -1,4 +1,4 @@
-## SpotiPi • Copilot Guidance
+## SpotiPi • Copilot Guidance (v1.3.5)
 
 ### Architecture Cheatsheet
 - Flask entrypoint: `run.py` imports `src/app.py`; templates/static at project root.

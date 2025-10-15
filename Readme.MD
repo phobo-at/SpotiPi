@@ -1,4 +1,4 @@
-# 🎵 SpotiPi
+# 🎵 SpotiPi (v1.3.5)
 
 **Smart Spotify alarm clock and sleep timer for Raspberry Pi**
 
