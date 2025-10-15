@@ -129,20 +129,16 @@ fi
 # Prepare summary data from itemized output
 UPDATED=0
 NEW_FILES=0
-declare -a UPDATED_PATHS=()
-
 while IFS= read -r line; do
-  # rsync itemized lines look like ">f.st...... path/to/file"
-  if [[ "$line" == ">f"* ]]; then
+  tag="${line:0:11}"
+  case "$tag" in
+    ">f"*)
       UPDATED=$((UPDATED + 1))
-      path="${line#* }"
-      if [ "$path" != "$line" ]; then
-        UPDATED_PATHS+=("$path")
-      fi
-      if [[ "${line:0:3}" == ">f+" ]]; then
+      if [[ "$tag" == ">f+++++++++"* ]]; then
         NEW_FILES=$((NEW_FILES + 1))
       fi
-  fi
+      ;;
+  esac
 done < "$TMP_OUTPUT"
 
 EXISTING_UPDATED=$((UPDATED - NEW_FILES))
@@ -171,15 +167,10 @@ fi
 echo ""
 if [ "$UPDATED" -gt 0 ]; then
   echo "📁 Updated files:"
-  for idx in "${!UPDATED_PATHS[@]}"; do
-    if [ "$idx" -lt 10 ]; then
-      echo "   ✅ ${UPDATED_PATHS[$idx]}"
-    else
-      break
-    fi
-  done
+  UPDATED_LIST=$(grep -E "^>f" "$TMP_OUTPUT" | cut -c 12-)
+  echo "$UPDATED_LIST" | head -10 | sed 's/^/   ✅ /'
   REMAINING=$((UPDATED - 10))
-  if [ "$REMAINING" -gt 0 ]; then
+  if [ $REMAINING -gt 0 ]; then
     echo "   ... and $REMAINING more files"
   fi
   if [ "$NEW_FILES" -gt 0 ]; then
