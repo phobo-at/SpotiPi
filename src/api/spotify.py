@@ -43,6 +43,7 @@ from ..utils.token_cache import (
 from ..utils.cache_migration import get_cache_migration_layer
 from ..utils.perf_monitor import perf_monitor
 from ..utils.thread_safety import config_transaction, load_config_safe
+from ..utils.library_utils import compute_library_hash
 
 # Use the new central#  Exportable functions - Updated for new config system
 __all__ = [

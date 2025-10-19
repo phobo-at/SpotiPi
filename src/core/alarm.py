@@ -20,6 +20,7 @@ from ..config import load_config, save_config
 from ..utils.logger import setup_logger
 from ..utils.thread_safety import config_transaction
 from ..utils.timezone import get_local_timezone
+from .alarm_logging import AlarmProbeContext, log_alarm_probe
 
 # Get logger for alarm module
 logger = setup_logger(__name__)
@@ -33,7 +34,12 @@ def log(message: str) -> None:
     """
     logger.info(message)
 
-def execute_alarm(*, force: bool = False) -> bool:
+def execute_alarm(
+    *,
+    force: bool = False,
+    probe: Optional[AlarmProbeContext] = None,
+    catchup_grace_seconds: float = 0.0,
+) -> bool:
     """Main alarm execution function.
 
     Args:
@@ -43,12 +49,17 @@ def execute_alarm(*, force: bool = False) -> bool:
         bool: True if playback was started, False otherwise
     """
     now = datetime.datetime.now(tz=LOCAL_TZ)
+    log_alarm_probe(probe, "execute_enter", extra={"force": force})
 
     try:
         config = load_config()
     except Exception as e:
         logger.error(f"❌ Failed to load config: {e}")
+        log_alarm_probe(probe, "execute_config_error", extra={"error": str(e)}, force=True)
         return False
+
+    if probe is not None:
+        probe.config_snapshot = dict(config)
 
     # Helper for conditional debug logging (only when config.debug True)
     def debug(reason: str):
@@ -60,10 +71,12 @@ def execute_alarm(*, force: bool = False) -> bool:
 
     if not config:
         debug("Config is empty or could not be loaded")
+        log_alarm_probe(probe, "execute_config_empty", force=True)
         return False
 
     if not config.get("enabled", False) and not force:
         debug("Alarm not enabled -> skip")
+        log_alarm_probe(probe, "execute_disabled", force=True)
         return False
 
     # From here on we log normal info
@@ -89,6 +102,12 @@ def execute_alarm(*, force: bool = False) -> bool:
     except (ValueError, KeyError) as e:
         if not force:
             logger.error(f"❌ Invalid time format in config: {config.get('time')} - {e}")
+            log_alarm_probe(
+                probe,
+                "execute_invalid_time",
+                extra={"configured_time": config.get("time"), "error": str(e)},
+                force=True,
+            )
             return False
         debug(f"Invalid or missing time '{config.get('time')}' – forcing execution anyway")
         target_time = now
@@ -103,31 +122,88 @@ def execute_alarm(*, force: bool = False) -> bool:
 
     log(f"🎯 Target time: {config.get('time', 'unset')}")
     log(f"📏 Time difference: {diff_minutes:.2f} minutes")
+    tolerance_minutes = ALARM_TRIGGER_WINDOW_MINUTES
+    catchup_grace_minutes = catchup_grace_seconds / 60.0 if catchup_grace_seconds else 0.0
+    log_alarm_probe(
+        probe,
+        "execute_time_check",
+        extra={
+            "diff_minutes": diff_minutes,
+            "tolerance": tolerance_minutes,
+            "force": force,
+            "catchup_grace_minutes": catchup_grace_minutes,
+        },
+    )
 
     if diff_minutes < 0 and not force:
-        debug(f"Not yet within trigger window. diff={diff_minutes:.2f}m")
-        return False
+        if catchup_grace_seconds <= 0 or abs(diff_minutes) > catchup_grace_minutes:
+            debug(f"Not yet within trigger window. diff={diff_minutes:.2f}m")
+            log_alarm_probe(
+                probe,
+                "execute_before_window",
+                extra={"diff_minutes": diff_minutes},
+                force=True,
+            )
+            return False
+        log_alarm_probe(
+            probe,
+            "execute_catchup_within_grace",
+            extra={
+                "diff_minutes": diff_minutes,
+                "catchup_grace_minutes": catchup_grace_minutes,
+            },
+            force=True,
+        )
 
     if diff_minutes > ALARM_TRIGGER_WINDOW_MINUTES and not force:
-        debug(f"Not within trigger window (+{ALARM_TRIGGER_WINDOW_MINUTES}m). diff={diff_minutes:.2f}m")
-        return False
+        if catchup_grace_seconds > 0 and diff_minutes <= catchup_grace_minutes:
+            log_alarm_probe(
+                probe,
+                "execute_catchup_after_window",
+                extra={
+                    "diff_minutes": diff_minutes,
+                    "catchup_grace_minutes": catchup_grace_minutes,
+                },
+                force=True,
+            )
+        else:
+            debug(f"Not within trigger window (+{ALARM_TRIGGER_WINDOW_MINUTES}m). diff={diff_minutes:.2f}m")
+            log_alarm_probe(
+                probe,
+                "execute_after_window",
+                extra={"diff_minutes": diff_minutes},
+                force=True,
+            )
+            return False
 
     # Start playback
     try:
         token = get_access_token()
         if not token:
             logger.warning("❌ Failed to retrieve token for alarm execution.")
+            log_alarm_probe(probe, "execute_token_missing", force=True)
             return False
 
         device_name = config.get("device_name", "")
         if not device_name:
             logger.warning("❌ No device name configured for the alarm.")
+            log_alarm_probe(probe, "execute_device_unset", force=True)
             return False
 
         device_id = get_device_id(token, device_name)
         if not device_id:
             logger.warning(f"❌ Device '{device_name}' not found.")
+            if probe:
+                probe.set_device_result("execute", "missing", device_name=device_name)
+            log_alarm_probe(
+                probe,
+                "execute_device_not_found",
+                extra={"device_name": device_name},
+                force=True,
+            )
             return False
+        if probe:
+            probe.set_device_result("execute", "found", device_name=device_name, device_id=device_id)
 
         target_volume = config.get("alarm_volume", 50)
         fade_in = config.get("fade_in", False)
@@ -151,6 +227,18 @@ def execute_alarm(*, force: bool = False) -> bool:
                 fade_in = False
                 initial_volume = target_volume
                 logger.warning("⚠️ Fade-in disabled because initial volume could not be set safely")
+        log_alarm_probe(
+            probe,
+            "execute_start_playback",
+            extra={
+                "device_name": device_name,
+                "device_id": device_id,
+                "fade_in": fade_in,
+                "target_volume": target_volume,
+                "initial_volume": initial_volume,
+                "shuffle": shuffle,
+            },
+        )
 
         if not fade_in:
             start_playback(
@@ -184,12 +272,19 @@ def execute_alarm(*, force: bool = False) -> bool:
                         time.sleep(1 if idx == 0 else 5)
                         if set_volume(token, v, device_id):
                             log(f"🎚️ Volume increased to {v}%")
+                            log_alarm_probe(
+                                probe,
+                                "execute_fade_step",
+                                extra={"volume": v, "step_index": idx, "total_steps": len(volumes)},
+                            )
                         else:
                             log(f"⚠️ Volume set attempt to {v}% - Spotify API refused value")
             except Exception as e:
                 log(f"❌ Error during fade-in: {e}")
+                log_alarm_probe(probe, "execute_fade_error", extra={"error": str(e)}, force=True)
 
         log("✅ Playback started.")
+        log_alarm_probe(probe, "execute_playback_started", extra={"fade_in": fade_in})
 
         # Auto-disable alarm
         if not force:
@@ -201,12 +296,15 @@ def execute_alarm(*, force: bool = False) -> bool:
                 log("🔄 Alarm automatically disabled after triggering (thread-safe)")
             except Exception as e:
                 log(f"❌ Error disabling the alarm: {e}")
+                log_alarm_probe(probe, "execute_disable_error", extra={"error": str(e)}, force=True)
 
+        log_alarm_probe(probe, "execute_complete", extra={"success": True}, force=True)
         return True
 
     except Exception as e:
         log(f"❌ Unexpected error during alarm execution: {e}")
         logger.exception("Full traceback for alarm error:")
+        log_alarm_probe(probe, "execute_exception", extra={"error": str(e)}, force=True)
         return False
     finally:
         debug("Alarm evaluation finished")

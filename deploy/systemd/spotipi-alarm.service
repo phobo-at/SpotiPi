@@ -1,0 +1,15 @@
+[Unit]
+Description=SpotiPi Alarm Readiness Probe
+After=spotipi.service
+Requires=spotipi.service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/pi/spotipi
+EnvironmentFile=-/home/pi/spotipi/.env
+ExecStart=/usr/bin/env bash -lc './scripts/run_alarm.sh'
+
+[Install]
+WantedBy=multi-user.target

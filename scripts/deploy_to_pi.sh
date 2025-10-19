@@ -32,11 +32,11 @@ REQUIRED_PATHS=(
   "static"
   "templates"
   "config"
+  "deploy/systemd"
 )
 
 OPTIONAL_PATHS=(
   "pyproject.toml"
-  "scripts/spotipi.service"
 )
 
 cat <<INFO
@@ -192,6 +192,24 @@ fi
 rm -f "$TMP_OUTPUT" "$TMP_DELETIONS"
 
 echo "✅ Code synchronized successfully"
+
+# Update systemd units (optional)
+if [ "${SPOTIPI_DEPLOY_SYSTEMD:-1}" = "1" ]; then
+  echo "⚙️ Updating systemd units on Pi..."
+  for unit in spotipi.service spotipi-alarm.service spotipi-alarm.timer; do
+    if ssh "$PI_HOST" "[ -f \"$PI_PATH/deploy/systemd/$unit\" ]"; then
+      ssh "$PI_HOST" "sudo cp $PI_PATH/deploy/systemd/$unit /etc/systemd/system/$unit"
+      echo "   📄 Installed $unit"
+    fi
+  done
+  ssh "$PI_HOST" "sudo systemctl daemon-reload"
+  if [ -n "$SERVICE_NAME" ]; then
+    ssh "$PI_HOST" "sudo systemctl enable $SERVICE_NAME" || true
+  fi
+  if [ "${SPOTIPI_ENABLE_ALARM_TIMER:-0}" = "1" ]; then
+    ssh "$PI_HOST" "sudo systemctl enable --now spotipi-alarm.timer" || true
+  fi
+fi
 
 # Optional cleanup of unused files on the Pi (one-time purge)
 if [ "${SPOTIPI_PURGE_UNUSED:-}" = "1" ]; then

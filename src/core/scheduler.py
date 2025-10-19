@@ -24,22 +24,57 @@ def _coerce_time_components(alarm_time: str) -> Optional[Tuple[int, int]]:
     return None
 
 
-def next_alarm_datetime(alarm_time: str) -> Optional[datetime.datetime]:
+def next_alarm_datetime(alarm_time: str, reference: Optional[datetime.datetime] = None) -> Optional[datetime.datetime]:
     """Return the next datetime that matches ``alarm_time`` in the local timezone."""
     components = _coerce_time_components(alarm_time)
     if components is None:
         return None
 
     hour, minute = components
-    now = datetime.datetime.now(tz=LOCAL_TZ)
+    now = reference.astimezone(LOCAL_TZ) if reference is not None else datetime.datetime.now(tz=LOCAL_TZ)
+
+    def _normalize(target: datetime.datetime) -> datetime.datetime:
+        """Adjust for DST gaps/overlaps by round-tripping through UTC."""
+        if target.tzinfo is None:
+            target = target.replace(tzinfo=LOCAL_TZ)
+        roundtrip = target.astimezone(datetime.timezone.utc).astimezone(LOCAL_TZ)
+        if (
+            roundtrip.hour != target.hour
+            or roundtrip.minute != target.minute
+            or roundtrip.second != target.second
+            or roundtrip.fold != target.fold
+        ):
+            return roundtrip
+        return target
 
     try:
-        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        target = datetime.datetime(
+            now.year,
+            now.month,
+            now.day,
+            hour,
+            minute,
+            tzinfo=LOCAL_TZ,
+        )
     except ValueError:
         return None
 
+    target = _normalize(target)
+
     if target <= now:
-        target += datetime.timedelta(days=1)
+        try:
+            next_day = now + datetime.timedelta(days=1)
+            target = datetime.datetime(
+                next_day.year,
+                next_day.month,
+                next_day.day,
+                hour,
+                minute,
+                tzinfo=LOCAL_TZ,
+            )
+            target = _normalize(target)
+        except ValueError:
+            return None
     return target
 
 
@@ -92,6 +127,8 @@ class AlarmTimeValidator:
         return _coerce_time_components(time_str)
 
     @staticmethod
-    def get_next_alarm_date(alarm_time: str) -> Optional[datetime.datetime]:
+    def get_next_alarm_date(
+        alarm_time: str, reference: Optional[datetime.datetime] = None
+    ) -> Optional[datetime.datetime]:
         """Backwards-compatible wrapper for legacy imports."""
-        return next_alarm_datetime(alarm_time)
+        return next_alarm_datetime(alarm_time, reference=reference)
