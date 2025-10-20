@@ -90,6 +90,7 @@ Adjust them freely without touching the code—set the values in `.env`, restart
 - Readiness probes (network, DNS, Spotify token, device availability) gate each playback attempt with exponential backoff + jitter.
 - A lightweight state file (`cache/alarm_scheduler_state.json`) records the next scheduled UTC time and the last successful execution.
 - Structured JSON logs are emitted via the `alarm_probe` logger to make journalctl/file log correlation trivial.
+- Inspect alarm telemetry on the Pi with `journalctl -u spotipi.service --since "2025-10-20 06:20:00" | rg alarm_probe`, or run the manual probe via `sudo systemctl start spotipi-alarm.service`.
 
 ## 🍓 Raspberry Pi Setup
 
@@ -119,6 +120,9 @@ sudo systemctl enable spotipi && sudo systemctl start spotipi
 
 # Optional one-time cleanup of previously deployed unused files
 SPOTIPI_PURGE_UNUSED=1 ./scripts/deploy_to_pi.sh
+
+# Install/refresh systemd units (service, optional timer) on the Pi
+./deploy/install.sh        # run locally; copies units via ssh and restarts spotipi.service
 ```
 The deploy script uses an allowlist `rsync` (run.py, requirements, `src/`, `static/`, `templates/`, `config/`), keeping the Raspberry Pi installation minimal.
 

@@ -5,6 +5,22 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.6] - 2025-10-20
+
+### ⏰ Alarm Reliability Hardening
+- Rebuilt the in-process scheduler on top of a monotonic clock with UTC persistence and configurable catch-up grace, so NTP/DST jumps or short downtimes no longer skip alarms.
+- Added structured `alarm_probe` JSON telemetry (UTC/local timestamps, monotonic deltas, readiness state, device discovery) covering the ±5 min trigger window for post-mortem analysis.
+- Introduced readiness backoff with network/DNS/token/device probes to guarantee Spotify is reachable before playback attempts, plus persisted state to recover missed alarms after reboot.
+
+### 🛠️ Deployment & Operations
+- Shipped new systemd assets (`deploy/systemd/*.service|*.timer`) and an `install.sh` helper to install/enable them on the Pi, including an optional readiness timer.
+- Extended `scripts/deploy_to_pi.sh` to sync deployment scripts, systemd units, and the new `run_alarm.sh` probe, ensuring rsync allowlists include nested directories.
+- Documented diagnostics/runbook artefacts (`docs/diagnostics/*`, `docs/runbooks/alarms.md`, `docs/tests/alarm_reliability.md`) to guide overnight validation and troubleshooting.
+
+### 🧪 Tests
+- Added `tests/alarm_reliability/` suite with DST, catch-up, readiness, and persistence coverage.
+- `pytest`
+
 ## [1.3.5] - 2025-10-15
 
 ### 🔄 Alarm Simplification
