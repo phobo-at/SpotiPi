@@ -23,6 +23,9 @@ NETWORK_PROBE_HOST = os.getenv("SPOTIPI_NETWORK_PROBE_HOST", "api.spotify.com")
 NETWORK_PROBE_PORT = int(os.getenv("SPOTIPI_NETWORK_PROBE_PORT", "443"))
 
 _probe_logger = setup_logger("alarm_probe")
+_probe_logger.setLevel(logging.INFO)
+for _handler in _probe_logger.handlers:
+    _handler.setLevel(logging.INFO)
 _ntp_cache: Dict[str, Any] = {"ts": 0.0, "value": None}
 _network_cache: Dict[str, Any] = {"ts": 0.0, "value": None}
 

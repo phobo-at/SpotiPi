@@ -33,11 +33,33 @@ REQUIRED_PATHS=(
   "templates"
   "config"
   "deploy/systemd"
+  "deploy/install.sh"
 )
 
 OPTIONAL_PATHS=(
   "pyproject.toml"
+  "scripts/run_alarm.sh"
 )
+
+# Track which parent directories have been added to avoid duplicates
+declare -a SEEN_PARENTS=()
+
+add_include_parents() {
+  local path="$1"
+  local stack=()
+  local current="$path"
+  while [[ "$current" == */* ]]; do
+    current="${current%/*}"
+    stack+=("$current")
+  done
+  for (( idx=${#stack[@]}-1; idx>=0; idx-- )); do
+    local parent="${stack[$idx]}"
+    if [ -n "$parent" ] && [[ " ${SEEN_PARENTS[*]} " != *" $parent "* ]]; then
+      RSYNC_ARGS+=("--include=$parent/")
+      SEEN_PARENTS+=("$parent")
+    fi
+  done
+}
 
 cat <<INFO
 🚀 Deploying SpotiPi to Raspberry Pi
@@ -90,9 +112,11 @@ ALL_PATHS=("${REQUIRED_PATHS[@]}" "${OPTIONAL_PATHS[@]}")
 for path in "${ALL_PATHS[@]}"; do
   if [ -e "$LOCAL_PATH/$path" ]; then
     if [ -d "$LOCAL_PATH/$path" ]; then
+      add_include_parents "$path"
       RSYNC_ARGS+=("--include=$path/")
       RSYNC_ARGS+=("--include=$path/***")
     else
+      add_include_parents "$path"
       RSYNC_ARGS+=("--include=$path")
     fi
   fi
