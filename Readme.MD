@@ -1,4 +1,4 @@
-# 🎵 SpotiPi (v1.3.5)
+# 🎵 SpotiPi (v1.3.6)
 
 **Smart Spotify alarm clock and sleep timer for Raspberry Pi**
 
@@ -100,9 +100,11 @@ git clone https://github.com/phobo-at/SpotiPi.git /home/pi/spotipi
 cd /home/pi/spotipi && python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt && python generate_token.py
 
-# Install as service
-sudo cp scripts/spotipi.service /etc/systemd/system/
-sudo systemctl enable spotipi && sudo systemctl start spotipi
+# Install/refresh systemd units (service + optional timer)
+./deploy/install.sh
+
+# Enable the readiness timer if desired (optional)
+SPOTIPI_ENABLE_ALARM_TIMER=1 ./deploy/install.sh
 ```
 
 ## 🧠 Performance Setup (Pi Zero W)
@@ -121,8 +123,10 @@ sudo systemctl enable spotipi && sudo systemctl start spotipi
 # Optional one-time cleanup of previously deployed unused files
 SPOTIPI_PURGE_UNUSED=1 ./scripts/deploy_to_pi.sh
 
-# Install/refresh systemd units (service, optional timer) on the Pi
-./deploy/install.sh        # run locally; copies units via ssh and restarts spotipi.service
+# Install/refresh systemd units on the Pi (after rsync completes)
+ssh pi@spotipi.local 'cd /home/pi/spotipi && ./deploy/install.sh'
+# Enable the readiness timer during install (optional)
+ssh pi@spotipi.local 'cd /home/pi/spotipi && SPOTIPI_ENABLE_ALARM_TIMER=1 ./deploy/install.sh'
 ```
 The deploy script uses an allowlist `rsync` (run.py, requirements, `src/`, `static/`, `templates/`, `config/`), keeping the Raspberry Pi installation minimal.
 
