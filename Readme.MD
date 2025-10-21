@@ -17,6 +17,7 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 - 🍓 **Pi Optimized** - Auto-detection and SD-card protection
 - ⚡ **Fast Dashboard** - Aggregated status updates over a single request
 - 🛡️ **Secure** - Environment variables for all credentials
+- 📈 **Resilient Alarms** - Monotonic scheduler with catch-up & structured diagnostics
 
 ## 🚀 Quick Start
 
@@ -54,6 +55,10 @@ SPOTIPI_PLAYBACK_CACHE_TTL=3.0                # Seconds to cache /me/player snap
 SPOTIPI_DEVICE_TTL=10                         # Device cache TTL in seconds (5-15 on Pi Zero)
 SPOTIPI_LIBRARY_TTL_MINUTES=60                # Library cache TTL in minutes (30-120)
 SPOTIPI_MAX_CONCURRENCY=2                     # Global HTTP concurrency limit on low-power devices
+SPOTIPI_CATCHUP_GRACE_SECONDS=600             # Catch-up window in seconds for missed alarms
+SPOTIPI_NETWORK_PROBE_HOST=api.spotify.com    # TCP probe host for readiness checks
+SPOTIPI_NETWORK_PROBE_TIMEOUT=1.5             # Probe timeout in seconds
+SPOTIPI_DNS_PROBE_HOST=api.spotify.com        # DNS probe host for readiness checks
 ```
 
 Everything else is auto-configured with smart defaults.
@@ -71,9 +76,21 @@ SPOTIPI_PLAYER_RETRIES=3                   # Playback attempts including exponen
 SPOTIPI_PLAYER_BACKOFF=1.0                 # Initial backoff delay in seconds
 SPOTIPI_PLAYER_JITTER=0.4                  # Random jitter factor for backoff
 SPOTIPI_DEVICE_TTL=10                      # Spotify device cache TTL in seconds
+SPOTIPI_CATCHUP_GRACE_SECONDS=600          # Allow alarms to recover within 10 minutes
+SPOTIPI_NETWORK_PROBE_HOST=api.spotify.com # Override network probe host if needed
+SPOTIPI_DNS_PROBE_HOST=api.spotify.com     # Override DNS probe target
 ```
 
 Adjust them freely without touching the code—set the values in `.env`, restart the service, and you’re done.
+
+## 🔁 Alarm Reliability
+
+- The alarm scheduler now runs on a monotonic clock, so NTP/DST jumps no longer shrink the trigger window.
+- Missed alarms within `SPOTIPI_CATCHUP_GRACE_SECONDS` (default 10 min) are retried automatically after reboots or clock adjustments.
+- Readiness probes (network, DNS, Spotify token, device availability) gate each playback attempt with exponential backoff + jitter.
+- A lightweight state file (`cache/alarm_scheduler_state.json`) records the next scheduled UTC time and the last successful execution.
+- Structured JSON logs are emitted via the `alarm_probe` logger to make journalctl/file log correlation trivial.
+- Inspect alarm telemetry on the Pi with `journalctl -u spotipi.service --since "2025-10-20 06:20:00" | rg alarm_probe`, or run the manual probe via `sudo systemctl start spotipi-alarm.service`.
 
 ## 🍓 Raspberry Pi Setup
 
@@ -103,6 +120,9 @@ sudo systemctl enable spotipi && sudo systemctl start spotipi
 
 # Optional one-time cleanup of previously deployed unused files
 SPOTIPI_PURGE_UNUSED=1 ./scripts/deploy_to_pi.sh
+
+# Install/refresh systemd units (service, optional timer) on the Pi
+./deploy/install.sh        # run locally; copies units via ssh and restarts spotipi.service
 ```
 The deploy script uses an allowlist `rsync` (run.py, requirements, `src/`, `static/`, `templates/`, `config/`), keeping the Raspberry Pi installation minimal.
 

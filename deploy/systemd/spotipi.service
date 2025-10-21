@@ -1,0 +1,16 @@
+[Unit]
+Description=SpotiPi Web Application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/spotipi
+EnvironmentFile=-/home/pi/spotipi/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/pi/spotipi/venv/bin/python run.py
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

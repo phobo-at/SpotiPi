@@ -32,12 +32,34 @@ REQUIRED_PATHS=(
   "static"
   "templates"
   "config"
+  "deploy/systemd"
+  "deploy/install.sh"
 )
 
 OPTIONAL_PATHS=(
   "pyproject.toml"
-  "scripts/spotipi.service"
+  "scripts/run_alarm.sh"
 )
+
+# Track which parent directories have been added to avoid duplicates
+declare -a SEEN_PARENTS=()
+
+add_include_parents() {
+  local path="$1"
+  local stack=()
+  local current="$path"
+  while [[ "$current" == */* ]]; do
+    current="${current%/*}"
+    stack+=("$current")
+  done
+  for (( idx=${#stack[@]}-1; idx>=0; idx-- )); do
+    local parent="${stack[$idx]}"
+    if [ -n "$parent" ] && [[ " ${SEEN_PARENTS[*]} " != *" $parent "* ]]; then
+      RSYNC_ARGS+=("--include=$parent/")
+      SEEN_PARENTS+=("$parent")
+    fi
+  done
+}
 
 cat <<INFO
 🚀 Deploying SpotiPi to Raspberry Pi
@@ -90,9 +112,11 @@ ALL_PATHS=("${REQUIRED_PATHS[@]}" "${OPTIONAL_PATHS[@]}")
 for path in "${ALL_PATHS[@]}"; do
   if [ -e "$LOCAL_PATH/$path" ]; then
     if [ -d "$LOCAL_PATH/$path" ]; then
+      add_include_parents "$path"
       RSYNC_ARGS+=("--include=$path/")
       RSYNC_ARGS+=("--include=$path/***")
     else
+      add_include_parents "$path"
       RSYNC_ARGS+=("--include=$path")
     fi
   fi
@@ -192,6 +216,24 @@ fi
 rm -f "$TMP_OUTPUT" "$TMP_DELETIONS"
 
 echo "✅ Code synchronized successfully"
+
+# Update systemd units (optional)
+if [ "${SPOTIPI_DEPLOY_SYSTEMD:-1}" = "1" ]; then
+  echo "⚙️ Updating systemd units on Pi..."
+  for unit in spotipi.service spotipi-alarm.service spotipi-alarm.timer; do
+    if ssh "$PI_HOST" "[ -f \"$PI_PATH/deploy/systemd/$unit\" ]"; then
+      ssh "$PI_HOST" "sudo cp $PI_PATH/deploy/systemd/$unit /etc/systemd/system/$unit"
+      echo "   📄 Installed $unit"
+    fi
+  done
+  ssh "$PI_HOST" "sudo systemctl daemon-reload"
+  if [ -n "$SERVICE_NAME" ]; then
+    ssh "$PI_HOST" "sudo systemctl enable $SERVICE_NAME" || true
+  fi
+  if [ "${SPOTIPI_ENABLE_ALARM_TIMER:-0}" = "1" ]; then
+    ssh "$PI_HOST" "sudo systemctl enable --now spotipi-alarm.timer" || true
+  fi
+fi
 
 # Optional cleanup of unused files on the Pi (one-time purge)
 if [ "${SPOTIPI_PURGE_UNUSED:-}" = "1" ]; then
