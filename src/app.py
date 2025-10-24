@@ -20,33 +20,23 @@ from urllib.parse import urlparse
 from typing import Any, Callable, Dict, Optional
 
 # Import from new structure - use relative imports since we're in src/
-from .config import load_config, save_config
-from .core.alarm import execute_alarm
+from .config import load_config
 from .core.scheduler import AlarmTimeValidator
 from .core.alarm_scheduler import start_alarm_scheduler as start_event_alarm_scheduler
 from .utils.logger import setup_logger, setup_logging
-from .utils.validation import validate_alarm_config, validate_sleep_config, validate_volume_only, ValidationError
 from .version import get_app_info, VERSION
 from .utils.translations import get_translations, get_user_language, t_api
-from .utils.library_utils import compute_library_hash, prepare_library_payload, slim_collection
-from .utils.timezone import get_local_timezone
-from .constants import ALARM_TRIGGER_WINDOW_MINUTES
+from .utils.library_utils import compute_library_hash, prepare_library_payload
 from .api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
-    start_playback, stop_playback, resume_playback, toggle_playback, toggle_playback_fast,
-    set_volume, get_current_track, get_current_spotify_volume,
-    get_playback_status, get_combined_playback, _spotify_request,
+    get_combined_playback,
     get_saved_albums, get_user_saved_tracks, get_followed_artists
 )
 from .utils.token_cache import get_token_cache_info, log_token_cache_performance
 from .utils.thread_safety import get_config_stats, invalidate_config_cache
-from .utils.rate_limiting import rate_limit, get_rate_limiter, add_rate_limit_headers
+from .utils.rate_limiting import rate_limit, get_rate_limiter
 from .utils.cache_migration import get_cache_migration_layer
 from .services.service_manager import get_service_manager, get_service
-from .core.sleep import (
-    start_sleep_timer, stop_sleep_timer, get_sleep_status,
-    save_sleep_settings
-)
 from .utils.perf_monitor import perf_monitor
 from .utils.wsgi_logging import TidyRequestHandler
 
