@@ -250,6 +250,92 @@ _devices_snapshot = AsyncSnapshot(
     min_retry=1.5 if LOW_POWER_MODE else 0.75
 )
 
+_VALID_LIBRARY_SECTIONS = ("playlists", "albums", "tracks", "artists")
+_SECTION_LOADERS = {
+    "playlists": get_playlists,
+    "albums": get_saved_albums,
+    "tracks": get_user_saved_tracks,
+    "artists": get_followed_artists,
+}
+
+
+def _parse_library_sections(raw: Optional[str], *, default: Optional[list[str]] = None, ensure_default_on_empty: bool = False) -> list[str]:
+    """Parse and validate comma separated sections parameter."""
+    if raw is None:
+        return list(default or [])
+    items = [s.strip() for s in raw.split(",") if s.strip()]
+    filtered = [s for s in items if s in _VALID_LIBRARY_SECTIONS]
+    if not filtered and ensure_default_on_empty:
+        return list(default or ["playlists"])
+    return filtered
+
+
+def _load_music_library_data(token: str, *, sections: list[str], force_refresh: bool) -> Dict[str, Any]:
+    """Load music library data (full or sections) via cache migration layer."""
+    if sections:
+        return cache_migration.get_library_sections_cached(
+            token=token,
+            sections=sections,
+            section_loaders=_SECTION_LOADERS,
+            force_refresh=force_refresh,
+        )
+    return cache_migration.get_full_library_cached(
+        token=token,
+        loader_func=get_user_library,
+        force_refresh=force_refresh,
+    )
+
+
+def _build_library_response(
+    token: str,
+    *,
+    sections: list[str],
+    force_refresh: bool,
+    want_fields: Optional[str],
+    if_modified: Optional[str],
+    request_obj,
+) -> Response:
+    """Create a unified music library response with shared headers."""
+    raw_library = _load_music_library_data(token, sections=sections, force_refresh=force_refresh)
+    basic_view = want_fields == "basic"
+    payload = prepare_library_payload(raw_library, basic=basic_view, sections=sections or None)
+    hash_val = payload.get("hash") or compute_library_hash(payload)
+
+    if if_modified and if_modified == hash_val:
+        resp = Response(status=304)
+        resp.headers["ETag"] = hash_val
+        resp.headers["X-MusicLibrary-Hash"] = hash_val
+        return resp
+
+    is_offline = bool(payload.get("offline_mode"))
+    cached_sections = payload.get("cached_sections") if sections else None
+    cached_flag = payload.get("cached") if not sections else None
+
+    cached_complete = False
+    if sections:
+        if isinstance(cached_sections, dict):
+            cached_complete = all(cached_sections.get(sec, False) for sec in sections)
+        else:
+            cached_sections = {sec: False for sec in sections}
+    else:
+        cached_complete = bool(cached_flag)
+
+    if is_offline:
+        message = "ok (offline cache)"
+    elif sections and not cached_complete:
+        message = t_api("ok_partial", request_obj)
+    elif cached_complete:
+        message = "ok (cached)"
+    else:
+        message = "ok (fresh)"
+
+    resp = api_response(True, data=payload, message=message)
+    resp.headers["X-MusicLibrary-Hash"] = hash_val
+    resp.headers["ETag"] = hash_val
+    if basic_view:
+        resp.headers["X-Data-Fields"] = "basic"
+    return resp
+
 
 def _build_playback_snapshot(token: Optional[str], *, timestamp: Optional[str] = None) -> Dict[str, Any]:
     snapshot_ts = timestamp or _iso_timestamp_now()
@@ -937,97 +1023,32 @@ def api_music_library():
     if not token:
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
+    want_fields = request.args.get('fields')
+    if_modified = request.headers.get('If-None-Match')
+    raw_sections = request.args.get('sections')
+    requested_sections = _parse_library_sections(raw_sections, ensure_default_on_empty=True)
+
     try:
-        want_fields = request.args.get('fields')  # "basic" -> slim lists
-        if_modified = request.headers.get('If-None-Match')  # ETag header
-        raw_sections = request.args.get('sections')
-        valid_sections = {"playlists", "albums", "tracks", "artists"}
-        requested_sections = []
-        if raw_sections is not None:
-            requested_sections = [s.strip() for s in raw_sections.split(',') if s.strip()]
-            requested_sections = [s for s in requested_sections if s in valid_sections]
-            if not requested_sections:
-                requested_sections = ['playlists']
-
-        if requested_sections:
-            section_loaders = {
-                'playlists': get_playlists,
-                'albums': get_saved_albums,
-                'tracks': get_user_saved_tracks,
-                'artists': get_followed_artists
-            }
-
-            library_data = cache_migration.get_library_sections_cached(
-                token=token,
-                sections=requested_sections,
-                section_loaders=section_loaders,
-                force_refresh=force_refresh
-            )
-        else:
-            # Use unified cache system instead of legacy _cache attribute
-            library_data = cache_migration.get_full_library_cached(
-                token=token,
-                loader_func=get_user_library,
-                force_refresh=force_refresh
-            )
-
-        # Compute hash for ETag/conditional requests
-        hash_val = library_data.get("hash") if isinstance(library_data, dict) else None
-        if not hash_val:
-            hash_val = compute_library_hash(library_data)
-        
-        # Conditional request short-circuit
-        if if_modified and if_modified == hash_val:
-            resp = Response(status=304)
-            resp.headers['ETag'] = hash_val
-            resp.headers['X-MusicLibrary-Hash'] = hash_val
-            return resp
-
-        # Prepare response payload
-        resp_data = prepare_library_payload(library_data, basic=want_fields == 'basic')
-        is_offline = library_data.get("offline_mode", False)
-
-        if requested_sections:
-            resp_data['partial'] = True
-            resp_data['sections'] = library_data.get('sections', requested_sections)
-            resp_data['cached_sections'] = library_data.get('cached', {})
-            cached_flags = library_data.get('cached', {})
-            is_cached = all(cached_flags.get(sec, False) for sec in requested_sections)
-        else:
-            is_cached = library_data.get("cached", False)
-        
-        # Determine response message
-        if is_offline:
-            message = "ok (offline cache)"
-        elif requested_sections and not is_cached:
-            message = t_api("ok_partial", request)
-        elif is_cached:
-            message = "ok (cached)"
-        else:
-            message = "ok (fresh)"
-
-        resp = api_response(True, data=resp_data, message=message)
-        resp.headers['X-MusicLibrary-Hash'] = hash_val
-        resp.headers['ETag'] = hash_val
-        
-        if want_fields == 'basic':
-            resp.headers['X-Data-Fields'] = 'basic'
-            
-        return resp
-        
-    except Exception as e:
+        return _build_library_response(
+            token,
+            sections=requested_sections,
+            force_refresh=force_refresh,
+            want_fields=want_fields,
+            if_modified=if_modified,
+            request_obj=request,
+        )
+    except Exception:
         logging.exception("Error loading music library")
-        
-        # Try offline fallback through unified cache
-        fallback_data = cache_migration.get_offline_fallback()
-        if fallback_data:
-            resp_data = prepare_library_payload(fallback_data, basic=False)
-            hash_val = resp_data["hash"]
-            resp = api_response(True, data=resp_data, message=t_api("served_offline_cache", request))
-            resp.headers['X-MusicLibrary-Hash'] = hash_val
-            resp.headers['ETag'] = hash_val
-            return resp
-        
+        if not requested_sections:
+            fallback_data = cache_migration.get_offline_fallback()
+            if fallback_data:
+                resp_data = prepare_library_payload(fallback_data, basic=False)
+                hash_val = resp_data["hash"]
+                resp = api_response(True, data=resp_data, message=t_api("served_offline_cache", request))
+                resp.headers['X-MusicLibrary-Hash'] = hash_val
+                resp.headers['ETag'] = hash_val
+                return resp
+
         return api_response(False, message=t_api("spotify_unavailable", request), status=503, error_code="spotify_unavailable")
 
 @app.route("/api/music-library/sections")
@@ -1045,72 +1066,21 @@ def api_music_library_sections():
     if not token:
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
 
-    raw_sections = request.args.get('sections', 'playlists')
-    sections = [s.strip() for s in raw_sections.split(',') if s.strip()]
+    sections = _parse_library_sections(request.args.get('sections', 'playlists'), default=['playlists'], ensure_default_on_empty=True)
     force = request.args.get('refresh') in ('1', 'true', 'yes')
-    
-    try:
-        # Import section loaders
-        from .api.spotify import get_playlists, get_saved_albums, get_user_saved_tracks, get_followed_artists
-        
-        section_loaders = {
-            'playlists': get_playlists,
-            'albums': get_saved_albums,
-            'tracks': get_user_saved_tracks,
-            'artists': get_followed_artists
-        }
-        
-        # Use unified cache for sections
-        partial = cache_migration.get_library_sections_cached(
-            token=token, 
-            sections=sections, 
-            section_loaders=section_loaders, 
-            force_refresh=force
-        )
-        
-        # Compute hash for ETag
-        import hashlib
-        def _compute_hash(data_dict):
-            try:
-                parts = []
-                for coll in ("playlists","albums","tracks","artists"):
-                    for item in data_dict.get(coll, []) or []:
-                        parts.append(item.get("uri", ""))
-                raw = "|".join(sorted(parts))
-                return hashlib.md5(raw.encode("utf-8")).hexdigest() if raw else "0"*32
-            except Exception:
-                return "0"*32
-        
-        hash_val = _compute_hash(partial)
-        partial['hash'] = hash_val
-        
-        # Check for conditional request
-        if_modified = request.headers.get('If-None-Match')
-        if if_modified and if_modified == hash_val:
-            resp = Response(status=304)
-            resp.headers['ETag'] = hash_val
-            resp.headers['X-MusicLibrary-Hash'] = hash_val
-            return resp
+    want_fields = request.args.get('fields')
+    if_modified = request.headers.get('If-None-Match')
 
-        # Optional slimming for basic fields
-        want_fields = request.args.get('fields')
-        if want_fields == 'basic':
-            def _slim(items):
-                allowed = {"uri","name","image_url","track_count","type","artist"}
-                return [{k: it.get(k) for k in allowed if k in it} for it in (items or [])]
-            
-            for coll in ('playlists','albums','tracks','artists'):
-                partial[coll] = _slim(partial.get(coll, []))
-        
-        resp = api_response(True, data=partial, message=t_api("ok_partial", request))
-        resp.headers['X-MusicLibrary-Hash'] = hash_val
-        resp.headers['ETag'] = hash_val
-        
-        if want_fields == 'basic':
-            resp.headers['X-Data-Fields'] = 'basic'
-            
-        return resp
-        
+    try:
+        return _build_library_response(
+            token,
+            sections=sections,
+            force_refresh=force,
+            want_fields=want_fields,
+            if_modified=if_modified,
+            request_obj=request,
+        )
+
     except Exception as e:
         logging.exception("Error loading partial music library")
         return api_response(False, message=str(e), status=500, error_code="music_library_partial_error")

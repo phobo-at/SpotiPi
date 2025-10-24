@@ -6,7 +6,6 @@ from __future__ import annotations
 import datetime
 from typing import Dict, List, Any, Iterable
 import hashlib
-from . import logger as _noop  # ensure package import side-effects if any
 from ..constants import MUSIC_LIBRARY_BASIC_FIELDS
 
 __all__ = [
@@ -44,7 +43,12 @@ def slim_collection(items: Iterable[Dict[str, Any]] | None) -> List[Dict[str, An
         out.append({k: it.get(k) for k in MUSIC_LIBRARY_BASIC_FIELDS if k in it})
     return out
 
-def prepare_library_payload(raw: Dict[str, Any], *, basic: bool) -> Dict[str, Any]:
+def prepare_library_payload(
+    raw: Dict[str, Any],
+    *,
+    basic: bool,
+    sections: Iterable[str] | None = None,
+) -> Dict[str, Any]:
     """Create a response payload (optionally slim).
 
     Args:
@@ -61,8 +65,21 @@ def prepare_library_payload(raw: Dict[str, Any], *, basic: bool) -> Dict[str, An
         payload[coll] = slim_collection(col_items) if basic else col_items
     existing_hash = raw.get("hash") if isinstance(raw, dict) else None
     payload["hash"] = existing_hash or compute_library_hash(raw)
-    if "cached" in raw:
-        payload["cached"] = bool(raw.get("cached"))
+
+    section_list = list(sections) if sections is not None else raw.get("sections")
+    if section_list:
+        payload["sections"] = section_list
+        payload["partial"] = True
+
+    if raw.get("partial"):
+        payload["partial"] = True
+
+    cached_meta = raw.get("cached")
+    if isinstance(cached_meta, dict):
+        payload["cached_sections"] = cached_meta
+    elif cached_meta is not None:
+        payload["cached"] = bool(cached_meta)
+
     if "offline_mode" in raw:
         payload["offline_mode"] = bool(raw.get("offline_mode"))
     cache_meta = raw.get("cache")
