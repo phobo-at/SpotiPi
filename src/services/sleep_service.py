@@ -68,9 +68,14 @@ class SleepService(BaseService):
                 "device_name": status.get("device_name"),
                 "device_id": status.get("device_id")
             }
-            
+
+            payload = {
+                **enhanced_status,
+                "raw_status": status
+            }
+
             return self._success_result(
-                data=enhanced_status,
+                data=payload,
                 message="Sleep status retrieved successfully"
             )
             
@@ -126,8 +131,8 @@ class SleepService(BaseService):
                 
         except ValidationError as e:
             return self._error_result(
-                str(e),
-                error_code="VALIDATION_ERROR"
+                f"Invalid {e.field_name}: {e.message}",
+                error_code=e.field_name
             )
         except Exception as e:
             return self._handle_error(e, "start_sleep_timer")

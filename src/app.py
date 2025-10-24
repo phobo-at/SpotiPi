@@ -532,6 +532,16 @@ def inject_global_vars():
     else:
         config = load_config()
         g.current_config = config
+    sleep_service = get_service("sleep")
+    sleep_status_result = sleep_service.get_sleep_status()
+    if sleep_status_result.success:
+        sleep_status_payload = (sleep_status_result.data or {}).get("raw_status") or sleep_status_result.data
+    else:
+        sleep_status_payload = {
+            "active": False,
+            "error": sleep_status_result.message,
+            "error_code": sleep_status_result.error_code or "sleep_status_error"
+        }
     
     # Get user language from current request
     user_language = get_user_language(request)
@@ -546,6 +556,7 @@ def inject_global_vars():
         'app_version': VERSION,
         'app_info': get_app_info(),
         'current_config': config,
+        'sleep_status': sleep_status_payload,
         'translations': translations,
         't': template_t,
         'lang': user_language,
@@ -642,6 +653,17 @@ def index():
         'devices_meta': _normalise_snapshot_meta(devices_meta)
     }
     
+    sleep_service_index = get_service("sleep")
+    sleep_status_result_index = sleep_service_index.get_sleep_status()
+    if sleep_status_result_index.success:
+        sleep_status_initial = (sleep_status_result_index.data or {}).get("raw_status") or sleep_status_result_index.data
+    else:
+        sleep_status_initial = {
+            "active": False,
+            "error": sleep_status_result_index.message,
+            "error_code": sleep_status_result_index.error_code or "sleep_status_error"
+        }
+
     template_data = {
         'config': config,
         'devices': devices,
@@ -651,7 +673,7 @@ def index():
         'initial_volume': initial_volume,
         'error_message': session.pop('error_message', None),
         'success_message': session.pop('success_message', None),
-        'sleep_status': get_sleep_status(),
+        'sleep_status': sleep_status_initial,
         # Add missing template variables
         'now': datetime.datetime.now(),
         't': template_t,  # Translation function with parameter support
@@ -725,80 +747,64 @@ if not hasattr(app, '_warmup_started'):
 @rate_limit("config_changes")
 def save_alarm():
     """Save alarm settings with comprehensive input validation"""
-    try:
-        validated_data = validate_alarm_config(request.form)
-        config = load_config()
-        config.update(validated_data)
-        if config["time"] and not AlarmTimeValidator.validate_time_format(config["time"]):
-            return api_response(False, message=t_api("invalid_time_format", request), status=400, error_code="time_format")
-        if not save_config(config):
-            return api_response(False, message=t_api("failed_save_config", request), status=500, error_code="save_failed")
-        logging.info(
-            "Alarm settings saved: Active=%s Time=%s Volume=%s%% Device=%s",
-            config['enabled'],
-            config['time'],
-            config['alarm_volume'],
-            config.get("device_name", "")
-        )
-        next_alarm_text = ""
-        if config.get("enabled") and config.get("time"):
-            next_alarm_text = AlarmTimeValidator.format_time_until_alarm(config["time"])
-        return api_response(True, data={
-            "enabled": config["enabled"],
-            "time": config["time"],
-            "alarm_volume": config["alarm_volume"],
-            "next_alarm": next_alarm_text,
-            "playlist_uri": config.get("playlist_uri", ""),
-            "device_name": config.get("device_name", "")
-        }, message=t_api("alarm_settings_saved", request))
-    except ValidationError as e:
-        logging.warning("Alarm validation error: %s - %s", e.field_name, e.message)
-        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", status=400, error_code=e.field_name)
-    except Exception:
-        logging.exception("Error saving alarm configuration")
-        return api_response(False, message=t_api("internal_error_saving", request), status=500, error_code="internal_error")
+    alarm_service = get_service("alarm")
+    result = alarm_service.save_alarm_settings(request.form)
+
+    if result.success:
+        return api_response(True, data=result.data, message=t_api("alarm_settings_saved", request))
+
+    error_code = (result.error_code or "internal_error").lower()
+    message = result.message or t_api("internal_error_saving", request)
+
+    if error_code == "time_format":
+        return api_response(False, message=t_api("invalid_time_format", request), status=400, error_code="time_format")
+    if error_code == "save_failed":
+        return api_response(False, message=t_api("failed_save_config", request), status=500, error_code="save_failed")
+    if error_code in {"alarm_time", "volume", "alarm_volume", "playlist_uri", "device_name"}:
+        logger.warning("Alarm validation error (%s): %s", error_code, message)
+        return api_response(False, message=message, status=400, error_code=error_code)
+
+    logger.error("Error saving alarm configuration via service: %s", message)
+    return api_response(False, message=t_api("internal_error_saving", request), status=500, error_code="internal_error")
 
 @app.route("/alarm_status")
 @api_error_handler
 @rate_limit("status_check")
 def alarm_status():
     """Get alarm status - supports both basic and advanced modes"""
-    config = load_config()
     advanced_mode = request.args.get('advanced', 'false').lower() == 'true'
-    
+
+    alarm_service = get_service("alarm")
+    result = alarm_service.get_alarm_status()
+
+    if not result.success:
+        logger.error("Failed to load alarm status via service: %s", result.message)
+        return api_response(
+            False,
+            message=result.message or t_api("alarm_status_error", request),
+            status=400,
+            error_code=result.error_code or "alarm_status_error"
+        )
+
+    alarm_data = result.data or {}
+
     if advanced_mode:
-        # Advanced status via service layer
-        try:
-            alarm_service = get_service("alarm")
-            result = alarm_service.get_alarm_status()
-            
-            if result.success:
-                return api_response(True, data={
-                    "timestamp": result.timestamp.isoformat(), 
-                    "alarm": result.data,
-                    "mode": "advanced"
-                })
-            else:
-                return api_response(False, message=result.message, status=400, 
-                                  error_code=result.error_code or "alarm_status_error")
-        except Exception as e:
-            logger.error(f"Error getting advanced alarm status: {e}")
-            return api_response(False, message=str(e), status=500, 
-                              error_code="alarm_status_exception")
-    else:
-        # Basic status (legacy format)
-        next_alarm_time = ""
-        if config.get("enabled") and config.get("time"):
-            next_alarm_time = AlarmTimeValidator.format_time_until_alarm(config["time"])
         return api_response(True, data={
-            "enabled": config.get("enabled", False),
-            "time": config.get("time", "07:00"),
-            "alarm_volume": config.get("alarm_volume", 50),
-            "next_alarm": next_alarm_time,
-            "playlist_uri": config.get("playlist_uri", ""),
-            "device_name": config.get("device_name", ""),
-            "mode": "basic"
+            "timestamp": result.timestamp.isoformat(),
+            "alarm": alarm_data,
+            "mode": "advanced"
         })
+
+    payload = {
+        "enabled": bool(alarm_data.get("enabled", False)),
+        "time": alarm_data.get("time") or "07:00",
+        "alarm_volume": alarm_data.get("alarm_volume", alarm_data.get("volume", 50)),
+        "next_alarm": alarm_data.get("next_alarm", ""),
+        "playlist_uri": alarm_data.get("playlist_uri", ""),
+        "device_name": alarm_data.get("device_name", ""),
+        "mode": "basic"
+    }
+    return api_response(True, data=payload)
 
 
 @app.route("/api/dashboard/status")
@@ -854,7 +860,16 @@ def api_dashboard_status():
         "device_name": config.get("device_name", "")
     }
 
-    sleep_payload = get_sleep_status()
+    sleep_service = get_service("sleep")
+    sleep_result = sleep_service.get_sleep_status()
+    if sleep_result.success:
+        sleep_payload = (sleep_result.data or {}).get("raw_status") or sleep_result.data
+    else:
+        sleep_payload = {
+            "active": False,
+            "error": sleep_result.message,
+            "error_code": sleep_result.error_code or "sleep_status_error"
+        }
 
     playback_payload = {}
     playback_status = "pending"
@@ -1321,50 +1336,44 @@ def metrics():
 @api_error_handler
 def toggle_play_pause():
     """Toggle Spotify play/pause - optimized for immediate response"""
-    token = get_access_token()
-    if not token:
+    spotify_service = get_service("spotify")
+    result = spotify_service.toggle_playback_fast()
+
+    if result.success:
+        return api_response(True, data=result.data, message=t_api("ok", request))
+
+    error_code = result.error_code or "playback_toggle_failed"
+    status = 503 if error_code == "playback_toggle_failed" else 500
+    message = result.message or "Playback toggle failed"
+
+    if error_code == "auth_required":
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
 
-    result = toggle_playback_fast(token)
-
-    if isinstance(result, dict):
-        success = result.get("success", True)
-        if success:
-            return api_response(True, data=result, message=t_api("ok", request))
-
-        error_message = result.get("error") or "Playback toggle failed"
-        return api_response(False, data=result, message=error_message, status=503, error_code="playback_toggle_failed")
-
-    # Fallback for unexpected return shapes
-    return api_response(True, data={"result": result}, message=t_api("ok", request))
+    payload = result.data if isinstance(result.data, dict) else {"result": result.data}
+    return api_response(False, data=payload, message=message, status=status, error_code=error_code)
 
 @app.route("/volume", methods=["POST"])
 @api_error_handler
 def volume_endpoint():
     """Volume endpoint - only sets Spotify volume (no config save)"""
-    token = get_access_token()
-    if not token:
-        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
-    
-    try:
-        # Validate volume input
-        volume = validate_volume_only(request.form)
-        
-        # Set Spotify volume
-        device_id = request.form.get('device_id') or None
+    spotify_service = get_service("spotify")
+    result = spotify_service.set_volume_from_form(request.form)
 
-        spotify_success = set_volume(token, volume, device_id)
-        
-        if spotify_success:
-            return api_response(True, data={"volume": volume}, message=f"Volume set to {volume}")
-        else:
-            return api_response(False, message=t_api("volume_set_failed", request), status=500, 
-                              error_code="volume_set_failed")
-            
-    except ValidationError as e:
-        logging.warning(f"Volume validation error: {e.field_name} - {e.message}")
-        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", 
-                          status=400, error_code=e.field_name)
+    if result.success:
+        volume = (result.data or {}).get("volume")
+        message = f"Volume set to {volume}" if volume is not None else t_api("ok", request)
+        return api_response(True, data=result.data, message=message)
+
+    error_code = result.error_code or "volume_set_failed"
+    message = result.message or t_api("volume_set_failed", request)
+
+    if error_code == "auth_required":
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
+    if error_code == "volume":
+        logger.warning("Volume validation error: %s", message)
+        return api_response(False, message=message, status=400, error_code="volume")
+
+    return api_response(False, message=t_api("volume_set_failed", request), status=500, error_code=error_code)
 
 # =====================================
 # 😴 API Routes - Sleep Timer
@@ -1376,94 +1385,79 @@ def volume_endpoint():
 def sleep_status_api():
     """Get sleep timer status - supports both basic and advanced modes"""
     advanced_mode = request.args.get('advanced', 'false').lower() == 'true'
-    
+
+    sleep_service = get_service("sleep")
+    result = sleep_service.get_sleep_status()
+
+    if not result.success:
+        logger.error("Failed to load sleep status via service: %s", result.message)
+        return api_response(
+            False,
+            message=result.message or t_api("sleep_status_error", request),
+            status=500,
+            error_code=result.error_code or "sleep_status_error"
+        )
+
     if advanced_mode:
-        # Advanced status via service layer
-        try:
-            sleep_service = get_service("sleep")
-            result = sleep_service.get_sleep_status()
-            
-            if result.success:
-                return api_response(True, data={
-                    "timestamp": result.timestamp.isoformat(), 
-                    "sleep": result.data,
-                    "mode": "advanced"
-                })
-            else:
-                return api_response(False, message=result.message, status=500, 
-                                  error_code=result.error_code or "sleep_status_error")
-        except Exception as e:
-            logger.error(f"Error getting advanced sleep status: {e}")
-            return api_response(False, message=str(e), status=500, 
-                              error_code="sleep_status_exception")
-    else:
-        # Basic status (legacy format)
-        return api_response(True, data=get_sleep_status())
+        return api_response(True, data={
+            "timestamp": result.timestamp.isoformat(),
+            "sleep": {k: v for k, v in (result.data or {}).items() if k != "raw_status"},
+            "mode": "advanced"
+        })
+
+    legacy_payload = (result.data or {}).get("raw_status")
+    if legacy_payload is None:
+        legacy_payload = result.data
+    return api_response(True, data=legacy_payload or {})
 
 @app.route("/sleep", methods=["POST"])
 @api_error_handler
 @rate_limit("config_changes")
 def start_sleep():
     """Start sleep timer with comprehensive input validation"""
-    try:
-        # Validate all sleep timer inputs
-        validated_data = validate_sleep_config(request.form)
-        
-        # Start sleep timer with validated data
-        success = start_sleep_timer(**validated_data)
-        
-        # Return JSON for AJAX requests, redirect for form submissions
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
-        if request.is_json or is_ajax:
-            if success:
-                return api_response(True, message=f"Sleep timer started for {validated_data['duration_minutes']} minutes")
-            else:
-                return api_response(False, message=t_api("failed_start_sleep", request), status=500, error_code="sleep_start_failed")
-        else:
-            # Traditional form submission
-            if success:
-                session['success_message'] = f"Sleep timer started for {validated_data['duration_minutes']} minutes"
-                return redirect(url_for('index'))
-            else:
-                session['error_message'] = "Failed to start sleep timer"
-                return redirect(url_for('index'))
-                
-    except ValidationError as e:
-        error_msg = f"Invalid {e.field_name}: {e.message}"
-        logging.warning(f"Sleep timer validation error: {e.field_name} - {e.message}")
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
-        if request.is_json or is_ajax:
-            return api_response(False, message=error_msg, status=400, error_code=e.field_name)
-        else:
-            session['error_message'] = error_msg
-            return redirect(url_for('index'))
-    except Exception as e:
-        error_msg = f"Error starting sleep timer: {str(e)}"
-        logging.exception("Error starting sleep timer")
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
-        if request.is_json or is_ajax:
-            return api_response(False, message=error_msg, status=500, error_code="sleep_start_error")
-        else:
-            session['error_message'] = error_msg
-            return redirect(url_for('index'))
+    sleep_service = get_service("sleep")
+    result = sleep_service.start_sleep_timer(request.form)
+
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
+    if request.is_json or is_ajax:
+        if result.success:
+            return api_response(True, message=result.message or "Sleep timer started")
+
+        error_code = (result.error_code or "sleep_start_failed")
+        status = 400 if error_code in {"duration", "sleep_volume", "playlist_uri", "device_name"} else 500
+        message = result.message or t_api("failed_start_sleep", request)
+        return api_response(False, message=message, status=status, error_code=error_code)
+
+    if result.success:
+        session['success_message'] = result.message or "Sleep timer started"
+    else:
+        session['error_message'] = result.message or "Failed to start sleep timer"
+    return redirect(url_for('index'))
 
 @app.route("/stop_sleep", methods=["POST"])
 @api_error_handler
 @rate_limit("api_general")
 def stop_sleep():
     """Stop active sleep timer"""
-    success = stop_sleep_timer()
-    
-    # Return JSON for AJAX requests, redirect for form submissions
+    sleep_service = get_service("sleep")
+    result = sleep_service.stop_sleep_timer()
+    success = result.success
+
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
     if request.is_json or is_ajax:
-        return api_response(success, message=t_api("sleep_stopped", request) if success else "Failed to stop sleep timer", status=200 if success else 500, error_code=None if success else "sleep_stop_failed")
+        message = t_api("sleep_stopped", request) if success else (result.message or "Failed to stop sleep timer")
+        return api_response(
+            success,
+            message=message,
+            status=200 if success else 500,
+            error_code=None if success else (result.error_code or "sleep_stop_failed")
+        )
+
+    if success:
+        session['success_message'] = result.message or "Sleep timer stopped"
     else:
-        if success:
-            session['success_message'] = "Sleep timer stopped"
-        else:
-            session['error_message'] = "Failed to stop sleep timer"
-        return redirect(url_for('index'))
+        session['error_message'] = result.message or "Failed to stop sleep timer"
+    return redirect(url_for('index'))
 
 # =====================================
 # 🎵 Music Library & Standalone Routes
@@ -1485,61 +1479,41 @@ def music_library():
 @api_error_handler
 def play_endpoint():
     """Unified playback endpoint - supports both JSON and form data"""
-    token = get_access_token()
-    if not token:
+    spotify_service = get_service("spotify")
+
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        result = spotify_service.start_playback_from_payload(payload, payload_type="json")
+    else:
+        result = spotify_service.start_playback_from_payload(request.form, payload_type="form")
+
+    if result.success:
+        return api_response(True, message=t_api("playback_started", request))
+
+    error_code = (result.error_code or "playback_start_failed")
+    message = result.message or t_api("failed_start_playback", request)
+
+    if error_code == "auth_required":
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
-    
-    try:
-        # Support both JSON and form data for backward compatibility
-        if request.is_json:
-            # JSON format (legacy /start_playback)
-            data = request.get_json()
-            context_uri = data.get("context_uri")
-            device_id = data.get("device_id")
-            
-            if not context_uri:
-                return api_response(False, message=t_api("missing_context_uri", request), status=400, error_code="missing_context_uri")
-            
-            # Direct device_id usage
-            success = start_playback(token, device_id, context_uri)
-            
-        else:
-            # Form format (legacy /play)
-            device_name = request.form.get('device_name')
-            context_uri = request.form.get('uri')
-            
-            if not context_uri:
-                return api_response(False, message=t_api("missing_uri", request), status=400, error_code="missing_uri")
-            
-            if not device_name:
-                return api_response(False, message=t_api("missing_device", request), status=400, error_code="missing_device")
-            
-            # Get devices to find device_id from device_name
-            devices = get_devices(token)
-            if not devices:
-                return api_response(False, message=t_api("no_devices", request), status=404, error_code="no_devices")
-            
-            # Find device by name
-            target_device = None
-            for device in devices:
-                if device['name'] == device_name:
-                    target_device = device
-                    break
-            
-            if not target_device:
-                return api_response(False, message=t_api("device_not_found", request, name=device_name), status=404, error_code="device_not_found")
-            
-            # Start playback with found device_id
-            success = start_playback(token, target_device['id'], context_uri)
-        
-        if success:
-            return api_response(True, message=t_api("playback_started", request))
-        else:
-            return api_response(False, message=t_api("failed_start_playback", request), status=500, error_code="playback_start_failed")
-            
-    except Exception as e:
-        logging.exception("Error in play endpoint")
-        return api_response(False, message=str(e), status=500, error_code="play_endpoint_error")
+    if error_code in {"missing_context_uri", "missing_uri", "missing_device"}:
+        translations = {
+            "missing_context_uri": t_api("missing_context_uri", request),
+            "missing_uri": t_api("missing_uri", request),
+            "missing_device": t_api("missing_device", request)
+        }
+        return api_response(False, message=translations[error_code], status=400, error_code=error_code)
+    if error_code == "no_devices":
+        return api_response(False, message=t_api("no_devices", request), status=404, error_code="no_devices")
+    if error_code == "device_not_found":
+        device_name = ""
+        if isinstance(result.data, dict):
+            device_name = result.data.get("device_name", "")
+        return api_response(False, message=t_api("device_not_found", request, name=device_name), status=404, error_code="device_not_found")
+
+    status = 500
+    if error_code == "playlists_unavailable":
+        status = 503
+    return api_response(False, message=t_api("failed_start_playback", request), status=status, error_code=error_code)
 
 # =====================================
 # 📱 Utility Routes
@@ -1761,12 +1735,20 @@ def api_alarm_execute():
     Useful for debugging on the Raspberry Pi when checking playlist/device
     configuration or verifying logging. Returns JSON with success flag.
     """
-    try:
-        result = execute_alarm(force=True)
-        return api_response(bool(result), data={"executed": bool(result)}, message="Alarm executed" if result else "Alarm conditions not met or failed", status=200 if result else 400, error_code=None if result else "alarm_not_executed")
-    except Exception as e:
-        logger.error(f"Error executing alarm manually: {e}")
-        return api_response(False, message=str(e), status=500, error_code="alarm_execute_error")
+    alarm_service = get_service("alarm")
+    result = alarm_service.execute_alarm_now()
+
+    if result.success:
+        return api_response(True, data={"executed": True}, message=result.message or "Alarm executed")
+
+    logger.error("Alarm execution failed: %s", result.message)
+    return api_response(
+        False,
+        data={"executed": False},
+        message=result.message or "Alarm conditions not met or failed",
+        status=400,
+        error_code="alarm_not_executed"
+    )
 
 @app.route("/api/spotify/auth-status")
 @rate_limit("spotify_api")

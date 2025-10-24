@@ -6,7 +6,7 @@ Handles all Spotify-related business logic including authentication,
 device management, playlist operations, and playback control.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Mapping
 from datetime import datetime, timedelta
 
 from . import BaseService, ServiceResult
@@ -14,9 +14,10 @@ from ..api.spotify import (
     get_access_token, get_devices, get_playlists, get_user_library,
     start_playback, stop_playback, resume_playback, toggle_playback,
     set_volume, get_current_track, get_current_spotify_volume,
-    get_playback_status, get_combined_playback
+    get_playback_status, get_combined_playback, toggle_playback_fast
 )
 from ..utils.token_cache import get_token_cache_info
+from ..utils.validation import validate_volume_only, ValidationError
 
 class SpotifyService(BaseService):
     """Service for Spotify integration and music management."""
@@ -242,14 +243,49 @@ class SpotifyService(BaseService):
                 
         except Exception as e:
             return self._handle_error(e, "control_playback")
-    
+
+    def toggle_playback_fast(self) -> ServiceResult:
+        """Toggle playback state using the fast toggle endpoint."""
+        try:
+            auth_result = self.get_authentication_status()
+            if not auth_result.success:
+                return auth_result
+
+            token = get_access_token()
+            if not token:
+                return self._error_result(
+                    "Spotify authentication required. Please configure your credentials.",
+                    error_code="auth_required"
+                )
+
+            result = toggle_playback_fast(token)
+            if isinstance(result, dict):
+                success = result.get("success", True)
+                if success:
+                    return self._success_result(
+                        data=result,
+                        message="Playback toggled successfully"
+                    )
+                return self._error_result(
+                    result.get("error") or "Playback toggle failed",
+                    error_code="playback_toggle_failed",
+                    data=result
+                )
+
+            return self._success_result(
+                data={"result": result},
+                message="Playback toggled successfully"
+            )
+        except Exception as e:
+            return self._handle_error(e, "toggle_playback_fast")
+
     def set_playback_volume(self, volume: int, device_id: Optional[str] = None) -> ServiceResult:
         """Set Spotify playback volume."""
         try:
             if not (0 <= volume <= 100):
                 return self._error_result(
                     "Volume must be between 0 and 100",
-                    error_code="INVALID_VOLUME"
+                    error_code="volume"
                 )
             
             auth_result = self.get_authentication_status()
@@ -267,11 +303,98 @@ class SpotifyService(BaseService):
             else:
                 return self._error_result(
                     "Failed to set volume",
-                    error_code="VOLUME_SET_FAILED"
+                    error_code="volume_set_failed"
                 )
                 
         except Exception as e:
             return self._handle_error(e, "set_playback_volume")
+
+    def set_volume_from_form(self, form_data: Mapping[str, Any]) -> ServiceResult:
+        """Validate and apply volume changes from form payloads."""
+        try:
+            volume = validate_volume_only(form_data)
+        except ValidationError as exc:
+            return self._error_result(
+                f"Invalid {exc.field_name}: {exc.message}",
+                error_code=exc.field_name
+            )
+
+        device_id = form_data.get("device_id") or None
+        return self.set_playback_volume(volume, device_id)
+
+    def start_playback_from_payload(self, payload: Mapping[str, Any], *, payload_type: str) -> ServiceResult:
+        """Start playback based on JSON or form payloads."""
+        try:
+            auth_result = self.get_authentication_status()
+            if not auth_result.success:
+                return auth_result
+
+            token = get_access_token()
+            if not token:
+                return self._error_result(
+                    "Spotify authentication required. Please configure your credentials.",
+                    error_code="auth_required"
+                )
+
+            if payload_type == "json":
+                context_uri = payload.get("context_uri")
+                device_id = payload.get("device_id")
+                device_name = None
+                if not context_uri:
+                    return self._error_result(
+                        "Missing context_uri",
+                        error_code="missing_context_uri"
+                    )
+            else:
+                context_uri = payload.get("uri")
+                device_name = payload.get("device_name")
+                device_id = None
+
+                if not context_uri:
+                    return self._error_result(
+                        "Missing URI",
+                        error_code="missing_uri"
+                    )
+                if not device_name:
+                    return self._error_result(
+                        "Missing device name",
+                        error_code="missing_device"
+                    )
+
+            resolved_device_id = device_id
+            if device_name and not resolved_device_id:
+                devices = get_devices(token)
+                if not devices:
+                    return self._error_result(
+                        "No devices available",
+                        error_code="no_devices"
+                    )
+
+                target = next((d for d in devices if d.get("name") == device_name), None)
+                if not target:
+                    return self._error_result(
+                        f"Device '{device_name}' not found",
+                        error_code="device_not_found",
+                        data={"device_name": device_name}
+                    )
+                resolved_device_id = target.get("id")
+
+            success = start_playback(token, resolved_device_id, context_uri)
+            if success:
+                return self._success_result(
+                    data={
+                        "context_uri": context_uri,
+                        "device_id": resolved_device_id,
+                        "device_name": device_name
+                    },
+                    message="Playback started successfully"
+                )
+            return self._error_result(
+                "Failed to start playback",
+                error_code="playback_start_failed"
+            )
+        except Exception as e:
+            return self._handle_error(e, "start_playback_from_payload")
     
     def validate_device_and_playlist(self, device_id: str, playlist_uri: str) -> ServiceResult:
         """Validate that device and playlist are accessible."""
