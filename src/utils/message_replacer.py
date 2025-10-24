@@ -4,7 +4,7 @@ Script to replace hardcoded messages in app.py with translation calls
 """
 
 import re
-import sys
+
 
 def replace_messages_in_file(filepath):
     """Replace hardcoded messages with translation calls"""

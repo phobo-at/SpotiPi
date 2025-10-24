@@ -6,18 +6,18 @@ Handles all Spotify-related business logic including authentication,
 device management, playlist operations, and playback control.
 """
 
-from typing import Dict, Any, List, Optional, Tuple, Mapping
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Any, Mapping, Optional
 
-from . import BaseService, ServiceResult
-from ..api.spotify import (
-    get_access_token, get_devices, get_playlists, get_user_library,
-    start_playback, stop_playback, resume_playback, toggle_playback,
-    set_volume, get_current_track, get_current_spotify_volume,
-    get_playback_status, get_combined_playback, toggle_playback_fast
-)
+from ..api.spotify import (get_access_token, get_combined_playback,
+                           get_devices, get_playlists, get_user_library,
+                           resume_playback, set_volume, start_playback,
+                           stop_playback, toggle_playback,
+                           toggle_playback_fast)
 from ..utils.token_cache import get_token_cache_info
-from ..utils.validation import validate_volume_only, ValidationError
+from ..utils.validation import ValidationError, validate_volume_only
+from . import BaseService, ServiceResult
+
 
 class SpotifyService(BaseService):
     """Service for Spotify integration and music management."""

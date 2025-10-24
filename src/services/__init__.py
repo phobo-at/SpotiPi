@@ -7,10 +7,11 @@ Services contain business logic and coordinate between different modules.
 """
 
 import logging
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Union
+from abc import ABC
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Dict, Optional
+
 
 @dataclass
 class ServiceResult:

@@ -5,9 +5,9 @@ Generiert einen neuen Refresh Token für die Spotify API
 """
 
 import os
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+
 from dotenv import load_dotenv
+from spotipy.oauth2 import SpotifyOAuth
 
 # Load environment variables
 load_dotenv()

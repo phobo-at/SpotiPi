@@ -6,10 +6,10 @@ from __future__ import annotations
 import logging
 import os
 from functools import lru_cache
-from typing import Dict, Any
+from typing import Any, Dict
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .thread_safety import load_config_safe, get_thread_safe_config_manager
+from .thread_safety import get_thread_safe_config_manager, load_config_safe
 
 _LOGGER = logging.getLogger("timezone")
 _FALLBACK_TZ = "Europe/Vienna"

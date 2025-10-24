@@ -9,14 +9,15 @@ Handles alarm triggering, weekday scheduling, and playback management with:
 - Comprehensive error handling and logging
 """
 
-import os
 import datetime
+import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
-from ..api.spotify import get_access_token, get_device_id, start_playback, set_volume
+from ..api.spotify import (get_access_token, get_device_id, set_volume,
+                           start_playback)
+from ..config import load_config
 from ..constants import ALARM_TRIGGER_WINDOW_MINUTES
-from ..config import load_config, save_config
 from ..utils.logger import setup_logger
 from ..utils.thread_safety import config_transaction
 from ..utils.timezone import get_local_timezone

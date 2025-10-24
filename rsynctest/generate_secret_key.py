@@ -4,9 +4,10 @@
 This script generates a cryptographically secure secret key for Flask sessions.
 """
 
-import secrets
 import os
+import secrets
 from pathlib import Path
+
 
 def generate_secret_key():
     """Generate a secure 32-byte hex secret key."""

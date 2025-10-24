@@ -3,42 +3,45 @@ SpotiPi Main Application
 Flask web application with new modular structure
 """
 
-import os
 import copy
 import datetime
-import uuid
-from threading import Thread
-from pathlib import Path
-
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response, g
-from flask_compress import Compress
-from functools import wraps
 import logging
+import os
+import secrets
 import threading
 import time
-from urllib.parse import urlparse
+import uuid
+from functools import wraps
+from pathlib import Path
+from threading import Thread
 from typing import Any, Callable, Dict, Optional
+from urllib.parse import urlparse
 
+from flask import (Flask, Response, g, jsonify, redirect, render_template,
+                   request, session, url_for)
+from flask_compress import Compress
+
+from .api.spotify import (get_access_token, get_combined_playback, get_devices,
+                          get_followed_artists, get_playlists,
+                          get_saved_albums, get_user_library,
+                          get_user_saved_tracks)
 # Import from new structure - use relative imports since we're in src/
 from .config import load_config
+from .core.alarm_scheduler import \
+    start_alarm_scheduler as start_event_alarm_scheduler
 from .core.scheduler import AlarmTimeValidator
-from .core.alarm_scheduler import start_alarm_scheduler as start_event_alarm_scheduler
-from .utils.logger import setup_logger, setup_logging
-from .version import get_app_info, VERSION
-from .utils.translations import get_translations, get_user_language, t_api
-from .utils.library_utils import compute_library_hash, prepare_library_payload
-from .api.spotify import (
-    get_access_token, get_devices, get_playlists, get_user_library,
-    get_combined_playback,
-    get_saved_albums, get_user_saved_tracks, get_followed_artists
-)
-from .utils.token_cache import get_token_cache_info, log_token_cache_performance
-from .utils.thread_safety import get_config_stats, invalidate_config_cache
-from .utils.rate_limiting import rate_limit, get_rate_limiter
+from .services.service_manager import get_service, get_service_manager
 from .utils.cache_migration import get_cache_migration_layer
-from .services.service_manager import get_service_manager, get_service
+from .utils.library_utils import compute_library_hash, prepare_library_payload
+from .utils.logger import setup_logger, setup_logging
 from .utils.perf_monitor import perf_monitor
+from .utils.rate_limiting import get_rate_limiter, rate_limit
+from .utils.thread_safety import get_config_stats, invalidate_config_cache
+from .utils.token_cache import (get_token_cache_info,
+                                log_token_cache_performance)
+from .utils.translations import get_translations, get_user_language, t_api
 from .utils.wsgi_logging import TidyRequestHandler
+from .version import VERSION, get_app_info
 
 # Initialize Flask app with correct paths
 project_root = Path(__file__).parent.parent  # Go up from src/ to project root
@@ -59,8 +62,6 @@ app = Flask(
 app.config['TEMPLATES_AUTO_RELOAD'] = not LOW_POWER_MODE
 app.jinja_env.auto_reload = not LOW_POWER_MODE
 
-# Secure secret key generation
-import secrets
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
 
 app.config.setdefault('COMPRESS_REGISTER', True)
@@ -643,7 +644,6 @@ def inject_global_vars():
     }
 
 # Unified API response helper
-from typing import Any, Callable, Dict, Optional
 
 
 def _iso_timestamp_now() -> str:
@@ -1470,10 +1470,8 @@ def play_endpoint():
             device_name = result.data.get("device_name", "")
         return api_response(False, message=t_api("device_not_found", request, name=device_name), status=404, error_code="device_not_found")
 
-    status = 500
-    if error_code == "playlists_unavailable":
-        status = 503
-    return api_response(False, message=t_api("failed_start_playback", request), status=status, error_code=error_code)
+    status = 503 if error_code == "playlists_unavailable" else 500
+    return api_response(False, message=message, status=status, error_code=error_code)
 
 # =====================================
 # 📱 Utility Routes
@@ -1505,7 +1503,8 @@ def not_found_error(error):
                          devices=[],
                          playlists=[],
                          next_alarm_info="",
-                         sleep_status={}), 404
+                         sleep_status={},
+                         initial_state={}), 404
 
 @app.errorhandler(500)
 def internal_error(error):
@@ -1516,7 +1515,8 @@ def internal_error(error):
                          devices=[],
                          playlists=[],
                          next_alarm_info="",
-                         sleep_status={}), 500
+                         sleep_status={},
+                         initial_state={}), 500
 
 # =====================================
 # 🚀 Application Startup

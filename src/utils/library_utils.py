@@ -3,9 +3,11 @@
 Consolidates duplicated inline logic from endpoints in app.py.
 """
 from __future__ import annotations
+
 import datetime
-from typing import Dict, List, Any, Iterable
 import hashlib
+from typing import Any, Dict, Iterable, List
+
 from ..constants import MUSIC_LIBRARY_BASIC_FIELDS
 
 __all__ = [

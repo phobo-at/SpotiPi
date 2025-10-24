@@ -6,15 +6,14 @@ Handles all sleep timer related business logic including timer management,
 status tracking, and sleep settings configuration.
 """
 
-from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Any, Dict
 
+from ..core.sleep import (get_sleep_status, save_sleep_settings,
+                          start_sleep_timer, stop_sleep_timer)
+from ..utils.validation import ValidationError, validate_sleep_config
 from . import BaseService, ServiceResult
-from ..core.sleep import (
-    start_sleep_timer, stop_sleep_timer, get_sleep_status,
-    save_sleep_settings
-)
-from ..utils.validation import validate_sleep_config, ValidationError
+
 
 class SleepService(BaseService):
     """Service for managing sleep timers and settings."""

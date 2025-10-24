@@ -11,6 +11,7 @@ import time
 
 from src.services import ServiceResult
 
+
 def test_service_health(client):
     response = client.get('/api/services/health')
     assert response.status_code == 200

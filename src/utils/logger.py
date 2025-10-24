@@ -8,11 +8,10 @@ Automatically adapts to Raspberry Pi for SD-card protection
 import logging
 import logging.handlers
 import os
-import sys
 import platform
+import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 # Environment detection
 IS_RASPBERRY_PI = (
@@ -258,7 +257,7 @@ def log_startup(module_name: str) -> None:
     if ENABLE_SYSTEM_INFO:
         try:
             import psutil
-            
+
             # System information
             logger.info("=" * 50)
             logger.info("🚀 SpotiPi System Information")

@@ -3,7 +3,7 @@ SpotiPi Version Information
 Central version management for the SpotiPi project.
 """
 
-from typing import Dict, Union, Optional
+from typing import Dict, Optional, Union
 
 # Semantic Versioning: MAJOR.MINOR.PATCH
 # MAJOR: Breaking changes

@@ -17,7 +17,6 @@ from typing import Any, Dict, Optional
 
 from flask import g, jsonify, request
 
-
 LOW_POWER_MODE = os.getenv("SPOTIPI_LOW_POWER", "").lower() in ("1", "true", "yes", "on")
 
 

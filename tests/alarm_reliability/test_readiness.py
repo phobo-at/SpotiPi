@@ -4,7 +4,6 @@ from zoneinfo import ZoneInfo
 from src.core.alarm_logging import AlarmProbeContext
 from src.core.alarm_scheduler import AlarmScheduler
 
-
 TZ = ZoneInfo("Europe/Vienna")
 
 
