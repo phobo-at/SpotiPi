@@ -14,7 +14,7 @@ import time
 import json
 import logging
 from threading import Lock, Thread
-from typing import Dict, Any, Optional, Union, Tuple
+from typing import Dict, Any, Optional, Tuple
 import requests
 
 # Import from new modular structure

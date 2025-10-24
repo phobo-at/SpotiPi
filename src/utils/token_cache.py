@@ -10,7 +10,7 @@ import threading
 import logging
 from typing import Optional, Dict, Any, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 
 @dataclass
 class TokenResponse:
