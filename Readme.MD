@@ -20,6 +20,11 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 - 🛡️ **Secure** - Environment variables for all credentials
 - 📈 **Resilient Alarms** - Monotonic scheduler with catch-up & structured diagnostics
 
+## 🧱 Architecture
+
+- Flask controllers stay thin—they validate HTTP specifics and delegate business logic to the service layer (`src/services/*`) for shared validation, caching, and state changes.
+- Spotify music-library endpoints now hydrate through a single cache & hashing pipeline (`utils.library_utils`), so `/api/music-library` and `/api/music-library/sections` expose identical headers and payload semantics.
+
 ## 🚀 Quick Start
 
 ```bash
