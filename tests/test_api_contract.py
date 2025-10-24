@@ -38,6 +38,28 @@ def test_music_library_auth_required(client):
         assert 'error_code' in data
 
 
+def test_music_library_sections_contract(client):
+    resp = client.get('/api/music-library/sections?sections=playlists')
+    if resp.status_code == 401:
+        data = resp.get_json()
+        assert data.get('error_code') == 'auth_required'
+        return
+    if resp.status_code == 304:
+        assert resp.headers.get('ETag')
+        assert resp.headers.get('X-MusicLibrary-Hash')
+        return
+    data = assert_api_envelope(resp, expect_success=True)
+    payload = data['data']
+    assert payload.get('partial') is True
+    assert 'sections' in payload
+    assert resp.headers.get('X-MusicLibrary-Hash')
+    if resp.headers.get('X-Data-Fields') == 'basic':
+        # ensure slimmed payload only contains whitelisted keys
+        for coll in ('playlists', 'albums', 'tracks', 'artists'):
+            for item in payload.get(coll, []):
+                assert set(item.keys()).issubset({'uri', 'name', 'image_url', 'track_count', 'type', 'artist'})
+
+
 def test_playback_status_no_token(client):
     resp = client.get('/playback_status')
     data = resp.get_json()
@@ -90,3 +112,14 @@ def test_sleep_status_contract(client):
     resp = client.get('/sleep_status')
     data = assert_api_envelope(resp, expect_success=True)
     assert 'data' in data
+
+
+def test_volume_endpoint_validation(client):
+    resp = client.post('/volume', data={'volume': '999'})
+    data = resp.get_json()
+    if resp.status_code == 401:
+        assert data.get('error_code') == 'auth_required'
+        return
+    assert resp.status_code == 400
+    assert data['success'] is False
+    assert data.get('error_code') == 'volume'

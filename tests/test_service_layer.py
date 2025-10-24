@@ -9,6 +9,7 @@ run without an external server.
 
 import time
 
+from src.services import ServiceResult
 
 def test_service_health(client):
     response = client.get('/api/services/health')
@@ -125,13 +126,15 @@ def test_service_error_handling(client):
 
 
 def test_toggle_play_pause_failure_propagates(client, monkeypatch):
-    monkeypatch.setattr('src.app.get_access_token', lambda: 'token')
+    def _fake_toggle(self):
+        return ServiceResult(
+            success=False,
+            data={'success': False, 'error': 'No active device'},
+            message='No active device',
+            error_code='playback_toggle_failed'
+        )
 
-    def _fake_toggle(token):
-        assert token == 'token'
-        return {'success': False, 'error': 'No active device'}
-
-    monkeypatch.setattr('src.app.toggle_playback_fast', _fake_toggle)
+    monkeypatch.setattr('src.services.spotify_service.SpotifyService.toggle_playback_fast', _fake_toggle)
 
     response = client.post('/toggle_play_pause')
     assert response.status_code == 503
