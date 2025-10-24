@@ -191,17 +191,6 @@ class ThreadLocalSessionProxy:
         self._factory = factory
         self._local = threading.local()
 
-    def close_all(self) -> None:
-        """Close all tracked sessions (used during shutdown/tests)."""
-        with self._sessions_lock:
-            for session in list(self._sessions):
-                try:
-                    session.close()
-                except Exception:
-                    pass
-            self._sessions = weakref.WeakSet()
-        self._local = threading.local()
-
     def request(self, *args: Any, **kwargs: Any) -> requests.Response:
         return self._ensure_session().request(*args, **kwargs)
 
@@ -219,24 +208,7 @@ def get_http_session() -> requests.Session:
     return _SESSION_PROXY
 
 
-def set_http_session(session: requests.Session) -> None:
-    """
-    Override the shared HTTP session (primarily for testing).
-
-    Args:
-        session: Preconfigured session instance
-    """
-    global _SESSION_PROXY, _CONFIG_LOGGED
-    with _SESSION_LOCK:
-        if _SESSION_PROXY is None:
-            _SESSION_PROXY = ThreadLocalSessionProxy(lambda: session)
-        else:
-            _SESSION_PROXY.configure(lambda: session)
-        _CONFIG_LOGGED = False
-        _log_configuration(session)
-
-
 # Eagerly instantiate for modules that import SESSION directly
 SESSION = get_http_session()
 
-__all__ = ["SESSION", "DEFAULT_TIMEOUT", "build_session", "get_http_session", "set_http_session"]
+__all__ = ["SESSION", "DEFAULT_TIMEOUT", "build_session", "get_http_session"]
