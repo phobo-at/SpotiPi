@@ -89,6 +89,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'loading_devices': 'Lautsprecher werden geladen...',
         'no_devices_found': 'Keine Lautsprecher gefunden',
         'speaker_error': 'Fehler beim Laden der Lautsprecher',
+        'device_load_error': 'Fehler beim Laden der Geräte',
         
         # Volume Controls
         'alarm_volume': '<i class="fas fa-volume-high"></i> Wecker-Lautstärke',
@@ -116,6 +117,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'spotify_error': 'Spotify-Fehler',
         'network_error': 'Netzwerkfehler',
         'spotify_token_error': 'Fehler beim Abrufen des Spotify-Tokens.',
+        'status_connecting': 'Verbindung zu Spotify wird hergestellt…',
+        'status_ready': 'Verbunden',
+        'status_pending': 'Warte auf Spotify…',
+        'status_offline': 'Offline-Modus',
+        'status_retry': 'Erneuter Versuch…',
+        'status_token_warming': 'Spotify-Token wird vorbereitet…',
+        'status_auth_required': 'Anmeldung bei Spotify erforderlich',
         
         # Actions
         'play_pause': 'Wiedergabe starten oder pausieren',
@@ -274,6 +282,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'loading_devices': 'Loading speakers...',
         'no_devices_found': 'No speakers found',
         'speaker_error': 'Error loading speakers',
+        'device_load_error': 'Error loading devices',
         
         # Volume Controls
         'alarm_volume': '<i class="fas fa-volume-high"></i> Alarm Volume',
@@ -301,6 +310,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'spotify_error': 'Spotify error',
         'network_error': 'Network error',
         'spotify_token_error': 'Error retrieving Spotify token.',
+        'status_connecting': 'Connecting to Spotify…',
+        'status_ready': 'Connected',
+        'status_pending': 'Waiting for Spotify…',
+        'status_offline': 'Offline mode',
+        'status_retry': 'Retrying…',
+        'status_token_warming': 'Preparing Spotify session…',
+        'status_auth_required': 'Spotify sign-in required',
         
         # Actions
         'play_pause': 'Start or pause playback',

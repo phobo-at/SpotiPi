@@ -153,6 +153,7 @@ fi
 # Prepare summary data from itemized output
 UPDATED=0
 NEW_FILES=0
+SYSTEMD_CHANGED=0
 declare -a UPDATED_PATHS=()
 
 while IFS= read -r line; do
@@ -162,12 +163,19 @@ while IFS= read -r line; do
       path="${line#* }"
       if [ "$path" != "$line" ]; then
         UPDATED_PATHS+=("$path")
+        if [[ "$path" == deploy/systemd/* ]]; then
+          SYSTEMD_CHANGED=1
+        fi
       fi
       if [[ "${line:0:3}" == ">f+" ]]; then
         NEW_FILES=$((NEW_FILES + 1))
       fi
   fi
 done < "$TMP_OUTPUT"
+
+if grep -q "deploy/systemd" "$TMP_DELETIONS" 2>/dev/null; then
+  SYSTEMD_CHANGED=1
+fi
 
 EXISTING_UPDATED=$((UPDATED - NEW_FILES))
 if [ $EXISTING_UPDATED -lt 0 ]; then EXISTING_UPDATED=0; fi
@@ -219,19 +227,23 @@ echo "✅ Code synchronized successfully"
 
 # Update systemd units (optional)
 if [ "${SPOTIPI_DEPLOY_SYSTEMD:-1}" = "1" ]; then
-  echo "⚙️ Updating systemd units on Pi..."
-  for unit in spotipi.service spotipi-alarm.service spotipi-alarm.timer; do
-    if ssh "$PI_HOST" "[ -f \"$PI_PATH/deploy/systemd/$unit\" ]"; then
-      ssh "$PI_HOST" "sudo cp $PI_PATH/deploy/systemd/$unit /etc/systemd/system/$unit"
-      echo "   📄 Installed $unit"
+  if [ "$SYSTEMD_CHANGED" -eq 1 ] || [ "${SPOTIPI_FORCE_SYSTEMD:-0}" = "1" ]; then
+    echo "⚙️ Updating systemd units on Pi..."
+    for unit in spotipi.service spotipi-alarm.service spotipi-alarm.timer; do
+      if ssh "$PI_HOST" "[ -f \"$PI_PATH/deploy/systemd/$unit\" ]"; then
+        ssh "$PI_HOST" "sudo cp $PI_PATH/deploy/systemd/$unit /etc/systemd/system/$unit"
+        echo "   📄 Installed $unit"
+      fi
+    done
+    ssh "$PI_HOST" "sudo systemctl daemon-reload"
+    if [ -n "$SERVICE_NAME" ]; then
+      ssh "$PI_HOST" "sudo systemctl enable $SERVICE_NAME" || true
     fi
-  done
-  ssh "$PI_HOST" "sudo systemctl daemon-reload"
-  if [ -n "$SERVICE_NAME" ]; then
-    ssh "$PI_HOST" "sudo systemctl enable $SERVICE_NAME" || true
-  fi
-  if [ "${SPOTIPI_ENABLE_ALARM_TIMER:-0}" = "1" ]; then
-    ssh "$PI_HOST" "sudo systemctl enable --now spotipi-alarm.timer" || true
+    if [ "${SPOTIPI_ENABLE_ALARM_TIMER:-0}" = "1" ]; then
+      ssh "$PI_HOST" "sudo systemctl enable --now spotipi-alarm.timer" || true
+    fi
+  else
+    echo "⚙️ Systemd units unchanged; skipping remote update (set SPOTIPI_FORCE_SYSTEMD=1 to force sync)"
   fi
 fi
 

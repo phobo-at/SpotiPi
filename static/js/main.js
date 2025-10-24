@@ -19,11 +19,31 @@ async function syncVolumeFromSpotify() {
     
     try {
       const data = await getPlaybackStatus();
-      if (data?.device?.volume_percent !== undefined) {
-        updateVolumeSlider(data.device.volume_percent);
+      const payload = data?.playback || data;
+      if (payload?.device?.volume_percent !== undefined) {
+        updateVolumeSlider(payload.device.volume_percent);
       }
     } catch {
       // Errors already logged in fetchAPI
+    }
+}
+
+function hydrateFromInitialState() {
+    const initial = window.__INITIAL_STATE__;
+    if (!initial) return;
+
+    const initialPlayback = initial.playback?.playback || initial.dashboard?.playback?.playback;
+    if (initialPlayback) {
+        applyPlaybackStatus(initialPlayback, { updateVolume: false });
+        if (initialPlayback.device?.volume_percent !== undefined) {
+            updateVolumeSlider(initialPlayback.device.volume_percent);
+        }
+    } else {
+        hideCurrentTrack('status_pending');
+    }
+
+    if (initial.devices) {
+        window.__INITIAL_DEVICE_SNAPSHOT__ = initial.devices;
     }
 }
 
@@ -45,31 +65,43 @@ async function loadInitialData() {
         }
         if (dashboard.playback) {
           applyPlaybackStatus(dashboard.playback, { updateVolume: true });
+        } else if (dashboard.playback_status === 'auth_required') {
+          hideCurrentTrack('status_auth_required');
+        }
+
+        if (dashboard.devices_meta) {
+          window.__INITIAL_DEVICE_SNAPSHOT__ = {
+            devices: dashboard.devices || [],
+            status: dashboard.devices_meta.status,
+            hydration: dashboard.hydration?.devices || {},
+            cache: dashboard.devices_meta.cache || {}
+          };
         }
       }
 
       // Get initial playback status (devices are now handled by DeviceManager)
-      const playback = await getPlaybackStatus();
+      const playbackResponse = await getPlaybackStatus();
+      const playbackData = playbackResponse?.playback || playbackResponse;
 
-      if (playback?.error) {
-          console.warn('⚠️ Could not get playback status:', playback.error);
-          handleNoActivePlayback(); // Set UI to default state
-      } else if (playback) {
-          if (playback.current_track) {
-              updateCurrentTrack(playback.current_track);
+      if (playbackResponse?.status === 'error') {
+          console.warn('⚠️ Could not get playback status:', playbackResponse.error);
+          hideCurrentTrack('spotify_error');
+      } else if (playbackData) {
+          if (playbackData.current_track) {
+              updateCurrentTrack(playbackData.current_track);
           } else {
-              hideCurrentTrack();
+              hideCurrentTrack('no_active_playback');
           }
-  
-          if (playback.is_playing !== undefined) {
-              updatePlayPauseButtonText(playback.is_playing);
+
+          if (playbackData.is_playing !== undefined) {
+              updatePlayPauseButtonText(playbackData.is_playing);
           }
-  
-          if (playback.device?.volume_percent !== undefined) {
-              updateVolumeSlider(playback.device.volume_percent);
+
+          if (playbackData.device?.volume_percent !== undefined) {
+              updateVolumeSlider(playbackData.device.volume_percent);
           }
       }
-  
+
       // This function already exists and fetches the music library for the selectors
       loadPlaylistsForSelectors();
       
@@ -211,6 +243,17 @@ async function refreshDashboard() {
 
         if (data.playback) {
             applyPlaybackStatus(data.playback, { updateVolume: true });
+        } else if (data.playback_status === 'auth_required') {
+            hideCurrentTrack('status_auth_required');
+        }
+
+        if (data.devices_meta) {
+            window.__INITIAL_DEVICE_SNAPSHOT__ = {
+                devices: data.devices || [],
+                status: data.devices_meta.status,
+                hydration: data.hydration?.devices || {},
+                cache: data.devices_meta.cache || {}
+            };
         }
     } catch (error) {
         console.error('Failed to refresh dashboard:', error);
@@ -221,6 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log("SpotiPi Main Initializing...");
     DOM.clearCache();
     initializeUI();
+    hydrateFromInitialState();
     initializeEventListeners();
     loadInitialData();
 

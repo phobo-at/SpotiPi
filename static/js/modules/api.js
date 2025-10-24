@@ -318,17 +318,30 @@ export async function playMusic(uri, deviceName) {
 export async function refreshDevicesFast() {
     try {
         const response = await fetchAPI('/api/devices/refresh');
-        if (response?.success && response?.data?.devices) {
-            console.log(`🔄 Fast device refresh: ${response.data.devices.length} devices loaded`);
-            return response.data.devices;
-        } else {
-            console.warn('⚠️ Fast device refresh failed:', response?.error || response?.message);
-            return [];
+        if (response?.success && response?.data) {
+            const payload = response.data;
+            console.log(`🔄 Fast device refresh: ${payload.devices?.length || 0} devices loaded`);
+            return {
+                devices: payload.devices || [],
+                status: payload.stale ? 'stale' : 'ok',
+                cache: payload.cache || {},
+                hydration: payload.hydration || {},
+                lastUpdated: payload.lastUpdated,
+                lastUpdatedIso: payload.lastUpdatedIso
+            };
         }
+        console.warn('⚠️ Fast device refresh failed:', response?.error || response?.message);
+        return { devices: [], status: 'error', cache: {}, hydration: {} };
     } catch (error) {
         console.error('❌ Error in fast device refresh:', error);
-        return [];
+        return { devices: [], status: 'error', cache: {}, hydration: {} };
     }
+}
+
+export async function getDevicesSnapshot({ forceRefresh = false } = {}) {
+    const url = forceRefresh ? '/api/devices?refresh=1' : '/api/devices';
+    const raw = await fetchAPI(url);
+    return unwrapResponse(raw);
 }
 
 /**
@@ -336,11 +349,12 @@ export async function refreshDevicesFast() {
  * @param {Array} currentDevices - Current device list for comparison
  * @returns {Promise<{devices: Array, hasChanges: boolean}>}
  */
-export async function refreshDevicesWithChangeDetection(currentDevices = []) {
+export async function refreshDevicesWithChangeDetection(currentDevices = [], options = {}) {
     try {
-        const newDevices = await refreshDevicesFast();
-        
-        // Simple change detection: compare device count and device IDs
+        const force = options.force === true;
+        const snapshot = await getDevicesSnapshot({ forceRefresh: force });
+        const newDevices = snapshot?.devices || [];
+
         const hasChanges = (
             newDevices.length !== currentDevices.length ||
             !newDevices.every(newDevice => 
@@ -359,9 +373,16 @@ export async function refreshDevicesWithChangeDetection(currentDevices = []) {
             });
         }
         
-        return { devices: newDevices, hasChanges };
+        return { 
+            devices: newDevices, 
+            hasChanges,
+            status: snapshot?.status || 'pending',
+            hydration: snapshot?.hydration || {},
+            cache: snapshot?.cache || {},
+            raw: snapshot
+        };
     } catch (error) {
         console.error('❌ Error in device change detection:', error);
-        return { devices: currentDevices, hasChanges: false };
+        return { devices: currentDevices, hasChanges: false, status: 'error', hydration: {}, cache: {} };
     }
 }

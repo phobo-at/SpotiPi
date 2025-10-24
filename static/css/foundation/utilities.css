@@ -4,3 +4,38 @@
 .hidden {
   display: none;
 }
+
+.placeholder-glow {
+  position: relative;
+  background: var(--color-surface-muted, rgba(255, 255, 255, 0.08));
+  overflow: hidden;
+  border-radius: var(--border-radius-sm, 6px);
+}
+
+.skeleton-line {
+  display: block;
+  height: 0.9rem;
+  margin-bottom: 0.4rem;
+  border-radius: var(--border-radius-sm, 6px);
+}
+
+.skeleton-line:last-child {
+  margin-bottom: 0;
+  width: 60%;
+}
+
+.skeleton-media {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--border-radius-md, 12px);
+}
+
+.skeleton-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-muted, rgba(255, 255, 255, 0.06));
+  border-radius: var(--border-radius-md, 12px);
+  min-width: 64px;
+  min-height: 64px;
+}

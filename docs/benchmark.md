@@ -67,6 +67,16 @@ warm1  /api/spotify/devices -> code=200 time=0.182s
 
 Use the P50/P95 values to verify that the warm start device list and first playlist page remain under the 1.5 s target on the Pi Zero W. For cold starts, ensure P95 stays below 3 s.
 
+## First-load benchmark
+
+For the landing page shell, use the companion script:
+
+```bash
+scripts/bench_first_load.sh http://spotipi.local:5000
+```
+
+It issues a cold and warm request to `/`, reports TTFB for each, and then hits the hydration endpoints to spot Spotify/API regressions. Pass a custom base URL as the first argument or export `SPOTIPI_BENCH_BASE_URL`.
+
 ## Exporting metrics
 The `/api/perf/metrics` endpoint can be collected by external monitoring (Prometheus exporter, Telegraf, etc.) to build historical latency charts. The payload already includes millisecond values for P50, P95, latest, and slowest samples.
 

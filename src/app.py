@@ -11,11 +11,13 @@ from threading import Thread
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response, g
+from flask_compress import Compress
 from functools import wraps
 import logging
 import threading
 import time
 from urllib.parse import urlparse
+from typing import Any, Callable, Dict, Optional
 
 # Import from new structure - use relative imports since we're in src/
 from .config import load_config, save_config
@@ -71,6 +73,38 @@ app.jinja_env.auto_reload = not LOW_POWER_MODE
 import secrets
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
 
+app.config.setdefault('COMPRESS_REGISTER', True)
+app.config.setdefault('COMPRESS_ALGORITHM', os.getenv('SPOTIPI_COMPRESS_ALGO', 'gzip'))
+app.config.setdefault(
+    'COMPRESS_MIMETYPES',
+    (
+        'text/html',
+        'text/css',
+        'text/javascript',
+        'application/javascript',
+        'application/json',
+        'application/xml',
+        'image/svg+xml',
+    ),
+)
+try:
+    app.config['COMPRESS_LEVEL'] = max(1, min(9, int(os.getenv('SPOTIPI_COMPRESS_LEVEL', '6'))))
+except ValueError:
+    app.config['COMPRESS_LEVEL'] = 6
+try:
+    app.config['COMPRESS_MIN_SIZE'] = max(256, int(os.getenv('SPOTIPI_COMPRESS_MIN_BYTES', '1024')))
+except ValueError:
+    app.config['COMPRESS_MIN_SIZE'] = 1024
+
+if not LOW_POWER_MODE:
+    try:
+        app.config['SEND_FILE_MAX_AGE_DEFAULT'] = int(os.getenv('SPOTIPI_STATIC_CACHE_SECONDS', str(31536000)))
+    except ValueError:
+        app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000
+
+compress = Compress()
+compress.init_app(app)
+
 # Setup logging
 setup_logging()
 logger = setup_logger("spotipi")
@@ -103,8 +137,229 @@ try:
 except ValueError:
     PLAYBACK_STATUS_CACHE_TTL = _default_playback_status_ttl
 
-_dashboard_status_cache = {"data": None, "expires": 0.0}
-_playback_status_cache = {"data": None, "expires": 0.0}
+class AsyncSnapshot:
+    """Thread-safe helper for asynchronously refreshed snapshots."""
+
+    def __init__(self, name: str, ttl: float, *, min_retry: float = 0.75):
+        self._name = name
+        self._ttl = max(0.1, float(ttl))
+        self._min_retry = max(0.1, float(min_retry))
+        self._lock = threading.Lock()
+        self._data: Any | None = None
+        self._expires_at: float = 0.0
+        self._refreshing: bool = False
+        self._last_refresh: float = 0.0
+        self._last_error: Optional[str] = None
+        self._last_error_at: float = 0.0
+        self._pending_reason: Optional[str] = None
+        self._next_refresh_allowed: float = 0.0
+
+    def snapshot(self) -> tuple[Any | None, Dict[str, Any]]:
+        """Return a deep copy of the cached data with metadata."""
+        now = time.time()
+        with self._lock:
+            data_copy = copy.deepcopy(self._data) if self._data is not None else None
+            meta = {
+                "fresh": data_copy is not None and now < self._expires_at,
+                "pending": data_copy is None or now >= self._expires_at,
+                "refreshing": self._refreshing,
+                "age": (now - self._last_refresh) if self._last_refresh else None,
+                "last_refresh": self._last_refresh,
+                "last_error": self._last_error,
+                "last_error_at": self._last_error_at,
+                "pending_reason": self._pending_reason,
+                "ttl": self._ttl,
+                "has_data": data_copy is not None,
+                "next_refresh_allowed": self._next_refresh_allowed,
+            }
+        return data_copy, meta
+
+    def mark_stale(self) -> None:
+        """Force the snapshot to be considered stale."""
+        with self._lock:
+            self._expires_at = 0.0
+
+    def set(self, payload: Any) -> None:
+        """Store a payload immediately, bypassing fetcher logic."""
+        now = time.time()
+        with self._lock:
+            self._data = copy.deepcopy(payload)
+            self._last_refresh = now
+            self._expires_at = now + self._ttl if self._ttl > 0 else now
+            self._last_error = None
+            self._last_error_at = 0.0
+            self._pending_reason = None
+            self._refreshing = False
+
+    def schedule_refresh(self, fetcher: Callable[[], Any], *, force: bool = False, reason: str = "api") -> bool:
+        """Trigger an asynchronous refresh if needed."""
+        now = time.time()
+        with self._lock:
+            if self._refreshing:
+                return False
+            if not force:
+                if self._data is not None and now < self._expires_at:
+                    return False
+                if self._data is None and now < self._next_refresh_allowed:
+                    return False
+            self._refreshing = True
+            self._pending_reason = reason
+            self._next_refresh_allowed = now + self._min_retry
+
+        def _runner():
+            snapshot_logger = logging.getLogger("spotipi.snapshot")
+            try:
+                payload = fetcher()
+                refreshed_at = time.time()
+                with self._lock:
+                    self._data = copy.deepcopy(payload)
+                    self._last_refresh = refreshed_at
+                    self._expires_at = refreshed_at + self._ttl if self._ttl > 0 else refreshed_at
+                    self._last_error = None
+                    self._last_error_at = 0.0
+                    self._pending_reason = None
+            except Exception as exc:
+                snapshot_logger.warning("Async snapshot %s refresh failed: %s", self._name, exc)
+                with self._lock:
+                    self._last_error = str(exc)
+                    self._last_error_at = time.time()
+            finally:
+                with self._lock:
+                    self._refreshing = False
+
+        threading.Thread(
+            target=_runner,
+            name=f"{self._name}-snapshot-refresh",
+            daemon=True
+        ).start()
+        return True
+
+
+_dashboard_snapshot = AsyncSnapshot(
+    "dashboard",
+    DASHBOARD_CACHE_TTL,
+    min_retry=1.2 if LOW_POWER_MODE else 0.6
+)
+
+try:
+    DEVICE_SNAPSHOT_TTL = max(
+        3.0,
+        float(os.getenv("SPOTIPI_DEVICE_SNAPSHOT_SECONDS", os.getenv("SPOTIPI_DEVICE_TTL", "6")))
+    )
+except (TypeError, ValueError):
+    DEVICE_SNAPSHOT_TTL = 8.0 if LOW_POWER_MODE else 5.0
+
+_playback_snapshot = AsyncSnapshot(
+    "playback",
+    PLAYBACK_STATUS_CACHE_TTL,
+    min_retry=0.8 if LOW_POWER_MODE else 0.4
+)
+_devices_snapshot = AsyncSnapshot(
+    "devices",
+    DEVICE_SNAPSHOT_TTL,
+    min_retry=1.5 if LOW_POWER_MODE else 0.75
+)
+
+
+def _build_playback_snapshot(token: Optional[str], *, timestamp: Optional[str] = None) -> Dict[str, Any]:
+    snapshot_ts = timestamp or _iso_timestamp_now()
+    if not token:
+        return {
+            "status": "auth_required",
+            "playback": None,
+            "fetched_at": snapshot_ts
+        }
+    try:
+        playback = get_combined_playback(token)
+        status = "ok" if playback else "empty"
+        return {
+            "status": status,
+            "playback": playback,
+            "fetched_at": snapshot_ts
+        }
+    except Exception as exc:
+        logger.debug("Playback snapshot error: %s", exc)
+        return {
+            "status": "error",
+            "playback": None,
+            "error": str(exc),
+            "fetched_at": snapshot_ts
+        }
+
+
+def _build_devices_snapshot(token: Optional[str], *, timestamp: Optional[str] = None) -> Dict[str, Any]:
+    snapshot_ts = timestamp or _iso_timestamp_now()
+    if not token:
+        return {
+            "status": "auth_required",
+            "devices": [],
+            "cache": {},
+            "fetched_at": snapshot_ts
+        }
+    try:
+        devices = get_devices(token) or []
+        cache_info = cache_migration.get_device_cache_info(token) or {}
+        return {
+            "status": "ok" if devices else "empty",
+            "devices": devices,
+            "cache": cache_info,
+            "fetched_at": snapshot_ts
+        }
+    except Exception as exc:
+        logger.debug("Device snapshot error: %s", exc)
+        return {
+            "status": "error",
+            "devices": [],
+            "error": str(exc),
+            "cache": {},
+            "fetched_at": snapshot_ts
+        }
+
+
+def _refresh_playback_snapshot() -> Dict[str, Any]:
+    token = get_access_token()
+    payload = _build_playback_snapshot(token)
+    if payload.get("status") == "ok":
+        _playback_snapshot.set(payload)
+    return payload
+
+
+def _refresh_devices_snapshot() -> Dict[str, Any]:
+    token = get_access_token()
+    payload = _build_devices_snapshot(token)
+    if payload.get("status") in {"ok", "empty"}:
+        _devices_snapshot.set(payload)
+    return payload
+
+
+def _refresh_dashboard_snapshot() -> Dict[str, Any]:
+    token = get_access_token()
+    snapshot_ts = _iso_timestamp_now()
+    playback_payload = _build_playback_snapshot(token, timestamp=snapshot_ts)
+    devices_payload = _build_devices_snapshot(token, timestamp=snapshot_ts)
+    if playback_payload.get("status") in {"ok", "empty"}:
+        _playback_snapshot.set(playback_payload)
+    if devices_payload.get("status") in {"ok", "empty"}:
+        _devices_snapshot.set(devices_payload)
+    return {
+        "playback": playback_payload,
+        "devices": devices_payload,
+        "fetched_at": snapshot_ts
+    }
+
+
+def _normalise_snapshot_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "fresh": bool(meta.get("fresh")),
+        "pending": bool(meta.get("pending")),
+        "refreshing": bool(meta.get("refreshing")),
+        "has_data": bool(meta.get("has_data")),
+        "last_refresh": meta.get("last_refresh"),
+        "last_error": meta.get("last_error"),
+        "last_error_at": meta.get("last_error_at"),
+        "pending_reason": meta.get("pending_reason"),
+        "ttl": meta.get("ttl"),
+    }
 
 
 @app.before_request
@@ -201,34 +456,12 @@ def after_request(response: Response):
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
     response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
 
-    # ---- Optional gzip compression ----
+    # ---- Static asset caching ----
     try:
-        enable_compress = (
-            not LOW_POWER_MODE and
-            os.getenv('SPOTIPI_ENABLE_GZIP', '1') in ('1', 'true', 'yes')
-        )
-        accept_encoding = request.headers.get('Accept-Encoding', '')
-        already_encoded = response.headers.get('Content-Encoding')
-        is_json = response.mimetype == 'application/json'
-        size_threshold = int(os.getenv('SPOTIPI_GZIP_MIN_BYTES', '2048'))
-        if (enable_compress and 'gzip' in accept_encoding and not already_encoded and is_json \
-                and response.status_code not in (204, 304) and response.direct_passthrough is False):
-            data = response.get_data()
-            if len(data) >= size_threshold:
-                import gzip, io
-                buf = io.BytesIO()
-                with gzip.GzipFile(mode='wb', fileobj=buf) as gz:
-                    gz.write(data)
-                compressed = buf.getvalue()
-                response.set_data(compressed)
-                response.headers['Content-Encoding'] = 'gzip'
-                response.headers['Content-Length'] = str(len(compressed))
-                # Ensure caches differentiate
-                vary = response.headers.get('Vary') or ''
-                if 'Accept-Encoding' not in vary:
-                    response.headers['Vary'] = (vary + ', Accept-Encoding').strip(', ')
-    except Exception as gzip_err:
-        logging.debug(f"Compression skipped: {gzip_err}")
+        if request.path.startswith(app.static_url_path):
+            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    except Exception:
+        pass
 
     # ---- Performance instrumentation ----
     try:
@@ -323,7 +556,7 @@ def inject_global_vars():
     }
 
 # Unified API response helper
-from typing import Any
+from typing import Any, Callable, Dict, Optional
 
 
 def _iso_timestamp_now() -> str:
@@ -366,36 +599,12 @@ def index():
     else:
         config = load_config()
         g.current_config = config
-    
+
     initial_volume = config.get('volume', 50)
-    preferred_device = config.get("device_name")
     try:
-        token = get_access_token()
-        if token:
-            playback_snapshot = get_combined_playback(token)
-            device_info = playback_snapshot.get("device") if playback_snapshot else None
-            if device_info and device_info.get("volume_percent") is not None:
-                initial_volume = int(device_info.get("volume_percent", initial_volume))
-            else:
-                devices = get_devices(token) or []
-                target_device = None
-                if preferred_device:
-                    target_device = next(
-                        (d for d in devices if d.get("name") == preferred_device),
-                        None,
-                    )
-                if not target_device:
-                    target_device = next(
-                        (d for d in devices if d.get("is_active")),
-                        None,
-                    )
-                if not target_device and devices:
-                    target_device = devices[0]
-                if target_device and target_device.get("volume_percent") is not None:
-                    initial_volume = int(target_device.get("volume_percent", initial_volume))
         initial_volume = max(0, min(100, int(initial_volume)))
-    except Exception as volume_err:
-        logger.debug("Initial volume fetch failed: %s", volume_err)
+    except (TypeError, ValueError):
+        initial_volume = 50
     
     # Data is now loaded asynchronously via JavaScript to improve initial page load time.
     # We pass empty placeholders to the template.
@@ -419,6 +628,19 @@ def index():
     def template_t(key, **kwargs):
         from .utils.translations import t
         return t(key, user_language, **kwargs)
+
+    dashboard_snapshot, dashboard_meta = _dashboard_snapshot.snapshot()
+    playback_snapshot, playback_meta = _playback_snapshot.snapshot()
+    devices_snapshot, devices_meta = _devices_snapshot.snapshot()
+
+    initial_state = {
+        'dashboard': dashboard_snapshot,
+        'dashboard_meta': _normalise_snapshot_meta(dashboard_meta),
+        'playback': playback_snapshot,
+        'playback_meta': _normalise_snapshot_meta(playback_meta),
+        'devices': devices_snapshot,
+        'devices_meta': _normalise_snapshot_meta(devices_meta)
+    }
     
     template_data = {
         'config': config,
@@ -434,7 +656,9 @@ def index():
         'now': datetime.datetime.now(),
         't': template_t,  # Translation function with parameter support
         'lang': user_language,
-        'translations': translations
+        'translations': translations,
+        'initial_state': initial_state,
+        'low_power': LOW_POWER_MODE
     }
     
     return render_template('index.html', **template_data)
@@ -449,22 +673,34 @@ if not hasattr(app, '_warmup_started'):
             if not token:
                 logging.info("🌅 Warmup: no token available yet (user not authenticated)")
                 return
+            snapshot_ts = _iso_timestamp_now()
+            devices_payload = {"status": "pending", "devices": [], "fetched_at": snapshot_ts}
+            playback_payload = {"status": "pending", "playback": None, "fetched_at": snapshot_ts}
             try:
-                devs = cache_migration.get_devices_cached(
-                    token,
-                    get_devices,
-                    force_refresh=not LOW_POWER_MODE
+                devices_payload = _build_devices_snapshot(token, timestamp=snapshot_ts)
+                _devices_snapshot.set(devices_payload)
+                logging.info(
+                    "🌅 Warmup: devices snapshot status=%s (count=%s)",
+                    devices_payload.get("status"),
+                    len(devices_payload.get("devices") or [])
                 )
-                logging.info(f"🌅 Warmup: cached {len(devs)} devices")
             except Exception as e:
-                logging.info(f"🌅 Warmup: device fetch error: {e}")
-            # Light playback cache warmup for faster first paint
+                logging.info(f"🌅 Warmup: device snapshot error: {e}")
+                devices_payload = {"status": "error", "devices": [], "error": str(e), "fetched_at": snapshot_ts}
             try:
-                playback = get_combined_playback(token, force_refresh=True)
-                if playback:
-                    logging.info("🌅 Warmup: playback cache primed")
+                playback_payload = _build_playback_snapshot(token, timestamp=snapshot_ts)
+                _playback_snapshot.set(playback_payload)
+                if playback_payload.get("status") == "ok":
+                    logging.info("🌅 Warmup: playback snapshot primed")
             except Exception as e:
-                logging.debug(f"🌅 Warmup: playback fetch error: {e}")
+                logging.debug(f"🌅 Warmup: playback snapshot error: {e}")
+                playback_payload = {"status": "error", "playback": None, "error": str(e), "fetched_at": snapshot_ts}
+
+            _dashboard_snapshot.set({
+                "playback": playback_payload,
+                "devices": devices_payload,
+                "fetched_at": snapshot_ts
+            })
 
             if not LOW_POWER_MODE:
                 try:
@@ -570,20 +806,44 @@ def alarm_status():
 @rate_limit("status_check")
 def api_dashboard_status():
     """Aggregate dashboard status (alarm, sleep, playback) in a single response."""
-    now = time.time()
     force_refresh = request.args.get('refresh') in ('1', 'true', 'yes')
-    if not force_refresh and now < _dashboard_status_cache["expires"]:
-        cached = _dashboard_status_cache["data"]
-        if cached is not None:
-            cached_copy = copy.deepcopy(cached)
-            cached_copy["timestamp"] = _iso_timestamp_now()
-            return api_response(True, data=cached_copy)
+    if force_refresh:
+        _dashboard_snapshot.mark_stale()
+        _playback_snapshot.mark_stale()
+        _devices_snapshot.mark_stale()
+
+    dashboard_data, dashboard_meta = _dashboard_snapshot.snapshot()
+    playback_data, playback_meta = _playback_snapshot.snapshot()
+    devices_data, devices_meta = _devices_snapshot.snapshot()
+
+    if force_refresh or dashboard_meta["pending"]:
+        _dashboard_snapshot.schedule_refresh(
+            _refresh_dashboard_snapshot,
+            force=force_refresh,
+            reason="api.dashboard"
+        )
+
+    # Only trigger dedicated snapshot refreshers if the combined dashboard one is not already running.
+    if (force_refresh or playback_meta["pending"]) and not dashboard_meta.get("refreshing"):
+        _playback_snapshot.schedule_refresh(
+            _refresh_playback_snapshot,
+            force=force_refresh,
+            reason="api.dashboard.playback"
+        )
+    if (force_refresh or devices_meta["pending"]) and not dashboard_meta.get("refreshing"):
+        _devices_snapshot.schedule_refresh(
+            _refresh_devices_snapshot,
+            force=force_refresh,
+            reason="api.dashboard.devices"
+        )
 
     config = load_config()
-
     next_alarm_time = ""
     if config.get("enabled") and config.get("time"):
-        next_alarm_time = AlarmTimeValidator.format_time_until_alarm(config["time"])
+        try:
+            next_alarm_time = AlarmTimeValidator.format_time_until_alarm(config["time"])
+        except Exception:
+            next_alarm_time = "Next alarm calculation error"
 
     alarm_payload = {
         "enabled": config.get("enabled", False),
@@ -597,26 +857,65 @@ def api_dashboard_status():
     sleep_payload = get_sleep_status()
 
     playback_payload = {}
-    token = get_access_token()
-    if token:
-        try:
-            playback_payload = get_combined_playback(token) or {}
-        except Exception as playback_err:
-            logger.debug("Dashboard playback aggregation failed: %s", playback_err)
-    else:
-        playback_payload = {"auth_required": True}
+    playback_status = "pending"
+    playback_error = None
+    if playback_data:
+        playback_payload = playback_data.get("playback") or {}
+        playback_status = playback_data.get("status", "unknown")
+        playback_error = playback_data.get("error")
+    elif dashboard_data:
+        dash_playback = dashboard_data.get("playback", {})
+        if isinstance(dash_playback, dict):
+            playback_payload = dash_playback.get("playback") or {}
+            playback_status = dash_playback.get("status", playback_status)
+            playback_error = dash_playback.get("error")
+
+    devices_payload = []
+    devices_status = "pending"
+    devices_cache = {}
+    if devices_data:
+        devices_payload = devices_data.get("devices") or []
+        devices_status = devices_data.get("status", "unknown")
+        devices_cache = devices_data.get("cache") or {}
+    elif dashboard_data:
+        dash_devices = dashboard_data.get("devices", {})
+        if isinstance(dash_devices, dict):
+            devices_payload = dash_devices.get("devices") or []
+            devices_status = dash_devices.get("status", devices_status)
+            devices_cache = dash_devices.get("cache") or {}
+
+    hydration_meta = {
+        "dashboard": _normalise_snapshot_meta(dashboard_meta),
+        "playback": _normalise_snapshot_meta(playback_meta),
+        "devices": _normalise_snapshot_meta(devices_meta),
+    }
 
     response_payload = {
         "timestamp": _iso_timestamp_now(),
         "alarm": alarm_payload,
         "sleep": sleep_payload,
-        "playback": playback_payload
+        "playback": playback_payload or {},
+        "playback_status": playback_status,
+        "devices": devices_payload,
+        "devices_meta": {
+            "status": devices_status,
+            "cache": devices_cache,
+            "fetched_at": devices_data.get("fetched_at") if devices_data else None
+        },
+        "hydration": hydration_meta
     }
 
-    _dashboard_status_cache["data"] = copy.deepcopy(response_payload)
-    _dashboard_status_cache["expires"] = time.time() + DASHBOARD_CACHE_TTL
+    if playback_error:
+        response_payload["playback_error"] = playback_error
 
-    return api_response(True, data=response_payload)
+    # Determine a meaningful HTTP status: pending requests should return 202 to indicate work in progress.
+    status_code = 200
+    if hydration_meta["playback"]["pending"] or hydration_meta["devices"]["pending"]:
+        status_code = 202
+    elif playback_status == "error":
+        status_code = 503
+
+    return api_response(True, data=response_payload, status=status_code)
 
 # =====================================
 # 🎵 API Routes - Music & Playback
@@ -889,33 +1188,74 @@ def log_token_performance():
 @rate_limit("spotify_api")
 def playback_status():
     """Get current Spotify playback status"""
-    now = time.time()
     force_refresh = request.args.get('refresh') in ('1', 'true', 'yes')
-    if not force_refresh and now < _playback_status_cache["expires"]:
-        cached = _playback_status_cache["data"]
-        if cached is not None:
-            return api_response(True, data=copy.deepcopy(cached), message=t_api("ok", request))
+    if force_refresh:
+        _playback_snapshot.mark_stale()
 
-    token = get_access_token()
-    if not token:
-        _playback_status_cache["data"] = None
-        _playback_status_cache["expires"] = 0.0
-        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
-    
-    try:
-        combined = get_combined_playback(token)
-        if combined:
-            _playback_status_cache["data"] = copy.deepcopy(combined)
-            _playback_status_cache["expires"] = time.time() + PLAYBACK_STATUS_CACHE_TTL
-            return api_response(True, data=combined, message=t_api("ok", request))
-        _playback_status_cache["data"] = None
-        _playback_status_cache["expires"] = 0.0
-        return api_response(False, message=t_api("no_active_playback", request), status=200, error_code="no_playback")
-    except Exception as e:
-        logging.exception("Error getting playback status")
-        _playback_status_cache["data"] = None
-        _playback_status_cache["expires"] = 0.0
-        return api_response(False, message=str(e), status=503, error_code="playback_status_error")
+    playback_data, meta = _playback_snapshot.snapshot()
+
+    if force_refresh or meta["pending"]:
+        _playback_snapshot.schedule_refresh(
+            _refresh_playback_snapshot,
+            force=force_refresh,
+            reason="api.playback"
+        )
+
+    payload = playback_data.get("playback") if playback_data else {}
+    status_flag = playback_data.get("status") if playback_data else "pending"
+    response_payload = {
+        "timestamp": _iso_timestamp_now(),
+        "playback": payload or {},
+        "status": status_flag,
+        "hydration": _normalise_snapshot_meta(meta)
+    }
+    if playback_data and playback_data.get("error"):
+        response_payload["error"] = playback_data["error"]
+
+    status_code = 200
+    if response_payload["hydration"]["pending"] or status_flag in {"pending", "auth_required"}:
+        status_code = 202
+    elif status_flag == "error":
+        status_code = 503
+
+    return api_response(True, data=response_payload, status=status_code)
+
+
+@app.route("/api/devices")
+@api_error_handler
+@rate_limit("status_check")
+def api_devices():
+    """Return cached Spotify devices without blocking on network calls."""
+    force_refresh = request.args.get('refresh') in ('1', 'true', 'yes')
+    if force_refresh:
+        _devices_snapshot.mark_stale()
+
+    devices_data, meta = _devices_snapshot.snapshot()
+
+    if force_refresh or meta["pending"]:
+        _devices_snapshot.schedule_refresh(
+            _refresh_devices_snapshot,
+            force=force_refresh,
+            reason="api.devices"
+        )
+
+    payload = {
+        "timestamp": _iso_timestamp_now(),
+        "devices": devices_data.get("devices") if devices_data else [],
+        "status": devices_data.get("status") if devices_data else "pending",
+        "cache": devices_data.get("cache") if devices_data else {},
+        "hydration": _normalise_snapshot_meta(meta)
+    }
+    if devices_data and devices_data.get("error"):
+        payload["error"] = devices_data["error"]
+
+    status_code = 200
+    if payload["hydration"]["pending"] or payload["status"] in {"pending", "auth_required"}:
+        status_code = 202
+    elif payload["status"] == "error":
+        status_code = 503
+
+    return api_response(True, data=payload, status=status_code)
 
 @app.route("/api/spotify/health")
 @rate_limit("status_check")
@@ -1450,29 +1790,48 @@ def api_spotify_auth_status():
 @rate_limit("spotify_api")
 def api_spotify_devices():
     """API endpoint for getting available Spotify devices."""
-    token = get_access_token()
-    if not token:
-        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
-    
-    devices = get_devices(token)
-    cache_info = cache_migration.get_device_cache_info(token)
+    force_refresh = request.args.get('refresh') in ('1', 'true', 'yes')
+    if force_refresh:
+        _devices_snapshot.mark_stale()
+
+    devices_data, meta = _devices_snapshot.snapshot()
+    if force_refresh or meta["pending"]:
+        _devices_snapshot.schedule_refresh(
+            _refresh_devices_snapshot,
+            force=force_refresh,
+            reason="api.spotify.devices"
+        )
+
+    cache_info = devices_data.get("cache") if devices_data else {}
+    ts_value = cache_info.get('timestamp') if isinstance(cache_info, dict) else None
     last_updated_iso = None
-    if cache_info and cache_info.get('timestamp'):
+    if ts_value:
         try:
             last_updated_iso = datetime.datetime.fromtimestamp(
-                cache_info['timestamp'],
+                float(ts_value),
                 tz=datetime.timezone.utc
             ).isoformat()
         except (TypeError, ValueError, OSError):
             last_updated_iso = None
+    elif devices_data and devices_data.get("fetched_at"):
+        last_updated_iso = devices_data["fetched_at"]
 
     payload = {
-        "devices": devices if devices else [],
+        "devices": devices_data.get("devices") if devices_data else [],
         "cache": cache_info or {},
-        "lastUpdated": last_updated_iso,
-        "stale": bool(cache_info.get('stale')) if cache_info else True
+        "lastUpdated": ts_value,
+        "lastUpdatedIso": last_updated_iso,
+        "status": devices_data.get("status") if devices_data else "pending",
+        "hydration": _normalise_snapshot_meta(meta)
     }
-    return api_response(True, data=payload)
+
+    status_code = 200
+    if payload["hydration"]["pending"] or payload["status"] in {"pending", "auth_required"}:
+        status_code = 202
+    elif payload["status"] == "error":
+        status_code = 503
+
+    return api_response(True, data=payload, status=status_code)
 
 @app.route("/api/devices/refresh")
 @api_error_handler
@@ -1501,6 +1860,15 @@ def api_devices_refresh():
             except (TypeError, ValueError, OSError):
                 pass
         logging.info(f"🔄 Fast device refresh: {len(payload['devices'])} devices loaded")
+
+        snapshot_payload = {
+            "status": "ok" if payload["devices"] else "empty",
+            "devices": payload["devices"],
+            "cache": cache_info or {},
+            "fetched_at": _iso_timestamp_now()
+        }
+        _devices_snapshot.set(snapshot_payload)
+
         return api_response(True, data=payload)
     except Exception as e:
         logging.error(f"❌ Error in device refresh: {e}")

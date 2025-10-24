@@ -34,6 +34,9 @@
       required
       aria-describedby="device-help"
     >
+      {% if not devices %}
+        <option value="" disabled selected>{{ t('loading_devices') or 'Lade Geräte…' }}</option>
+      {% endif %}
       {% for d in devices %}
         <option value="{{ d.name }}" {% if config.get('device_name') == d.name %}selected{% endif %}>
           {{ d.name }}

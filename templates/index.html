@@ -51,14 +51,15 @@
 
   <main class="app-content">
     <!-- Current track with album cover -->
-    <div class="current-track" role="status" id="currently-playing" style="display: none;">
-      <div class="album-cover">
-        <div class="placeholder-glow"></div>
+    <div class="current-track is-loading" role="status" id="currently-playing" aria-live="polite">
+      <div class="album-cover skeleton-tile">
+        <div class="placeholder-glow skeleton-media"></div>
       </div>
       <div class="track-info">
-        <span class="title placeholder-glow"></span>
-        <span class="artist placeholder-glow"></span>
+        <span class="title placeholder-glow skeleton-line"></span>
+        <span class="artist placeholder-glow skeleton-line"></span>
       </div>
+      <div class="playback-status" id="playback-status-label">{{ t('status_connecting') or 'Verbinde…' }}</div>
     </div>
 
     <div class="container">
@@ -176,12 +177,21 @@
   "translations": {{ translations | tojson }}
 }
 </script>
+<script id="initial-state-data" type="application/json">{{ initial_state | tojson }}</script>
 
 <script>
   // Parse translations from JSON script tag
   const translationsData = JSON.parse(document.getElementById('translations-data').textContent);
   window.LANGUAGE = translationsData.language;
   window.TRANSLATIONS = translationsData.translations;
+  try {
+    const initialStateRaw = document.getElementById('initial-state-data');
+    window.__INITIAL_STATE__ = initialStateRaw ? JSON.parse(initialStateRaw.textContent) : null;
+  } catch (err) {
+    console.warn('Failed to parse initial state', err);
+    window.__INITIAL_STATE__ = null;
+  }
+  window.LOW_POWER_MODE = {{ 'true' if low_power else 'false' }};
 </script>
   
   <!-- Main JavaScript with togglePlayPause etc. -->

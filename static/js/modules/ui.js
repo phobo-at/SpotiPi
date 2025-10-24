@@ -8,6 +8,37 @@ import { setUserIsDragging } from './state.js';
 let cachedSleepStatus = null;
 let cachedSleepTimestamp = 0;
 
+function renderTrackSkeleton(statusKey = 'status_pending') {
+  const trackContainer = document.querySelector('.current-track');
+  if (!trackContainer) return;
+
+  trackContainer.classList.add('is-loading');
+  trackContainer.style.display = 'flex';
+
+  const albumCover = trackContainer.querySelector('.album-cover');
+  if (albumCover) {
+    albumCover.classList.add('skeleton-tile');
+    albumCover.innerHTML = '<div class="placeholder-glow skeleton-media"></div>';
+  }
+
+  const titleEl = trackContainer.querySelector('.track-info .title');
+  if (titleEl) {
+    titleEl.classList.add('placeholder-glow', 'skeleton-line');
+    titleEl.textContent = '';
+  }
+
+  const artistEl = trackContainer.querySelector('.track-info .artist');
+  if (artistEl) {
+    artistEl.classList.add('placeholder-glow', 'skeleton-line');
+    artistEl.textContent = '';
+  }
+
+  const statusEl = trackContainer.querySelector('.playback-status');
+  if (statusEl) {
+    statusEl.textContent = t(statusKey) || t('status_pending') || '';
+  }
+}
+
 /**
  * Updates playback info and track display
  * @param {boolean} updateVolume - Whether to update the volume as well
@@ -29,7 +60,7 @@ export function applyPlaybackStatus(data, { updateVolume = true } = {}) {
       if (window.location.href.includes('debug=true')) {
         console.log('No active playback or API error:', playbackData.error);
       }
-      handleNoActivePlayback();
+      hideCurrentTrack('spotify_error');
       return;
     }
 
@@ -50,7 +81,7 @@ export function applyPlaybackStatus(data, { updateVolume = true } = {}) {
     if (playbackData?.current_track) {
       updateCurrentTrack(playbackData.current_track);
     } else {
-      hideCurrentTrack();
+      hideCurrentTrack('no_active_playback');
     }
 }
 
@@ -65,7 +96,7 @@ export async function updatePlaybackInfo(updateVolume = true) {
       // Errors already handled in fetchAPI
       // Set play/pause button to "Play" and hide current track
       updatePlayPauseButtonText(false);
-      hideCurrentTrack();
+      hideCurrentTrack('network_error');
     }
 }
 
@@ -73,6 +104,7 @@ export function initializeUI() {
     // Initial UI setup can go here
     console.log("UI Initialized");
     const saved = localStorage.getItem("activeTab") || "alarm";
+    renderTrackSkeleton();
     showInterface(saved);
     updateTime();
 }
@@ -139,11 +171,8 @@ export function updatePlayPauseButtonText(isPlaying) {
 /**
  * Hides the current track display
  */
-export function hideCurrentTrack() {
-    const trackContainer = document.querySelector('.current-track');
-    if (trackContainer) {
-      trackContainer.style.display = 'none';
-    }
+export function hideCurrentTrack(statusKey = 'status_pending') {
+  renderTrackSkeleton(statusKey);
 }
 
 /**
@@ -157,11 +186,12 @@ export function updateCurrentTrack(trackData) {
 
   // Control container visibility
   if (!trackData.name) {
-    trackContainer.style.display = 'none';
+    hideCurrentTrack('no_active_playback');
     return;
   }
   
   trackContainer.style.display = 'flex';
+  trackContainer.classList.remove('is-loading');
 
   // Remove placeholder styles
   trackContainer.querySelectorAll('.placeholder-glow').forEach(el => {
@@ -184,17 +214,22 @@ export function updateCurrentTrack(trackData) {
   } else {
     html += `
       <div class="album-cover">
+        <div class="album-fallback"><i class="fas fa-music"></i></div>
       </div>
     `;
   }
-  
+
   html += `
     <div class="track-info">
       <span class="title">${trackData.name}</span>
       <span class="artist">${trackData.artist}</span>
     </div>
   `;
-  
+
+  html += `
+    <div class="playback-status">${trackData.is_playing ? (t('currently_playing') || '') : (t('no_active_playback') || '')}</div>
+  `;
+
   trackContainer.innerHTML = html;
 }
 

@@ -1,4 +1,4 @@
-# 🎵 SpotiPi (v1.3.6)
+# 🎵 SpotiPi (v1.3.7)
 
 **Smart Spotify alarm clock and sleep timer for Raspberry Pi**
 
@@ -15,7 +15,8 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 - 😴 **Sleep Timer** - Peaceful fade-out for better sleep
 - 📱 **Mobile First** - Responsive web interface, PWA support
 - 🍓 **Pi Optimized** - Auto-detection and SD-card protection
-- ⚡ **Fast Dashboard** - Aggregated status updates over a single request
+- ⚡ **Instant First Paint** - Lightweight HTML shell with async hydration
+- 🚀 **Fast Dashboard** - Aggregated status updates over a single request
 - 🛡️ **Secure** - Environment variables for all credentials
 - 📈 **Resilient Alarms** - Monotonic scheduler with catch-up & structured diagnostics
 
@@ -112,7 +113,7 @@ SPOTIPI_ENABLE_ALARM_TIMER=1 ./deploy/install.sh
 - **HTTP pooling & limits:** a shared `requests.Session` keeps TLS warm and caps concurrent Spotify API calls (`SPOTIPI_MAX_CONCURRENCY`, default `2`).
 - **Two-tier caching:** devices persist to `./cache/spotify_devices_<hash>.json` (default TTL `SPOTIPI_DEVICE_TTL=10s`), the music library uses an in-memory LRU backed by disk (`SPOTIPI_LIBRARY_TTL_MINUTES=60`).
 - **Instrumentation:** high-resolution timings for every Flask route plus per-endpoint P50/P95 logs; inspect via `/api/perf/metrics`.
-- **Benchmark helper:** run `scripts/bench.sh` after deployment to measure cold/warm latencies and validate cache hit rates (details in `docs/benchmark.md`).
+- **Benchmark helpers:** run `scripts/bench.sh` for Spotify API/caching latency and `scripts/bench_first_load.sh` to capture cold/warm TTFB plus first paint metrics (details in `docs/benchmark.md`).
 
 ## 🚀 Deployment Workflow
 
@@ -128,6 +129,7 @@ ssh pi@spotipi.local 'cd /home/pi/spotipi && ./deploy/install.sh'
 # Enable the readiness timer during install (optional)
 ssh pi@spotipi.local 'cd /home/pi/spotipi && SPOTIPI_ENABLE_ALARM_TIMER=1 ./deploy/install.sh'
 ```
+> `scripts/deploy_to_pi.sh` now skips copying systemd units when they are unchanged; export `SPOTIPI_FORCE_SYSTEMD=1` to force a refresh.
 The deploy script uses an allowlist `rsync` (run.py, requirements, `src/`, `static/`, `templates/`, `config/`), keeping the Raspberry Pi installation minimal.
 
 ## 📸 Screenshots

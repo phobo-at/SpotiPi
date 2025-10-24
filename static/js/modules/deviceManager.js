@@ -1,6 +1,6 @@
 // /static/js/modules/deviceManager.js
 // Handles automatic device loading, change detection, and UI updates
-import { refreshDevicesWithChangeDetection } from './api.js';
+import { refreshDevicesFast, refreshDevicesWithChangeDetection } from './api.js';
 import { t } from './translation.js';
 
 console.log("deviceManager.js loaded");
@@ -26,9 +26,16 @@ class DeviceManager {
     initialize() {
         // Find all device selectors on the page
         this.scanForDeviceSelectors();
+        const initialSnapshot = window.__INITIAL_DEVICE_SNAPSHOT__;
+        if (initialSnapshot) {
+            this.applySnapshot(initialSnapshot);
+        }
+        if (!initialSnapshot) {
+            this.setLoadingState(true);
+        }
         
         // Initial load
-        this.refreshDevices(true);
+        this.refreshDevices(!initialSnapshot);
         
         // Set up periodic refresh
         this.startPeriodicRefresh();
@@ -123,17 +130,28 @@ class DeviceManager {
         this.setLoadingState(true);
 
         try {
-            const result = await refreshDevicesWithChangeDetection(this.currentDevices);
-            
-            if (result.hasChanges || force) {
-                this.currentDevices = result.devices;
-                this.updateDeviceSelectors(result.devices);
-                
+            const result = await refreshDevicesWithChangeDetection(this.currentDevices, { force });
+            const snapshot = result.raw || result;
+
+            const devices = result.devices || [];
+            const shouldUpdate = force || result.hasChanges || this.currentDevices.length === 0;
+
+            if (shouldUpdate) {
+                this.currentDevices = devices;
+                this.updateDeviceSelectors(devices);
+
                 if (result.hasChanges) {
-                    this.notifyDeviceChanges(result.devices);
+                    this.notifyDeviceChanges(devices);
                 }
             }
-            
+
+            if (force && (!devices.length || result.status === 'pending')) {
+                const fallback = await refreshDevicesFast();
+                if (fallback.devices?.length) {
+                    this.currentDevices = fallback.devices;
+                    this.updateDeviceSelectors(fallback.devices);
+                }
+            }
         } catch (error) {
             console.error('❌ Device refresh failed:', error);
             this.handleRefreshError(error);
@@ -186,6 +204,14 @@ class DeviceManager {
         });
 
         console.log(`✅ Updated ${this.deviceSelectors.length} device selectors with ${devices.length} devices`);
+    }
+
+    applySnapshot(snapshot) {
+        if (!snapshot) return;
+        const devices = snapshot.devices || [];
+        this.currentDevices = devices;
+        this.updateDeviceSelectors(devices);
+        this.setLoadingState(false);
     }
 
     /**

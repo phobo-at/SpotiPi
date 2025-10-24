@@ -30,6 +30,19 @@
   box-shadow: var(--shadow-md);
 }
 
+.album-fallback {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--border-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-muted, rgba(255, 255, 255, 0.06));
+  color: var(--color-disabled);
+  font-size: 1.4rem;
+  box-shadow: var(--shadow-sm);
+}
+
 .track-info {
   display: flex;
   flex-direction: column;
@@ -50,6 +63,27 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--color-disabled);
+}
+
+.current-track.is-loading {
+  border-left-color: var(--color-border);
+  background-color: var(--color-surface-muted, rgba(255, 255, 255, 0.04));
+  box-shadow: var(--shadow-sm);
+}
+
+.current-track.is-loading .track-info {
+  width: 100%;
+}
+
+.current-track .playback-status {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  padding-left: var(--spacing-sm);
+}
+
+.current-track.is-loading .playback-status {
   color: var(--color-disabled);
 }
 

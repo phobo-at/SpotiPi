@@ -5,6 +5,23 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.7] - 2025-10-23
+
+### ⚡ Instant First Load
+- Reworked the `/` route to deliver a slim HTML shell without Spotify calls, cutting cold-start TTFB to well under one second while keeping warm hits around the 400 ms target.
+- Added structured snapshots for dashboard, playback, and device data so hydration happens asynchronously without blocking Flask workers.
+- Updated the UI with accessible skeleton placeholders and clearer fallback messaging (e.g., “Keine aktive Wiedergabe”) while removing the distracting status banner.
+
+### 🧠 Backend & Transport
+- Introduced an `AsyncSnapshot` helper plus background warm-up to keep cached Spotify state fresh outside of request threads.
+- Enabled Flask-Compress and long-lived static caching to trim payload sizes on the Raspberry Pi.
+- Hardened playback/device fetch fallbacks so the initial shell renders cleanly even when Spotify auth or devices are still warming up.
+
+### 🛠 Deployment & Tooling
+- Optimised `scripts/deploy_to_pi.sh` to copy systemd units only when they change (override with `SPOTIPI_FORCE_SYSTEMD=1`), speeding up day-to-day syncs.
+- Added `scripts/bench_first_load.sh` for quick TTFB/first-paint measurements alongside the existing benchmark suite.
+- Updated documentation to highlight the new workflow and measurement tooling.
+
 ## [1.3.6] - 2025-10-20
 
 ### ⏰ Alarm Reliability Hardening
