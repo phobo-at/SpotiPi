@@ -15,7 +15,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
-
 _CACHE_TTL = max(0.5, float(os.getenv("SPOTIPI_CONFIG_CACHE_TTL", "2.0")))
 
 

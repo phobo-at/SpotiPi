@@ -7,18 +7,19 @@ performance tracking, service coordination, and maintenance tasks.
 """
 
 import os
-import psutil
 import time
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Any, Dict, Optional
 
+import psutil
+
+from ..utils.rate_limiting import get_rate_limiter
+from ..utils.thread_safety import get_config_stats
+from ..utils.token_cache import get_token_cache_info
 from . import BaseService, ServiceResult
 from .alarm_service import AlarmService
-from .spotify_service import SpotifyService
 from .sleep_service import SleepService
-from ..utils.token_cache import get_token_cache_info
-from ..utils.thread_safety import get_config_stats
-from ..utils.rate_limiting import get_rate_limiter
+from .spotify_service import SpotifyService
 
 LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
 

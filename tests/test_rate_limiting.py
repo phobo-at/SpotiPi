@@ -7,7 +7,6 @@ Runs rate limiting checks directly against the Flask test client so the
 suite works in CI without a live server.
 """
 
-import time
 import concurrent.futures
 
 import pytest

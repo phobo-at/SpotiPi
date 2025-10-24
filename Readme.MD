@@ -1,4 +1,4 @@
-# 🎵 SpotiPi (v1.3.7)
+# 🎵 SpotiPi (v1.3.8)
 
 **Smart Spotify alarm clock and sleep timer for Raspberry Pi**
 
@@ -19,6 +19,11 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 - 🚀 **Fast Dashboard** - Aggregated status updates over a single request
 - 🛡️ **Secure** - Environment variables for all credentials
 - 📈 **Resilient Alarms** - Monotonic scheduler with catch-up & structured diagnostics
+
+## 🧱 Architecture
+
+- Flask controllers stay thin—they validate HTTP specifics and delegate business logic to the service layer (`src/services/*`) for shared validation, caching, and state changes.
+- Spotify music-library endpoints now hydrate through a single cache & hashing pipeline (`utils.library_utils`), so `/api/music-library` and `/api/music-library/sections` expose identical headers and payload semantics.
 
 ## 🚀 Quick Start
 

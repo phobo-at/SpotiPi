@@ -5,12 +5,14 @@ Manages the Flask server as a background daemon with proper lifecycle management
 """
 
 import os
-import sys
-import time
 import signal
 import subprocess
-import psutil
+import sys
+import time
 from pathlib import Path
+
+import psutil
+
 
 class SpotiPiServerManager:
     """Manages SpotiPi server as a background process."""
@@ -112,10 +114,10 @@ class SpotiPiServerManager:
             
             if self.is_running():
                 status = self.get_status()
-                print(f"✅ Server started successfully!")
+                print("✅ Server started successfully!")
                 print(f"   PID: {status['pid']}")
                 print(f"   Logs: {self.log_file}")
-                print(f"   URL: http://localhost:5001")
+                print("   URL: http://localhost:5001")
                 return True
             else:
                 print("❌ Server failed to start")
@@ -185,7 +187,7 @@ class SpotiPiServerManager:
             return
         
         if follow:
-            print(f"📋 Following logs (Ctrl+C to stop)...")
+            print("📋 Following logs (Ctrl+C to stop)...")
             try:
                 # Use tail -f for following
                 subprocess.run(['tail', '-f', str(self.log_file)])
@@ -245,12 +247,12 @@ def main():
         print("🎵 SpotiPi Server Status")
         print("=" * 30)
         if status['status'] == 'running':
-            print(f"Status: 🟢 Running")
+            print("Status: 🟢 Running")
             print(f"PID: {status['pid']}")
             print(f"Uptime: {status['uptime']}")
             print(f"Memory: {status['memory_mb']} MB")
             print(f"CPU: {status['cpu_percent']}%")
-            print(f"URL: http://localhost:5001")
+            print("URL: http://localhost:5001")
         else:
             print(f"Status: 🔴 {status['status'].title()}")
     elif command == 'logs':

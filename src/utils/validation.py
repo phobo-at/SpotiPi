@@ -10,10 +10,11 @@ Provides comprehensive input validation for all user inputs including:
 - Weekday selections
 """
 
-import re
 import datetime
-from typing import Union, Optional, Dict, Any
+import re
 from dataclasses import dataclass
+from typing import Any, Dict, Union
+
 
 @dataclass
 class ValidationResult:

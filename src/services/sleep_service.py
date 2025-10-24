@@ -6,15 +6,14 @@ Handles all sleep timer related business logic including timer management,
 status tracking, and sleep settings configuration.
 """
 
-from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Any, Dict
 
+from ..core.sleep import (get_sleep_status, save_sleep_settings,
+                          start_sleep_timer, stop_sleep_timer)
+from ..utils.validation import ValidationError, validate_sleep_config
 from . import BaseService, ServiceResult
-from ..core.sleep import (
-    start_sleep_timer, stop_sleep_timer, get_sleep_status,
-    save_sleep_settings
-)
-from ..utils.validation import validate_sleep_config, ValidationError
+
 
 class SleepService(BaseService):
     """Service for managing sleep timers and settings."""
@@ -68,9 +67,14 @@ class SleepService(BaseService):
                 "device_name": status.get("device_name"),
                 "device_id": status.get("device_id")
             }
-            
+
+            payload = {
+                **enhanced_status,
+                "raw_status": status
+            }
+
             return self._success_result(
-                data=enhanced_status,
+                data=payload,
                 message="Sleep status retrieved successfully"
             )
             
@@ -126,8 +130,8 @@ class SleepService(BaseService):
                 
         except ValidationError as e:
             return self._error_result(
-                str(e),
-                error_code="VALIDATION_ERROR"
+                f"Invalid {e.field_name}: {e.message}",
+                error_code=e.field_name
             )
         except Exception as e:
             return self._handle_error(e, "start_sleep_timer")

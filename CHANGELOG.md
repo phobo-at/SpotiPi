@@ -5,6 +5,24 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.8] - 2025-10-24
+
+### 🏗 Service Layer Consolidation
+- Slimmed all Flask controllers so they delegate validation and business rules to their respective services (`alarm`, `sleep`, `spotify`, `system`), yielding consistent JSON contracts across basic and advanced endpoints.
+- Extended the Spotify service with toggle, volume, and playback helpers to remove duplicated logic in `/toggle_play_pause`, `/volume`, and `/play`.
+- Hardened dashboard snapshots and error handlers to use the shared service responses, keeping template rendering stable even for 404/500 fallbacks.
+
+### 📚 Unified Music Library Flow
+- Centralised hashing, slimming, and caching through `_build_library_response` so `/api/music-library` and `/api/music-library/sections` now emit identical headers/ETag semantics.
+- Expanded `prepare_library_payload` to track partial section metadata and cached flags in one place.
+
+### 🧹 Cleanup & Frontend
+- Removed unused HTTP session overrides and stale imports, trimmed no-op utilities, and deduplicated the toast notification implementation (now exported solely from `ui.js`).
+- Documented the “controllers thin, services rich” architecture and unified library pipeline in the README.
+
+### 🧪 Tests
+- `python3.11 -m pytest -q`
+
 ## [1.3.7] - 2025-10-23
 
 ### ⚡ Instant First Load

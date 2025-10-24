@@ -3,7 +3,7 @@ SpotiPi Translation System
 Automatic language detection: German for de-*, all others = English
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 TRANSLATIONS: Dict[str, Dict[str, str]] = {
     'de': {
@@ -82,7 +82,6 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'artist': 'Künstler',
         'play_music': 'Abspielen',
         'no_music_found': 'Keine Musik gefunden',
-        'playlist_select_text': 'Musik auswählen',
         'select_speaker': 'Lautsprecher wählen',
         'select_speaker_message': 'Bitte wähle einen Lautsprecher zum Abspielen der Musik aus.',
         'speaker_required': 'Lautsprecher erforderlich',
@@ -154,7 +153,6 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'ok_partial': 'OK (teilweise)',
         'ok': 'OK',
         'degraded': 'Beeinträchtigt',
-        'no_active_playback': 'Keine aktive Wiedergabe',
         'failed_start_playback': 'Wiedergabe konnte nicht gestartet werden',
         'playback_started': 'Wiedergabe gestartet',
         'missing_context_uri': 'Fehlende context_uri',
@@ -275,7 +273,6 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'artist': 'Artist',
         'play_music': 'Play',
         'no_music_found': 'No music found',
-        'playlist_select_text': 'Select music',
         'select_speaker': 'Select speaker',
         'select_speaker_message': 'Please select a speaker to play the music.',
         'speaker_required': 'Speaker required',
@@ -347,7 +344,6 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'ok_partial': 'ok (partial)',
         'ok': 'ok',
         'degraded': 'degraded',
-        'no_active_playback': 'No active playback',
         'failed_start_playback': 'Failed to start playback',
         'playback_started': 'Playback started',
         'missing_context_uri': 'Missing context_uri',

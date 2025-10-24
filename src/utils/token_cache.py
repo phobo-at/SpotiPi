@@ -5,12 +5,13 @@ Provides intelligent token caching with automatic refresh to minimize API calls.
 Reduces Spotify API requests from ~50+ per minute to ~1 per hour.
 """
 
-import time
-import threading
 import logging
-from typing import Optional, Dict, Any, Callable
+import threading
+import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Any, Callable, Dict, Optional
+
 
 @dataclass
 class TokenResponse:

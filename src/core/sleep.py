@@ -9,23 +9,18 @@ Provides comprehensive sleep timer functionality including:
 - Spotify integration for seamless sleep music experience
 """
 
-import os
-import time
 import json
 import logging
+import os
+import time
 from threading import Lock, Thread
-from typing import Dict, Any, Optional, Union, Tuple
+from typing import Any, Dict, Optional, Tuple
+
 import requests
 
 # Import from new modular structure
-from ..api.spotify import (
-    refresh_access_token,
-    get_access_token,
-    get_devices,
-    get_current_playback,
-    start_playback,
-    set_volume
-)
+from ..api.spotify import (get_access_token, get_current_playback, get_devices,
+                           refresh_access_token, set_volume, start_playback)
 from ..config import load_config, save_config
 
 # Detect low-power mode once for module-wide optimisations
@@ -143,7 +138,7 @@ def get_sleep_status() -> Dict[str, Any]:
                 "device_id": data.get("device_id")
             }
         return {"active": False}
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error getting sleep status")
         return {"active": False}
 
@@ -202,7 +197,7 @@ def start_sleep_timer(duration_minutes: int, playlist_uri: str = "", device_name
         
         return True
         
-    except Exception as e:
+    except Exception:
         logger.exception("Error starting sleep timer")
         return False
 
@@ -217,7 +212,7 @@ def stop_sleep_timer() -> bool:
         logger.info("🛑 Sleep timer stopped")
         return True
         
-    except Exception as e:
+    except Exception:
         logger.exception("Error stopping sleep timer")
         return False
 
@@ -260,7 +255,7 @@ def _start_sleep_music(playlist_uri: str, device_name: str, volume: int, shuffle
         logger.info(f"🎵 Started sleep music: {playlist_uri} on {device_name} at {volume}% volume, shuffle: {shuffle}")
         return True, device_id
 
-    except Exception as e:
+    except Exception:
         logger.exception("Error starting sleep music")
         return False, None
 
@@ -405,7 +400,7 @@ def _monitor_sleep_timer() -> None:
 
             time.sleep(sleep_interval)
 
-    except Exception as e:
+    except Exception:
         logger.exception("Error in sleep timer monitor")
     finally:
         logger.info("😴 Sleep timer monitor thread exiting")
@@ -458,7 +453,7 @@ def _stop_sleep_music() -> bool:
     except requests.exceptions.RequestException as e:
         logger.error(f"Network error stopping sleep music: {e}")
         return False
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error stopping sleep music")
         return False
 
@@ -491,7 +486,7 @@ def save_sleep_settings(settings: Dict[str, Any]) -> bool:
             logger.info("💾 Sleep settings saved successfully")
         return success
         
-    except Exception as e:
+    except Exception:
         logger.exception("Error saving sleep settings")
         return False
 
@@ -509,7 +504,7 @@ def get_sleep_settings() -> Dict[str, Any]:
             "playlist_uri": config.get("sleep_playlist_uri", ""),
             "device_name": config.get("sleep_device_name", "")
         }
-    except Exception as e:
+    except Exception:
         logger.exception("Error loading sleep settings")
         return {
             "volume": 30,

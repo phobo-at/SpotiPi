@@ -3,9 +3,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.core import alarm
-from src.core import scheduler
-
+from src.core import alarm, scheduler
 
 TZ = ZoneInfo("Europe/Vienna")
 

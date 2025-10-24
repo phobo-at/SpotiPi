@@ -3,52 +3,45 @@ SpotiPi Main Application
 Flask web application with new modular structure
 """
 
-import os
 import copy
 import datetime
-import uuid
-from threading import Thread
-from pathlib import Path
-
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, Response, g
-from flask_compress import Compress
-from functools import wraps
 import logging
+import os
+import secrets
 import threading
 import time
-from urllib.parse import urlparse
+import uuid
+from functools import wraps
+from pathlib import Path
+from threading import Thread
 from typing import Any, Callable, Dict, Optional
+from urllib.parse import urlparse
 
+from flask import (Flask, Response, g, jsonify, redirect, render_template,
+                   request, session, url_for)
+from flask_compress import Compress
+
+from .api.spotify import (get_access_token, get_combined_playback, get_devices,
+                          get_followed_artists, get_playlists,
+                          get_saved_albums, get_user_library,
+                          get_user_saved_tracks)
 # Import from new structure - use relative imports since we're in src/
-from .config import load_config, save_config
-from .core.alarm import execute_alarm
+from .config import load_config
+from .core.alarm_scheduler import \
+    start_alarm_scheduler as start_event_alarm_scheduler
 from .core.scheduler import AlarmTimeValidator
-from .core.alarm_scheduler import start_alarm_scheduler as start_event_alarm_scheduler
-from .utils.logger import setup_logger, setup_logging
-from .utils.validation import validate_alarm_config, validate_sleep_config, validate_volume_only, ValidationError
-from .version import get_app_info, VERSION
-from .utils.translations import get_translations, get_user_language, t_api
-from .utils.library_utils import compute_library_hash, prepare_library_payload, slim_collection
-from .utils.timezone import get_local_timezone
-from .constants import ALARM_TRIGGER_WINDOW_MINUTES
-from .api.spotify import (
-    get_access_token, get_devices, get_playlists, get_user_library,
-    start_playback, stop_playback, resume_playback, toggle_playback, toggle_playback_fast,
-    set_volume, get_current_track, get_current_spotify_volume,
-    get_playback_status, get_combined_playback, _spotify_request,
-    get_saved_albums, get_user_saved_tracks, get_followed_artists
-)
-from .utils.token_cache import get_token_cache_info, log_token_cache_performance
-from .utils.thread_safety import get_config_stats, invalidate_config_cache
-from .utils.rate_limiting import rate_limit, get_rate_limiter, add_rate_limit_headers
+from .services.service_manager import get_service, get_service_manager
 from .utils.cache_migration import get_cache_migration_layer
-from .services.service_manager import get_service_manager, get_service
-from .core.sleep import (
-    start_sleep_timer, stop_sleep_timer, get_sleep_status,
-    save_sleep_settings
-)
+from .utils.library_utils import compute_library_hash, prepare_library_payload
+from .utils.logger import setup_logger, setup_logging
 from .utils.perf_monitor import perf_monitor
+from .utils.rate_limiting import get_rate_limiter, rate_limit
+from .utils.thread_safety import get_config_stats, invalidate_config_cache
+from .utils.token_cache import (get_token_cache_info,
+                                log_token_cache_performance)
+from .utils.translations import get_translations, get_user_language, t_api
 from .utils.wsgi_logging import TidyRequestHandler
+from .version import VERSION, get_app_info
 
 # Initialize Flask app with correct paths
 project_root = Path(__file__).parent.parent  # Go up from src/ to project root
@@ -69,8 +62,6 @@ app = Flask(
 app.config['TEMPLATES_AUTO_RELOAD'] = not LOW_POWER_MODE
 app.jinja_env.auto_reload = not LOW_POWER_MODE
 
-# Secure secret key generation
-import secrets
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
 
 app.config.setdefault('COMPRESS_REGISTER', True)
@@ -259,6 +250,92 @@ _devices_snapshot = AsyncSnapshot(
     DEVICE_SNAPSHOT_TTL,
     min_retry=1.5 if LOW_POWER_MODE else 0.75
 )
+
+_VALID_LIBRARY_SECTIONS = ("playlists", "albums", "tracks", "artists")
+_SECTION_LOADERS = {
+    "playlists": get_playlists,
+    "albums": get_saved_albums,
+    "tracks": get_user_saved_tracks,
+    "artists": get_followed_artists,
+}
+
+
+def _parse_library_sections(raw: Optional[str], *, default: Optional[list[str]] = None, ensure_default_on_empty: bool = False) -> list[str]:
+    """Parse and validate comma separated sections parameter."""
+    if raw is None:
+        return list(default or [])
+    items = [s.strip() for s in raw.split(",") if s.strip()]
+    filtered = [s for s in items if s in _VALID_LIBRARY_SECTIONS]
+    if not filtered and ensure_default_on_empty:
+        return list(default or ["playlists"])
+    return filtered
+
+
+def _load_music_library_data(token: str, *, sections: list[str], force_refresh: bool) -> Dict[str, Any]:
+    """Load music library data (full or sections) via cache migration layer."""
+    if sections:
+        return cache_migration.get_library_sections_cached(
+            token=token,
+            sections=sections,
+            section_loaders=_SECTION_LOADERS,
+            force_refresh=force_refresh,
+        )
+    return cache_migration.get_full_library_cached(
+        token=token,
+        loader_func=get_user_library,
+        force_refresh=force_refresh,
+    )
+
+
+def _build_library_response(
+    token: str,
+    *,
+    sections: list[str],
+    force_refresh: bool,
+    want_fields: Optional[str],
+    if_modified: Optional[str],
+    request_obj,
+) -> Response:
+    """Create a unified music library response with shared headers."""
+    raw_library = _load_music_library_data(token, sections=sections, force_refresh=force_refresh)
+    basic_view = want_fields == "basic"
+    payload = prepare_library_payload(raw_library, basic=basic_view, sections=sections or None)
+    hash_val = payload.get("hash") or compute_library_hash(payload)
+
+    if if_modified and if_modified == hash_val:
+        resp = Response(status=304)
+        resp.headers["ETag"] = hash_val
+        resp.headers["X-MusicLibrary-Hash"] = hash_val
+        return resp
+
+    is_offline = bool(payload.get("offline_mode"))
+    cached_sections = payload.get("cached_sections") if sections else None
+    cached_flag = payload.get("cached") if not sections else None
+
+    cached_complete = False
+    if sections:
+        if isinstance(cached_sections, dict):
+            cached_complete = all(cached_sections.get(sec, False) for sec in sections)
+        else:
+            cached_sections = {sec: False for sec in sections}
+    else:
+        cached_complete = bool(cached_flag)
+
+    if is_offline:
+        message = "ok (offline cache)"
+    elif sections and not cached_complete:
+        message = t_api("ok_partial", request_obj)
+    elif cached_complete:
+        message = "ok (cached)"
+    else:
+        message = "ok (fresh)"
+
+    resp = api_response(True, data=payload, message=message)
+    resp.headers["X-MusicLibrary-Hash"] = hash_val
+    resp.headers["ETag"] = hash_val
+    if basic_view:
+        resp.headers["X-Data-Fields"] = "basic"
+    return resp
 
 
 def _build_playback_snapshot(token: Optional[str], *, timestamp: Optional[str] = None) -> Dict[str, Any]:
@@ -532,6 +609,16 @@ def inject_global_vars():
     else:
         config = load_config()
         g.current_config = config
+    sleep_service = get_service("sleep")
+    sleep_status_result = sleep_service.get_sleep_status()
+    if sleep_status_result.success:
+        sleep_status_payload = (sleep_status_result.data or {}).get("raw_status") or sleep_status_result.data
+    else:
+        sleep_status_payload = {
+            "active": False,
+            "error": sleep_status_result.message,
+            "error_code": sleep_status_result.error_code or "sleep_status_error"
+        }
     
     # Get user language from current request
     user_language = get_user_language(request)
@@ -546,6 +633,7 @@ def inject_global_vars():
         'app_version': VERSION,
         'app_info': get_app_info(),
         'current_config': config,
+        'sleep_status': sleep_status_payload,
         'translations': translations,
         't': template_t,
         'lang': user_language,
@@ -556,7 +644,6 @@ def inject_global_vars():
     }
 
 # Unified API response helper
-from typing import Any, Callable, Dict, Optional
 
 
 def _iso_timestamp_now() -> str:
@@ -642,6 +729,17 @@ def index():
         'devices_meta': _normalise_snapshot_meta(devices_meta)
     }
     
+    sleep_service_index = get_service("sleep")
+    sleep_status_result_index = sleep_service_index.get_sleep_status()
+    if sleep_status_result_index.success:
+        sleep_status_initial = (sleep_status_result_index.data or {}).get("raw_status") or sleep_status_result_index.data
+    else:
+        sleep_status_initial = {
+            "active": False,
+            "error": sleep_status_result_index.message,
+            "error_code": sleep_status_result_index.error_code or "sleep_status_error"
+        }
+
     template_data = {
         'config': config,
         'devices': devices,
@@ -651,7 +749,7 @@ def index():
         'initial_volume': initial_volume,
         'error_message': session.pop('error_message', None),
         'success_message': session.pop('success_message', None),
-        'sleep_status': get_sleep_status(),
+        'sleep_status': sleep_status_initial,
         # Add missing template variables
         'now': datetime.datetime.now(),
         't': template_t,  # Translation function with parameter support
@@ -725,80 +823,64 @@ if not hasattr(app, '_warmup_started'):
 @rate_limit("config_changes")
 def save_alarm():
     """Save alarm settings with comprehensive input validation"""
-    try:
-        validated_data = validate_alarm_config(request.form)
-        config = load_config()
-        config.update(validated_data)
-        if config["time"] and not AlarmTimeValidator.validate_time_format(config["time"]):
-            return api_response(False, message=t_api("invalid_time_format", request), status=400, error_code="time_format")
-        if not save_config(config):
-            return api_response(False, message=t_api("failed_save_config", request), status=500, error_code="save_failed")
-        logging.info(
-            "Alarm settings saved: Active=%s Time=%s Volume=%s%% Device=%s",
-            config['enabled'],
-            config['time'],
-            config['alarm_volume'],
-            config.get("device_name", "")
-        )
-        next_alarm_text = ""
-        if config.get("enabled") and config.get("time"):
-            next_alarm_text = AlarmTimeValidator.format_time_until_alarm(config["time"])
-        return api_response(True, data={
-            "enabled": config["enabled"],
-            "time": config["time"],
-            "alarm_volume": config["alarm_volume"],
-            "next_alarm": next_alarm_text,
-            "playlist_uri": config.get("playlist_uri", ""),
-            "device_name": config.get("device_name", "")
-        }, message=t_api("alarm_settings_saved", request))
-    except ValidationError as e:
-        logging.warning("Alarm validation error: %s - %s", e.field_name, e.message)
-        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", status=400, error_code=e.field_name)
-    except Exception:
-        logging.exception("Error saving alarm configuration")
-        return api_response(False, message=t_api("internal_error_saving", request), status=500, error_code="internal_error")
+    alarm_service = get_service("alarm")
+    result = alarm_service.save_alarm_settings(request.form)
+
+    if result.success:
+        return api_response(True, data=result.data, message=t_api("alarm_settings_saved", request))
+
+    error_code = (result.error_code or "internal_error").lower()
+    message = result.message or t_api("internal_error_saving", request)
+
+    if error_code == "time_format":
+        return api_response(False, message=t_api("invalid_time_format", request), status=400, error_code="time_format")
+    if error_code == "save_failed":
+        return api_response(False, message=t_api("failed_save_config", request), status=500, error_code="save_failed")
+    if error_code in {"alarm_time", "volume", "alarm_volume", "playlist_uri", "device_name"}:
+        logger.warning("Alarm validation error (%s): %s", error_code, message)
+        return api_response(False, message=message, status=400, error_code=error_code)
+
+    logger.error("Error saving alarm configuration via service: %s", message)
+    return api_response(False, message=t_api("internal_error_saving", request), status=500, error_code="internal_error")
 
 @app.route("/alarm_status")
 @api_error_handler
 @rate_limit("status_check")
 def alarm_status():
     """Get alarm status - supports both basic and advanced modes"""
-    config = load_config()
     advanced_mode = request.args.get('advanced', 'false').lower() == 'true'
-    
+
+    alarm_service = get_service("alarm")
+    result = alarm_service.get_alarm_status()
+
+    if not result.success:
+        logger.error("Failed to load alarm status via service: %s", result.message)
+        return api_response(
+            False,
+            message=result.message or t_api("alarm_status_error", request),
+            status=400,
+            error_code=result.error_code or "alarm_status_error"
+        )
+
+    alarm_data = result.data or {}
+
     if advanced_mode:
-        # Advanced status via service layer
-        try:
-            alarm_service = get_service("alarm")
-            result = alarm_service.get_alarm_status()
-            
-            if result.success:
-                return api_response(True, data={
-                    "timestamp": result.timestamp.isoformat(), 
-                    "alarm": result.data,
-                    "mode": "advanced"
-                })
-            else:
-                return api_response(False, message=result.message, status=400, 
-                                  error_code=result.error_code or "alarm_status_error")
-        except Exception as e:
-            logger.error(f"Error getting advanced alarm status: {e}")
-            return api_response(False, message=str(e), status=500, 
-                              error_code="alarm_status_exception")
-    else:
-        # Basic status (legacy format)
-        next_alarm_time = ""
-        if config.get("enabled") and config.get("time"):
-            next_alarm_time = AlarmTimeValidator.format_time_until_alarm(config["time"])
         return api_response(True, data={
-            "enabled": config.get("enabled", False),
-            "time": config.get("time", "07:00"),
-            "alarm_volume": config.get("alarm_volume", 50),
-            "next_alarm": next_alarm_time,
-            "playlist_uri": config.get("playlist_uri", ""),
-            "device_name": config.get("device_name", ""),
-            "mode": "basic"
+            "timestamp": result.timestamp.isoformat(),
+            "alarm": alarm_data,
+            "mode": "advanced"
         })
+
+    payload = {
+        "enabled": bool(alarm_data.get("enabled", False)),
+        "time": alarm_data.get("time") or "07:00",
+        "alarm_volume": alarm_data.get("alarm_volume", alarm_data.get("volume", 50)),
+        "next_alarm": alarm_data.get("next_alarm", ""),
+        "playlist_uri": alarm_data.get("playlist_uri", ""),
+        "device_name": alarm_data.get("device_name", ""),
+        "mode": "basic"
+    }
+    return api_response(True, data=payload)
 
 
 @app.route("/api/dashboard/status")
@@ -854,7 +936,16 @@ def api_dashboard_status():
         "device_name": config.get("device_name", "")
     }
 
-    sleep_payload = get_sleep_status()
+    sleep_service = get_service("sleep")
+    sleep_result = sleep_service.get_sleep_status()
+    if sleep_result.success:
+        sleep_payload = (sleep_result.data or {}).get("raw_status") or sleep_result.data
+    else:
+        sleep_payload = {
+            "active": False,
+            "error": sleep_result.message,
+            "error_code": sleep_result.error_code or "sleep_status_error"
+        }
 
     playback_payload = {}
     playback_status = "pending"
@@ -932,97 +1023,32 @@ def api_music_library():
     if not token:
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
     
+    want_fields = request.args.get('fields')
+    if_modified = request.headers.get('If-None-Match')
+    raw_sections = request.args.get('sections')
+    requested_sections = _parse_library_sections(raw_sections, ensure_default_on_empty=True)
+
     try:
-        want_fields = request.args.get('fields')  # "basic" -> slim lists
-        if_modified = request.headers.get('If-None-Match')  # ETag header
-        raw_sections = request.args.get('sections')
-        valid_sections = {"playlists", "albums", "tracks", "artists"}
-        requested_sections = []
-        if raw_sections is not None:
-            requested_sections = [s.strip() for s in raw_sections.split(',') if s.strip()]
-            requested_sections = [s for s in requested_sections if s in valid_sections]
-            if not requested_sections:
-                requested_sections = ['playlists']
-
-        if requested_sections:
-            section_loaders = {
-                'playlists': get_playlists,
-                'albums': get_saved_albums,
-                'tracks': get_user_saved_tracks,
-                'artists': get_followed_artists
-            }
-
-            library_data = cache_migration.get_library_sections_cached(
-                token=token,
-                sections=requested_sections,
-                section_loaders=section_loaders,
-                force_refresh=force_refresh
-            )
-        else:
-            # Use unified cache system instead of legacy _cache attribute
-            library_data = cache_migration.get_full_library_cached(
-                token=token,
-                loader_func=get_user_library,
-                force_refresh=force_refresh
-            )
-
-        # Compute hash for ETag/conditional requests
-        hash_val = library_data.get("hash") if isinstance(library_data, dict) else None
-        if not hash_val:
-            hash_val = compute_library_hash(library_data)
-        
-        # Conditional request short-circuit
-        if if_modified and if_modified == hash_val:
-            resp = Response(status=304)
-            resp.headers['ETag'] = hash_val
-            resp.headers['X-MusicLibrary-Hash'] = hash_val
-            return resp
-
-        # Prepare response payload
-        resp_data = prepare_library_payload(library_data, basic=want_fields == 'basic')
-        is_offline = library_data.get("offline_mode", False)
-
-        if requested_sections:
-            resp_data['partial'] = True
-            resp_data['sections'] = library_data.get('sections', requested_sections)
-            resp_data['cached_sections'] = library_data.get('cached', {})
-            cached_flags = library_data.get('cached', {})
-            is_cached = all(cached_flags.get(sec, False) for sec in requested_sections)
-        else:
-            is_cached = library_data.get("cached", False)
-        
-        # Determine response message
-        if is_offline:
-            message = "ok (offline cache)"
-        elif requested_sections and not is_cached:
-            message = t_api("ok_partial", request)
-        elif is_cached:
-            message = "ok (cached)"
-        else:
-            message = "ok (fresh)"
-
-        resp = api_response(True, data=resp_data, message=message)
-        resp.headers['X-MusicLibrary-Hash'] = hash_val
-        resp.headers['ETag'] = hash_val
-        
-        if want_fields == 'basic':
-            resp.headers['X-Data-Fields'] = 'basic'
-            
-        return resp
-        
-    except Exception as e:
+        return _build_library_response(
+            token,
+            sections=requested_sections,
+            force_refresh=force_refresh,
+            want_fields=want_fields,
+            if_modified=if_modified,
+            request_obj=request,
+        )
+    except Exception:
         logging.exception("Error loading music library")
-        
-        # Try offline fallback through unified cache
-        fallback_data = cache_migration.get_offline_fallback()
-        if fallback_data:
-            resp_data = prepare_library_payload(fallback_data, basic=False)
-            hash_val = resp_data["hash"]
-            resp = api_response(True, data=resp_data, message=t_api("served_offline_cache", request))
-            resp.headers['X-MusicLibrary-Hash'] = hash_val
-            resp.headers['ETag'] = hash_val
-            return resp
-        
+        if not requested_sections:
+            fallback_data = cache_migration.get_offline_fallback()
+            if fallback_data:
+                resp_data = prepare_library_payload(fallback_data, basic=False)
+                hash_val = resp_data["hash"]
+                resp = api_response(True, data=resp_data, message=t_api("served_offline_cache", request))
+                resp.headers['X-MusicLibrary-Hash'] = hash_val
+                resp.headers['ETag'] = hash_val
+                return resp
+
         return api_response(False, message=t_api("spotify_unavailable", request), status=503, error_code="spotify_unavailable")
 
 @app.route("/api/music-library/sections")
@@ -1040,72 +1066,21 @@ def api_music_library_sections():
     if not token:
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
 
-    raw_sections = request.args.get('sections', 'playlists')
-    sections = [s.strip() for s in raw_sections.split(',') if s.strip()]
+    sections = _parse_library_sections(request.args.get('sections', 'playlists'), default=['playlists'], ensure_default_on_empty=True)
     force = request.args.get('refresh') in ('1', 'true', 'yes')
-    
-    try:
-        # Import section loaders
-        from .api.spotify import get_playlists, get_saved_albums, get_user_saved_tracks, get_followed_artists
-        
-        section_loaders = {
-            'playlists': get_playlists,
-            'albums': get_saved_albums,
-            'tracks': get_user_saved_tracks,
-            'artists': get_followed_artists
-        }
-        
-        # Use unified cache for sections
-        partial = cache_migration.get_library_sections_cached(
-            token=token, 
-            sections=sections, 
-            section_loaders=section_loaders, 
-            force_refresh=force
-        )
-        
-        # Compute hash for ETag
-        import hashlib
-        def _compute_hash(data_dict):
-            try:
-                parts = []
-                for coll in ("playlists","albums","tracks","artists"):
-                    for item in data_dict.get(coll, []) or []:
-                        parts.append(item.get("uri", ""))
-                raw = "|".join(sorted(parts))
-                return hashlib.md5(raw.encode("utf-8")).hexdigest() if raw else "0"*32
-            except Exception:
-                return "0"*32
-        
-        hash_val = _compute_hash(partial)
-        partial['hash'] = hash_val
-        
-        # Check for conditional request
-        if_modified = request.headers.get('If-None-Match')
-        if if_modified and if_modified == hash_val:
-            resp = Response(status=304)
-            resp.headers['ETag'] = hash_val
-            resp.headers['X-MusicLibrary-Hash'] = hash_val
-            return resp
+    want_fields = request.args.get('fields')
+    if_modified = request.headers.get('If-None-Match')
 
-        # Optional slimming for basic fields
-        want_fields = request.args.get('fields')
-        if want_fields == 'basic':
-            def _slim(items):
-                allowed = {"uri","name","image_url","track_count","type","artist"}
-                return [{k: it.get(k) for k in allowed if k in it} for it in (items or [])]
-            
-            for coll in ('playlists','albums','tracks','artists'):
-                partial[coll] = _slim(partial.get(coll, []))
-        
-        resp = api_response(True, data=partial, message=t_api("ok_partial", request))
-        resp.headers['X-MusicLibrary-Hash'] = hash_val
-        resp.headers['ETag'] = hash_val
-        
-        if want_fields == 'basic':
-            resp.headers['X-Data-Fields'] = 'basic'
-            
-        return resp
-        
+    try:
+        return _build_library_response(
+            token,
+            sections=sections,
+            force_refresh=force,
+            want_fields=want_fields,
+            if_modified=if_modified,
+            request_obj=request,
+        )
+
     except Exception as e:
         logging.exception("Error loading partial music library")
         return api_response(False, message=str(e), status=500, error_code="music_library_partial_error")
@@ -1321,50 +1296,44 @@ def metrics():
 @api_error_handler
 def toggle_play_pause():
     """Toggle Spotify play/pause - optimized for immediate response"""
-    token = get_access_token()
-    if not token:
+    spotify_service = get_service("spotify")
+    result = spotify_service.toggle_playback_fast()
+
+    if result.success:
+        return api_response(True, data=result.data, message=t_api("ok", request))
+
+    error_code = result.error_code or "playback_toggle_failed"
+    status = 503 if error_code == "playback_toggle_failed" else 500
+    message = result.message or "Playback toggle failed"
+
+    if error_code == "auth_required":
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
 
-    result = toggle_playback_fast(token)
-
-    if isinstance(result, dict):
-        success = result.get("success", True)
-        if success:
-            return api_response(True, data=result, message=t_api("ok", request))
-
-        error_message = result.get("error") or "Playback toggle failed"
-        return api_response(False, data=result, message=error_message, status=503, error_code="playback_toggle_failed")
-
-    # Fallback for unexpected return shapes
-    return api_response(True, data={"result": result}, message=t_api("ok", request))
+    payload = result.data if isinstance(result.data, dict) else {"result": result.data}
+    return api_response(False, data=payload, message=message, status=status, error_code=error_code)
 
 @app.route("/volume", methods=["POST"])
 @api_error_handler
 def volume_endpoint():
     """Volume endpoint - only sets Spotify volume (no config save)"""
-    token = get_access_token()
-    if not token:
-        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
-    
-    try:
-        # Validate volume input
-        volume = validate_volume_only(request.form)
-        
-        # Set Spotify volume
-        device_id = request.form.get('device_id') or None
+    spotify_service = get_service("spotify")
+    result = spotify_service.set_volume_from_form(request.form)
 
-        spotify_success = set_volume(token, volume, device_id)
-        
-        if spotify_success:
-            return api_response(True, data={"volume": volume}, message=f"Volume set to {volume}")
-        else:
-            return api_response(False, message=t_api("volume_set_failed", request), status=500, 
-                              error_code="volume_set_failed")
-            
-    except ValidationError as e:
-        logging.warning(f"Volume validation error: {e.field_name} - {e.message}")
-        return api_response(False, message=f"Invalid {e.field_name}: {e.message}", 
-                          status=400, error_code=e.field_name)
+    if result.success:
+        volume = (result.data or {}).get("volume")
+        message = f"Volume set to {volume}" if volume is not None else t_api("ok", request)
+        return api_response(True, data=result.data, message=message)
+
+    error_code = result.error_code or "volume_set_failed"
+    message = result.message or t_api("volume_set_failed", request)
+
+    if error_code == "auth_required":
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
+    if error_code == "volume":
+        logger.warning("Volume validation error: %s", message)
+        return api_response(False, message=message, status=400, error_code="volume")
+
+    return api_response(False, message=t_api("volume_set_failed", request), status=500, error_code=error_code)
 
 # =====================================
 # 😴 API Routes - Sleep Timer
@@ -1376,94 +1345,79 @@ def volume_endpoint():
 def sleep_status_api():
     """Get sleep timer status - supports both basic and advanced modes"""
     advanced_mode = request.args.get('advanced', 'false').lower() == 'true'
-    
+
+    sleep_service = get_service("sleep")
+    result = sleep_service.get_sleep_status()
+
+    if not result.success:
+        logger.error("Failed to load sleep status via service: %s", result.message)
+        return api_response(
+            False,
+            message=result.message or t_api("sleep_status_error", request),
+            status=500,
+            error_code=result.error_code or "sleep_status_error"
+        )
+
     if advanced_mode:
-        # Advanced status via service layer
-        try:
-            sleep_service = get_service("sleep")
-            result = sleep_service.get_sleep_status()
-            
-            if result.success:
-                return api_response(True, data={
-                    "timestamp": result.timestamp.isoformat(), 
-                    "sleep": result.data,
-                    "mode": "advanced"
-                })
-            else:
-                return api_response(False, message=result.message, status=500, 
-                                  error_code=result.error_code or "sleep_status_error")
-        except Exception as e:
-            logger.error(f"Error getting advanced sleep status: {e}")
-            return api_response(False, message=str(e), status=500, 
-                              error_code="sleep_status_exception")
-    else:
-        # Basic status (legacy format)
-        return api_response(True, data=get_sleep_status())
+        return api_response(True, data={
+            "timestamp": result.timestamp.isoformat(),
+            "sleep": {k: v for k, v in (result.data or {}).items() if k != "raw_status"},
+            "mode": "advanced"
+        })
+
+    legacy_payload = (result.data or {}).get("raw_status")
+    if legacy_payload is None:
+        legacy_payload = result.data
+    return api_response(True, data=legacy_payload or {})
 
 @app.route("/sleep", methods=["POST"])
 @api_error_handler
 @rate_limit("config_changes")
 def start_sleep():
     """Start sleep timer with comprehensive input validation"""
-    try:
-        # Validate all sleep timer inputs
-        validated_data = validate_sleep_config(request.form)
-        
-        # Start sleep timer with validated data
-        success = start_sleep_timer(**validated_data)
-        
-        # Return JSON for AJAX requests, redirect for form submissions
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
-        if request.is_json or is_ajax:
-            if success:
-                return api_response(True, message=f"Sleep timer started for {validated_data['duration_minutes']} minutes")
-            else:
-                return api_response(False, message=t_api("failed_start_sleep", request), status=500, error_code="sleep_start_failed")
-        else:
-            # Traditional form submission
-            if success:
-                session['success_message'] = f"Sleep timer started for {validated_data['duration_minutes']} minutes"
-                return redirect(url_for('index'))
-            else:
-                session['error_message'] = "Failed to start sleep timer"
-                return redirect(url_for('index'))
-                
-    except ValidationError as e:
-        error_msg = f"Invalid {e.field_name}: {e.message}"
-        logging.warning(f"Sleep timer validation error: {e.field_name} - {e.message}")
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
-        if request.is_json or is_ajax:
-            return api_response(False, message=error_msg, status=400, error_code=e.field_name)
-        else:
-            session['error_message'] = error_msg
-            return redirect(url_for('index'))
-    except Exception as e:
-        error_msg = f"Error starting sleep timer: {str(e)}"
-        logging.exception("Error starting sleep timer")
-        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
-        if request.is_json or is_ajax:
-            return api_response(False, message=error_msg, status=500, error_code="sleep_start_error")
-        else:
-            session['error_message'] = error_msg
-            return redirect(url_for('index'))
+    sleep_service = get_service("sleep")
+    result = sleep_service.start_sleep_timer(request.form)
+
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
+    if request.is_json or is_ajax:
+        if result.success:
+            return api_response(True, message=result.message or "Sleep timer started")
+
+        error_code = (result.error_code or "sleep_start_failed")
+        status = 400 if error_code in {"duration", "sleep_volume", "playlist_uri", "device_name"} else 500
+        message = result.message or t_api("failed_start_sleep", request)
+        return api_response(False, message=message, status=status, error_code=error_code)
+
+    if result.success:
+        session['success_message'] = result.message or "Sleep timer started"
+    else:
+        session['error_message'] = result.message or "Failed to start sleep timer"
+    return redirect(url_for('index'))
 
 @app.route("/stop_sleep", methods=["POST"])
 @api_error_handler
 @rate_limit("api_general")
 def stop_sleep():
     """Stop active sleep timer"""
-    success = stop_sleep_timer()
-    
-    # Return JSON for AJAX requests, redirect for form submissions
+    sleep_service = get_service("sleep")
+    result = sleep_service.stop_sleep_timer()
+    success = result.success
+
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').find('application/json') != -1
     if request.is_json or is_ajax:
-        return api_response(success, message=t_api("sleep_stopped", request) if success else "Failed to stop sleep timer", status=200 if success else 500, error_code=None if success else "sleep_stop_failed")
+        message = t_api("sleep_stopped", request) if success else (result.message or "Failed to stop sleep timer")
+        return api_response(
+            success,
+            message=message,
+            status=200 if success else 500,
+            error_code=None if success else (result.error_code or "sleep_stop_failed")
+        )
+
+    if success:
+        session['success_message'] = result.message or "Sleep timer stopped"
     else:
-        if success:
-            session['success_message'] = "Sleep timer stopped"
-        else:
-            session['error_message'] = "Failed to stop sleep timer"
-        return redirect(url_for('index'))
+        session['error_message'] = result.message or "Failed to stop sleep timer"
+    return redirect(url_for('index'))
 
 # =====================================
 # 🎵 Music Library & Standalone Routes
@@ -1485,61 +1439,39 @@ def music_library():
 @api_error_handler
 def play_endpoint():
     """Unified playback endpoint - supports both JSON and form data"""
-    token = get_access_token()
-    if not token:
+    spotify_service = get_service("spotify")
+
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        result = spotify_service.start_playback_from_payload(payload, payload_type="json")
+    else:
+        result = spotify_service.start_playback_from_payload(request.form, payload_type="form")
+
+    if result.success:
+        return api_response(True, message=t_api("playback_started", request))
+
+    error_code = (result.error_code or "playback_start_failed")
+    message = result.message or t_api("failed_start_playback", request)
+
+    if error_code == "auth_required":
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
-    
-    try:
-        # Support both JSON and form data for backward compatibility
-        if request.is_json:
-            # JSON format (legacy /start_playback)
-            data = request.get_json()
-            context_uri = data.get("context_uri")
-            device_id = data.get("device_id")
-            
-            if not context_uri:
-                return api_response(False, message=t_api("missing_context_uri", request), status=400, error_code="missing_context_uri")
-            
-            # Direct device_id usage
-            success = start_playback(token, device_id, context_uri)
-            
-        else:
-            # Form format (legacy /play)
-            device_name = request.form.get('device_name')
-            context_uri = request.form.get('uri')
-            
-            if not context_uri:
-                return api_response(False, message=t_api("missing_uri", request), status=400, error_code="missing_uri")
-            
-            if not device_name:
-                return api_response(False, message=t_api("missing_device", request), status=400, error_code="missing_device")
-            
-            # Get devices to find device_id from device_name
-            devices = get_devices(token)
-            if not devices:
-                return api_response(False, message=t_api("no_devices", request), status=404, error_code="no_devices")
-            
-            # Find device by name
-            target_device = None
-            for device in devices:
-                if device['name'] == device_name:
-                    target_device = device
-                    break
-            
-            if not target_device:
-                return api_response(False, message=t_api("device_not_found", request, name=device_name), status=404, error_code="device_not_found")
-            
-            # Start playback with found device_id
-            success = start_playback(token, target_device['id'], context_uri)
-        
-        if success:
-            return api_response(True, message=t_api("playback_started", request))
-        else:
-            return api_response(False, message=t_api("failed_start_playback", request), status=500, error_code="playback_start_failed")
-            
-    except Exception as e:
-        logging.exception("Error in play endpoint")
-        return api_response(False, message=str(e), status=500, error_code="play_endpoint_error")
+    if error_code in {"missing_context_uri", "missing_uri", "missing_device"}:
+        translations = {
+            "missing_context_uri": t_api("missing_context_uri", request),
+            "missing_uri": t_api("missing_uri", request),
+            "missing_device": t_api("missing_device", request)
+        }
+        return api_response(False, message=translations[error_code], status=400, error_code=error_code)
+    if error_code == "no_devices":
+        return api_response(False, message=t_api("no_devices", request), status=404, error_code="no_devices")
+    if error_code == "device_not_found":
+        device_name = ""
+        if isinstance(result.data, dict):
+            device_name = result.data.get("device_name", "")
+        return api_response(False, message=t_api("device_not_found", request, name=device_name), status=404, error_code="device_not_found")
+
+    status = 503 if error_code == "playlists_unavailable" else 500
+    return api_response(False, message=message, status=status, error_code=error_code)
 
 # =====================================
 # 📱 Utility Routes
@@ -1571,7 +1503,8 @@ def not_found_error(error):
                          devices=[],
                          playlists=[],
                          next_alarm_info="",
-                         sleep_status={}), 404
+                         sleep_status={},
+                         initial_state={}), 404
 
 @app.errorhandler(500)
 def internal_error(error):
@@ -1582,7 +1515,8 @@ def internal_error(error):
                          devices=[],
                          playlists=[],
                          next_alarm_info="",
-                         sleep_status={}), 500
+                         sleep_status={},
+                         initial_state={}), 500
 
 # =====================================
 # 🚀 Application Startup
@@ -1761,12 +1695,20 @@ def api_alarm_execute():
     Useful for debugging on the Raspberry Pi when checking playlist/device
     configuration or verifying logging. Returns JSON with success flag.
     """
-    try:
-        result = execute_alarm(force=True)
-        return api_response(bool(result), data={"executed": bool(result)}, message="Alarm executed" if result else "Alarm conditions not met or failed", status=200 if result else 400, error_code=None if result else "alarm_not_executed")
-    except Exception as e:
-        logger.error(f"Error executing alarm manually: {e}")
-        return api_response(False, message=str(e), status=500, error_code="alarm_execute_error")
+    alarm_service = get_service("alarm")
+    result = alarm_service.execute_alarm_now()
+
+    if result.success:
+        return api_response(True, data={"executed": True}, message=result.message or "Alarm executed")
+
+    logger.error("Alarm execution failed: %s", result.message)
+    return api_response(
+        False,
+        data={"executed": False},
+        message=result.message or "Alarm conditions not met or failed",
+        status=400,
+        error_code="alarm_not_executed"
+    )
 
 @app.route("/api/spotify/auth-status")
 @rate_limit("spotify_api")

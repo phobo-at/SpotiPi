@@ -6,19 +6,21 @@ Handles all alarm-related business logic including scheduling,
 validation, execution, and status management.
 """
 
-from datetime import datetime
-from typing import Dict, Any, Optional
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, Optional
 
-from . import BaseService, ServiceResult
 from ..config import load_config, save_config
 from ..core.alarm import execute_alarm
 from ..core.scheduler import AlarmTimeValidator
-from ..utils.validation import validate_alarm_config, ValidationError
+from ..utils.validation import ValidationError, validate_alarm_config
+from . import BaseService, ServiceResult
+
 
 @dataclass
 class AlarmInfo:
     """Structured alarm information."""
+
     enabled: bool
     time: Optional[str]
     device_name: Optional[str]
@@ -26,6 +28,8 @@ class AlarmInfo:
     volume: int
     next_execution: Optional[datetime]
     is_scheduled: bool
+    next_alarm_text: Optional[str]
+    next_execution_iso: Optional[str]
 
 class AlarmService(BaseService):
     """Service for managing alarms and scheduling."""
@@ -45,7 +49,21 @@ class AlarmService(BaseService):
             if config.get("enabled") and config.get("time"):
                 next_alarm = AlarmTimeValidator.get_next_alarm_date(config["time"])
                 is_scheduled = next_alarm is not None
-            
+
+            next_alarm_text = ""
+            next_execution_iso = None
+            if config.get("enabled") and config.get("time"):
+                try:
+                    next_alarm_text = AlarmTimeValidator.format_time_until_alarm(config["time"])
+                except Exception:
+                    next_alarm_text = "Next alarm calculation error"
+
+            if next_alarm:
+                try:
+                    next_execution_iso = next_alarm.isoformat()
+                except Exception:
+                    next_execution_iso = None
+
             alarm_info = AlarmInfo(
                 enabled=config.get("enabled", False),
                 time=config.get("time"),
@@ -53,11 +71,19 @@ class AlarmService(BaseService):
                 playlist_uri=config.get("playlist_uri"),
                 volume=config.get("alarm_volume", 50),
                 next_execution=next_alarm,
-                is_scheduled=is_scheduled
+                is_scheduled=is_scheduled,
+                next_alarm_text=next_alarm_text,
+                next_execution_iso=next_execution_iso
             )
-            
+
+            data = {
+                **alarm_info.__dict__,
+                "next_alarm": next_alarm_text,
+                "alarm_volume": alarm_info.volume,
+            }
+
             return self._success_result(
-                data=alarm_info.__dict__,
+                data=data,
                 message="Alarm status retrieved successfully"
             )
             
@@ -69,34 +95,60 @@ class AlarmService(BaseService):
         try:
             # Validate input data
             validated_data = validate_alarm_config(form_data)
-            
+
             # Additional business logic validation
-            if validated_data.get("time"):
-                if not self.validator.validate_time_format(validated_data["time"]):
-                    return self._error_result(
-                        "Invalid time format. Please use HH:MM format.",
-                        error_code="INVALID_TIME_FORMAT"
-                    )
-            
+            configured_time = validated_data.get("time")
+            if configured_time and not self.validator.validate_time_format(configured_time):
+                return self._error_result(
+                    "Invalid time format. Please use HH:MM format.",
+                    error_code="time_format"
+                )
+
             # Load current config and update
             config = load_config()
             config.update(validated_data)
-            
-            # Save configuration
-            save_config(config)
-            
-            # Get updated status for response
-            status_result = self.get_alarm_status()
-            
+
+            # Persist configuration atomically
+            if not save_config(config):
+                return self._error_result(
+                    "Failed to save alarm configuration",
+                    error_code="save_failed"
+                )
+
+            self.logger.info(
+                "Alarm settings saved: Active=%s Time=%s Volume=%s%% Device=%s",
+                config.get("enabled"),
+                config.get("time"),
+                config.get("alarm_volume"),
+                config.get("device_name", "")
+            )
+
+            # Compute next alarm human readable text
+            next_alarm_text = ""
+            if config.get("enabled") and config.get("time"):
+                try:
+                    next_alarm_text = AlarmTimeValidator.format_time_until_alarm(config["time"])
+                except Exception:
+                    next_alarm_text = "Next alarm calculation error"
+
+            payload = {
+                "enabled": config.get("enabled", False),
+                "time": config.get("time"),
+                "alarm_volume": config.get("alarm_volume", 50),
+                "next_alarm": next_alarm_text,
+                "playlist_uri": config.get("playlist_uri", ""),
+                "device_name": config.get("device_name", "")
+            }
+
             return self._success_result(
-                data=status_result.data if status_result.success else None,
+                data=payload,
                 message="Alarm settings saved successfully"
             )
-            
+
         except ValidationError as e:
             return self._error_result(
-                str(e),
-                error_code="VALIDATION_ERROR"
+                f"Invalid {e.field_name}: {e.message}",
+                error_code=e.field_name
             )
         except Exception as e:
             return self._handle_error(e, "save_alarm_settings")

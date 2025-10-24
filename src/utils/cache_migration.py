@@ -17,14 +17,13 @@ Bietet:
 - Rückwärtskompatibilität für bestehende APIs
 """
 
-import os
-import time
-import logging
 import hashlib
-from typing import Dict, List, Any, Optional, Callable
+import logging
+import time
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
-from .music_library_cache import get_music_library_cache, CacheType
+from .music_library_cache import CacheType, get_music_library_cache
 
 
 class CacheMigrationLayer:

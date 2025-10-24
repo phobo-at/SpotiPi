@@ -6,32 +6,29 @@
 - Uses ALARM_TRIGGER_WINDOW_MINUTES for final execution window
 """
 from __future__ import annotations
+
 import copy
+import datetime as _dt
 import json
+import logging
 import os
 import random
 import socket
 import threading
 import time
-import datetime as _dt
 from pathlib import Path
-from typing import Optional, Dict, Any
-import logging
+from typing import Any, Dict, Optional
 
-from .alarm import execute_alarm
-from .scheduler import AlarmTimeValidator
+from ..api.spotify import ensure_token_valid, get_access_token, get_device_id
 from ..config import load_config
 from ..constants import ALARM_TRIGGER_WINDOW_MINUTES
 from ..utils.thread_safety import get_thread_safe_config_manager
 from ..utils.timezone import get_local_timezone
-from ..api.spotify import ensure_token_valid, get_access_token, get_device_id
-from .alarm_logging import (
-    AlarmProbeContext,
-    log_alarm_probe,
-    check_network_ready,
-    summarize_token_state,
-    get_ntp_offset_ms,
-)
+from .alarm import execute_alarm
+from .alarm_logging import (AlarmProbeContext, check_network_ready,
+                            get_ntp_offset_ms, log_alarm_probe,
+                            summarize_token_state)
+from .scheduler import AlarmTimeValidator
 
 _logger = logging.getLogger("alarm_scheduler")
 LOCAL_TZ = get_local_timezone()

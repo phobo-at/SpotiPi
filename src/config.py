@@ -3,13 +3,14 @@ Centralized configuration management for SpotiPi
 Handles environment-specific configs and validation with thread safety
 """
 
-import os
+import copy
 import json
 import logging
-import copy
-from typing import Dict, Any, Optional
+import os
 from pathlib import Path
+from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 
 class ConfigManager:
     """Manages configuration loading and validation"""
@@ -195,7 +196,9 @@ class ConfigManager:
 config_manager = ConfigManager()
 
 # Initialize thread-safe config system
-from .utils.thread_safety import initialize_thread_safe_config, load_config_safe, save_config_safe
+from .utils.thread_safety import (initialize_thread_safe_config,  # noqa: E402
+                                  load_config_safe, save_config_safe)
+
 initialize_thread_safe_config(config_manager)
 
 # Global constants for backward compatibility

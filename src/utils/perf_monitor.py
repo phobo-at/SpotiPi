@@ -3,12 +3,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import time
-import logging
-from dataclasses import dataclass, field
 from collections import deque
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from threading import Lock
 from typing import Deque, Dict, Iterable, Optional
 

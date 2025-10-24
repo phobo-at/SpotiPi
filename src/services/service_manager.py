@@ -6,13 +6,14 @@ Manages all services and provides a unified interface for the Flask application.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from .system_service import SystemService
-from .alarm_service import AlarmService  
-from .spotify_service import SpotifyService
-from .sleep_service import SleepService
 from . import ServiceResult
+from .alarm_service import AlarmService
+from .sleep_service import SleepService
+from .spotify_service import SpotifyService
+from .system_service import SystemService
+
 
 class ServiceManager:
     """Central manager for all application services."""
