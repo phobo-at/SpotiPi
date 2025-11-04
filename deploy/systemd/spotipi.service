@@ -8,6 +8,10 @@ Type=simple
 WorkingDirectory=/home/pi/spotipi
 EnvironmentFile=-/home/pi/spotipi/.env
 Environment=PYTHONUNBUFFERED=1
+# Performance optimizations for Pi Zero W
+Environment=SPOTIPI_LOW_POWER=1
+Environment=SPOTIPI_MAX_CONCURRENCY=2
+Environment=SPOTIPI_JSON_LOGS=1
 ExecStart=/home/pi/spotipi/venv/bin/python run.py
 Restart=on-failure
 RestartSec=5s
