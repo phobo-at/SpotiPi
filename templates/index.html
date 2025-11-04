@@ -21,7 +21,7 @@
 
   <!-- iOS / Android Web App Meta -->
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="SpotiPi">
   <meta name="theme-color" content="#1db954">
 
@@ -76,9 +76,10 @@
 
       <!-- Global volume control -->
       <div class="global-volume-container">
-                <label for="volume" class="volume-label">
+        <label for="global-volume" class="volume-label">
           {{ t('volume_label')|safe }}
           (<span id="volume-display">{{ initial_volume }}</span>%)
+        </label>
         <input
           type="range"
           id="global-volume"
@@ -191,7 +192,7 @@
     console.warn('Failed to parse initial state', err);
     window.__INITIAL_STATE__ = null;
   }
-  window.LOW_POWER_MODE = {{ 'true' if low_power else 'false' }};
+  window.LOW_POWER_MODE = {{ low_power | tojson }};
 </script>
   
   <!-- Main JavaScript with togglePlayPause etc. -->

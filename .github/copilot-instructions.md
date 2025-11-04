@@ -1,4 +1,4 @@
-## SpotiPi • Copilot Guidance (v1.3.8)
+## SpotiPi • Copilot Guidance (v1.3.9)
 
 ### Architecture Cheatsheet
 - Flask entrypoint: `run.py` imports `src/app.py`; templates/static at project root.
@@ -16,8 +16,11 @@
 - **Caching**: Use the unified cache layer via `get_cache_migration_layer()`. Avoid new ad‑hoc caches on disk; respect low-power TTL overrides (`SPOTIPI_*` env vars).
 - **Spotify Client**: Re-use helpers in `src/api/spotify.py` (they already handle retries, token refresh, low-power worker limits). Do not instantiate raw `requests.Session`; use the shared proxy from `src/api/http.py`.
   - **HTTP Retry (v1.3.8)**: All Spotify API calls automatically retry on transient errors (429, 500, 502, 503, 504) with exponential backoff. Configure via `SPOTIPI_HTTP_BACKOFF_FACTOR`, `SPOTIPI_HTTP_RETRY_TOTAL`.
+  - **Device sorting (v1.3.9)**: Devices are sorted alphabetically (A-Z, case-insensitive) in all API responses for better usability.
 - **Validation**: All user input funnels through `src/utils/validation.py`. Raise/handle `ValidationError` rather than sprinkling manual checks.
   - **Config validation (v1.3.8)**: Pydantic models in `src/config_schema.py` provide automatic type validation, field constraints, and clear error messages.
+  - **Device names (v1.3.9)**: Relaxed validation allows Unicode/emoji while blocking only `<>` and control characters for XSS protection.
+  - **HTML escaping (v1.3.9)**: Always escape user-controlled strings in JavaScript template literals to prevent injection attacks.
 
 ### Pi Zero W Considerations
 - Expect a single CPU core with limited RAM; minimize blocking calls on the request thread.
@@ -38,12 +41,23 @@
 - Document new env vars or configuration flags in `config/default_config.json` and README if they impact users.
 - **Config changes (v1.3.8)**: Update Pydantic models in `src/config_schema.py` when adding new config fields. Add field validators for constraints (ranges, patterns, enums).
 - **Logging best practices (v1.3.8)**: Use structured logging for error paths, especially in alarm/playback code. Include contextual fields (alarm_id, device_name, error_code) for correlation.
+- **CORS configuration (v1.3.9)**: Port-agnostic hostname matching supports development environments (e.g., `http://spotipi.local:5000`).
+- **UI/UX patterns (v1.3.9)**: Use CSS transitions (300ms) with `smoothShow()` and `smoothHide()` helpers for consistent fade+slide effects. Always include ARIA attributes for accessibility.
 
 ### v1.3.8 Critical Improvements
 - **Alarm Persistence**: systemd timer provides backup scheduling layer (daily 05:30 check, persistent catch-up after downtime).
 - **Structured Logging**: JSON logs with structured fields for production observability. Automatically enabled on Pi, queryable via `journalctl -o json`.
 - **Config Validation**: Pydantic v2 schemas validate all config fields (time format, volume range, timezone, weekdays). Prevents runtime errors from malformed configs.
 - **HTTP Retry**: Automatic retry with exponential backoff for transient Spotify API errors (429 rate limits, 503 service unavailable). Respects `Retry-After` headers.
+
+### v1.3.9 Bug Fixes & UX Improvements
+- **Device Name Validation**: Relaxed to allow Unicode/emoji while maintaining XSS protection (blocks only `<>` and control chars).
+- **Alarm Settings Save**: Fixed `log_structured()` parameter conflict causing 400 BAD REQUEST errors.
+- **CORS Configuration**: Improved port-agnostic hostname matching for development environments.
+- **HTML Escaping**: Added proper escaping in JavaScript template literals to prevent injection attacks.
+- **Smooth Animations**: CSS transitions (300ms fade+slide) for alarm/sleep timer activation with `smoothShow()`/`smoothHide()` helpers.
+- **Device Sorting**: Alphabetical (A-Z, case-insensitive) sorting in all device dropdowns.
+- **Accessibility**: Enhanced ARIA attributes for dynamic content changes.
 
 ### Documentation References
 - **Config validation**: See `docs/CONFIG_SCHEMA_VALIDATION.md` for Pydantic schema details, validation rules, error handling.
