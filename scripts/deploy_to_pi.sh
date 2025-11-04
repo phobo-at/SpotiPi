@@ -239,8 +239,10 @@ if [ "${SPOTIPI_DEPLOY_SYSTEMD:-1}" = "1" ]; then
     if [ -n "$SERVICE_NAME" ]; then
       ssh "$PI_HOST" "sudo systemctl enable $SERVICE_NAME" || true
     fi
-    if [ "${SPOTIPI_ENABLE_ALARM_TIMER:-0}" = "1" ]; then
+    # Enable alarm timer by default for robustness (catch-up after reboot)
+    if [ "${SPOTIPI_ENABLE_ALARM_TIMER:-1}" = "1" ]; then
       ssh "$PI_HOST" "sudo systemctl enable --now spotipi-alarm.timer" || true
+      echo "   ⏰ Alarm timer enabled (catch-up after reboot)"
     fi
   else
     echo "⚙️ Systemd units unchanged; skipping remote update (set SPOTIPI_FORCE_SYSTEMD=1 to force sync)"

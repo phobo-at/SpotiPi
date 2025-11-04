@@ -41,6 +41,25 @@ SPOTIPI_DEV=1  # Enables development logging
   - Full logs for troubleshooting on Pi
   - Development features on production environment
 
+#### **SPOTIPI_JSON_LOGS** - Structured JSON Logging
+```bash
+SPOTIPI_JSON_LOGS=1  # Enables JSON-formatted logs
+```
+- **Function:** Outputs logs in structured JSON format for better parsing and correlation
+- **Defaults:** Automatically enabled on Raspberry Pi in production mode (since v1.3.8)
+- **Use Cases:**
+  - Log aggregation systems (journalctl, Loki, ELK stack)
+  - Automated log analysis and alerting
+  - Correlation of alarm failures across multiple fields
+  - Machine-readable logs for monitoring dashboards
+- **Output Example:**
+  ```json
+  {"timestamp": "2025-11-04T06:30:00.123Z", "level": "ERROR",
+   "logger": "alarm_scheduler", "message": "Alarm execution failed",
+   "alarm_id": "20251104T063000Z", "error_code": "device_not_found",
+   "source": "alarm.py:184"}
+  ```
+
 #### **SPOTIPI_RASPBERRY_PI** - Pi Simulation
 ```bash
 SPOTIPI_RASPBERRY_PI=1  # Forces Pi behavior
@@ -73,12 +92,19 @@ PORT=5001  # Custom port
 
 ### 📊 **Logging Behavior Matrix**
 
-| System | SPOTIPI_DEV | Environment | Logging Level | File Logging | Log Directory |
-|--------|-------------|-------------|---------------|--------------|---------------|
-| **Raspberry Pi** | `not set` | production | WARNING | ❌ Disabled | /tmp/spotipi_logs |
-| **Raspberry Pi** | `=1` | development | INFO | ✅ Enabled | ~/.spotify_wakeup/logs |
-| **Other Systems** | `not set` | development | INFO | ✅ Enabled | ~/.spotify_wakeup/logs |
-| **Other Systems** | `=1` | development | INFO | ✅ Enabled | ~/.spotify_wakeup/logs |
+| System | SPOTIPI_DEV | SPOTIPI_JSON_LOGS | Environment | Logging Level | File Logging | Format |
+|--------|-------------|-------------------|-------------|---------------|--------------|--------|
+| **Raspberry Pi** | `not set` | `auto (1)` | production | WARNING | ❌ Disabled | JSON (systemd) |
+| **Raspberry Pi** | `=1` | `auto (1)` | development | INFO | ✅ Enabled | JSON |
+| **Raspberry Pi** | `=1` | `=0` | development | INFO | ✅ Enabled | Traditional |
+| **Other Systems** | `not set` | `=0` | development | INFO | ✅ Enabled | Colored |
+| **Other Systems** | `not set` | `=1` | development | INFO | ✅ Enabled | JSON |
+
+**Notes:**
+- JSON logging is **automatically enabled** on Raspberry Pi in production mode (since v1.3.8)
+- Set `SPOTIPI_JSON_LOGS=0` to force traditional logging even on Pi
+- JSON logs include structured fields: `timestamp`, `level`, `logger`, `message`, plus any custom context
+- Traditional colored logs are best for local development; JSON logs for production monitoring
 
 ### 🎯 **Practical Application**
 
@@ -86,6 +112,18 @@ PORT=5001  # Custom port
 ```bash
 # Enable full debugging on Pi
 SPOTIPI_DEV=1
+```
+
+#### **Production Monitoring with JSON Logs:**
+```bash
+# Query alarm failures from journalctl
+ssh pi@spotipi.local 'journalctl -u spotipi.service --since "2025-11-04 06:00" | grep "alarm_probe"'
+
+# Extract specific alarm execution
+ssh pi@spotipi.local 'journalctl -u spotipi.service -o json | jq "select(.MESSAGE | contains(\"alarm_id\"))"'
+
+# Count errors by error_code
+ssh pi@spotipi.local 'journalctl -u spotipi.service --since today -o json | jq -r "select(.LEVEL == \"ERROR\") | .MESSAGE" | jq -r ".error_code" | sort | uniq -c'
 ```
 
 #### **Production Testing on Dev Machine:**
@@ -131,8 +169,24 @@ PORT=8080              # Custom port
 | `SPOTIPI_HTTP_LONG_TIMEOUT` | `6.0` | Extended timeout for long-running Spotify calls. |
 | `SPOTIPI_CACHE_MAX_ENTRIES` | `64` | In-memory cache size before LRU eviction. |
 
+### ⏰ **Deployment & Alarm Flags**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SPOTIPI_ENABLE_ALARM_TIMER` | `1` | Controls systemd timer activation for alarm robustness. Set to `0` to disable timer and rely solely on in-process scheduler. |
+| `SPOTIPI_DEPLOY_SYSTEMD` | `1` | Whether `deploy_to_pi.sh` updates systemd units. Set to `0` to skip systemd sync. |
+| `SPOTIPI_FORCE_SYSTEMD` | `0` | Forces systemd unit re-installation even if unchanged. Set to `1` for manual override. |
+| `SPOTIPI_PURGE_UNUSED` | `0` | Removes test/doc files from Pi during deployment. Set to `1` for cleanup. |
+
+**Alarm Timer Details:**
+- **Timer runs daily at 05:30** via `spotipi-alarm.timer`
+- **Persistent catch-up** after reboot/downtime (`Persistent=true`)
+- **Backup layer** in addition to in-process alarm scheduler thread
+- **Since v1.3.8:** Enabled by default for production robustness
+
 ---
 *Documented on: September 5, 2025*  
+*Updated on: November 4, 2025 (v1.3.8 - Alarm Timer)*  
 *SpotiPi Auto-Detection System v1.0.0*
 
 ````

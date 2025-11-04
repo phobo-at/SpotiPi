@@ -24,10 +24,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable spotipi.service
 sudo systemctl restart spotipi.service
 
-if [ "${SPOTIPI_ENABLE_ALARM_TIMER:-0}" = "1" ]; then
+# Enable alarm timer by default for robustness (catch-up after reboot)
+if [ "${SPOTIPI_ENABLE_ALARM_TIMER:-1}" = "1" ]; then
   sudo systemctl enable --now spotipi-alarm.timer
+  echo "✅ Alarm readiness timer enabled (spotipi-alarm.timer)"
+  echo "   Timer runs daily at 05:30 with catch-up after reboot"
 else
-  echo "ℹ️  Alarm readiness timer available (spotipi-alarm.timer). Enable with SPOTIPI_ENABLE_ALARM_TIMER=1 ./deploy/install.sh"
+  echo "ℹ️  Alarm timer disabled (set SPOTIPI_ENABLE_ALARM_TIMER=1 to enable)"
 fi
 
 echo "✅ Installation complete."

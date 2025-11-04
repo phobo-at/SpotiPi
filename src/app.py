@@ -837,10 +837,14 @@ def save_alarm():
     if error_code == "save_failed":
         return api_response(False, message=t_api("failed_save_config", request), status=500, error_code="save_failed")
     if error_code in {"alarm_time", "volume", "alarm_volume", "playlist_uri", "device_name"}:
-        logger.warning("Alarm validation error (%s): %s", error_code, message)
+        from .utils.logger import log_structured
+        log_structured(logger, logging.WARNING, "Alarm validation error",
+                      error_code=error_code, message=message, endpoint="/set_alarm")
         return api_response(False, message=message, status=400, error_code=error_code)
 
-    logger.error("Error saving alarm configuration via service: %s", message)
+    from .utils.logger import log_structured
+    log_structured(logger, logging.ERROR, "Error saving alarm configuration via service",
+                  message=message, endpoint="/set_alarm")
     return api_response(False, message=t_api("internal_error_saving", request), status=500, error_code="internal_error")
 
 @app.route("/alarm_status")
@@ -1701,7 +1705,10 @@ def api_alarm_execute():
     if result.success:
         return api_response(True, data={"executed": True}, message=result.message or "Alarm executed")
 
-    logger.error("Alarm execution failed: %s", result.message)
+    from .utils.logger import log_structured
+    log_structured(logger, logging.ERROR, "Alarm execution failed",
+                  message=result.message, error_code=result.error_code,
+                  endpoint="/api/alarm/execute")
     return api_response(
         False,
         data={"executed": False},

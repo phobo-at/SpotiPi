@@ -106,11 +106,11 @@ git clone https://github.com/phobo-at/SpotiPi.git /home/pi/spotipi
 cd /home/pi/spotipi && python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt && python generate_token.py
 
-# Install/refresh systemd units (service + optional timer)
+# Install/refresh systemd units (service + alarm timer, enabled by default since v1.3.8)
 ./deploy/install.sh
 
-# Enable the readiness timer if desired (optional)
-SPOTIPI_ENABLE_ALARM_TIMER=1 ./deploy/install.sh
+# Disable the alarm readiness timer if desired (not recommended)
+SPOTIPI_ENABLE_ALARM_TIMER=0 ./deploy/install.sh
 ```
 
 ## 🧠 Performance Setup (Pi Zero W)
@@ -131,9 +131,11 @@ SPOTIPI_PURGE_UNUSED=1 ./scripts/deploy_to_pi.sh
 
 # Install/refresh systemd units on the Pi (after rsync completes)
 ssh pi@spotipi.local 'cd /home/pi/spotipi && ./deploy/install.sh'
-# Enable the readiness timer during install (optional)
-ssh pi@spotipi.local 'cd /home/pi/spotipi && SPOTIPI_ENABLE_ALARM_TIMER=1 ./deploy/install.sh'
+# Disable the alarm timer during install if desired (not recommended)
+ssh pi@spotipi.local 'cd /home/pi/spotipi && SPOTIPI_ENABLE_ALARM_TIMER=0 ./deploy/install.sh'
 ```
+> **Since v1.3.8:** The alarm readiness timer (`spotipi-alarm.timer`) is **enabled by default** for robustness. It provides catch-up after reboot/downtime and runs daily at 05:30 as a backup layer to the in-process scheduler.
+
 > `scripts/deploy_to_pi.sh` now skips copying systemd units when they are unchanged; export `SPOTIPI_FORCE_SYSTEMD=1` to force a refresh.
 The deploy script uses an allowlist `rsync` (run.py, requirements, `src/`, `static/`, `templates/`, `config/`), keeping the Raspberry Pi installation minimal.
 

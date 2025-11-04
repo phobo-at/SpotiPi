@@ -164,7 +164,32 @@ sudo systemctl enable spotify-web.service
 sudo systemctl start spotify-web.service
 ```
 
-### 6. Sudoers für Service-Verwaltung konfigurieren
+### 6. Alarm Timer Einrichtung (Robustheit)
+
+**Seit v1.3.8** wird der Alarm-Timer standardmäßig aktiviert, um Robustheit nach Stromausfall/Reboot zu gewährleisten.
+
+Der systemd-Timer (`spotipi-alarm.timer`) führt täglich um 05:30 Uhr einen Alarm-Readiness-Check aus und stellt sicher, dass verpasste Alarme nach Downtime nachgeholt werden (`Persistent=true`).
+
+```bash
+# Timer-Status prüfen
+sudo systemctl status spotipi-alarm.timer
+
+# Timer manuell aktivieren (falls nicht automatisch geschehen)
+sudo systemctl enable --now spotipi-alarm.timer
+
+# Timer deaktivieren (falls gewünscht)
+sudo systemctl disable --now spotipi-alarm.timer
+# ODER beim Deployment:
+SPOTIPI_ENABLE_ALARM_TIMER=0 ./scripts/deploy_to_pi.sh
+```
+
+**Timer-Details:**
+- **Zeitplan:** Täglich um 05:30 Uhr
+- **Catch-up:** `Persistent=true` – führt verpasste Ausführungen nach Reboot nach
+- **Service:** `spotipi-alarm.service` ruft `scripts/run_alarm.sh` auf
+- **Zweck:** Backup-Layer zusätzlich zum in-process Scheduler-Thread
+
+### 7. Sudoers für Service-Verwaltung konfigurieren
 
 Pi User erlauben, Service ohne Passwort zu verwalten:
 
