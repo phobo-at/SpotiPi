@@ -524,13 +524,19 @@ def after_request(response: Response):
         elif request_origin == 'null' and any(entry.lower() == 'null' for entry in allowed_entries):
             response.headers['Access-Control-Allow-Origin'] = 'null'
     else:
-        default_origin = os.getenv('SPOTIPI_DEFAULT_ORIGIN', 'http://spotipi.local')
-        if request_origin and _matches_origin(request_origin, default_origin):
-            response.headers['Access-Control-Allow-Origin'] = request_origin
-            response.headers.setdefault('Vary', 'Origin')
-        else:
-            response.headers['Access-Control-Allow-Origin'] = default_origin
-            response.headers.setdefault('Vary', 'Origin')
+        # Default: allow same-origin and spotipi.local (with any port)
+        default_host = os.getenv('SPOTIPI_DEFAULT_HOST', 'spotipi.local')
+        if request_origin:
+            parsed_origin = urlparse(request_origin)
+            # Allow if hostname matches (ignore port difference)
+            if parsed_origin.hostname and parsed_origin.hostname.endswith(default_host):
+                response.headers['Access-Control-Allow-Origin'] = request_origin
+                response.headers.setdefault('Vary', 'Origin')
+            else:
+                # Fallback to default origin
+                response.headers['Access-Control-Allow-Origin'] = f'http://{default_host}'
+                response.headers.setdefault('Vary', 'Origin')
+        # No Origin header = same-origin request, no CORS needed
 
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
     response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
@@ -841,12 +847,12 @@ def save_alarm():
     if error_code in {"alarm_time", "volume", "alarm_volume", "playlist_uri", "device_name"}:
         from .utils.logger import log_structured
         log_structured(logger, logging.WARNING, "Alarm validation error",
-                      error_code=error_code, message=message, endpoint="/set_alarm")
+                      error_code=error_code, validation_message=message, endpoint="/save_alarm")
         return api_response(False, message=message, status=400, error_code=error_code)
 
     from .utils.logger import log_structured
     log_structured(logger, logging.ERROR, "Error saving alarm configuration via service",
-                  message=message, endpoint="/set_alarm")
+                  error_message=message, endpoint="/save_alarm")
     return api_response(False, message=t_api("internal_error_saving", request), status=500, error_code="internal_error")
 
 @app.route("/alarm_status")

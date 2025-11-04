@@ -5,6 +5,22 @@ import { t } from './translation.js';
 import { fetchAPI } from './api.js';
 
 /**
+ * Smoothly hide an element with animation
+ */
+function smoothHide(element) {
+  if (!element || element.classList.contains('hidden')) return;
+  element.classList.add('hidden');
+}
+
+/**
+ * Smoothly show an element with animation
+ */
+function smoothShow(element) {
+  if (!element || !element.classList.contains('hidden')) return;
+  element.classList.remove('hidden');
+}
+
+/**
  * Saves alarm settings automatically when changes are made
  */
 export function saveAlarmSettings() {
@@ -64,15 +80,24 @@ export function saveAlarmSettings() {
         : (alarmVolume || '50');
 
       const devicePrefix = t('alarm_device_label') || 'Device:';
-      const deviceValue = (formData.get('device_name') || '').trim() || t('alarm_device_unknown') || 'Unknown device';
+      const deviceValue = String(formData.get('device_name') || '').trim() || t('alarm_device_unknown') || 'Unknown device';
 
       const enabledFlag = typeof alarmData.enabled === 'boolean'
         ? alarmData.enabled
         : (formData.get('enabled') === 'on');
 
+      // Escape HTML to prevent XSS and template literal issues
+      const escapeHtml = (str) => String(str).replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[char]);
+
       const statusMessage = enabledFlag
-        ? `${t('alarm_set_for') || 'Alarm set for'} ${timeValue}<br><span class="volume-info">${t('volume') || 'Volume'}: ${volumeValue}%</span><br><span class="device-info">${devicePrefix} ${deviceValue}</span>`
-        : t('no_alarm_active') || 'No alarm active';
+        ? `${escapeHtml(t('alarm_set_for') || 'Alarm set for')} ${escapeHtml(timeValue)}<br><span class="volume-info">${escapeHtml(t('volume') || 'Volume')}: ${escapeHtml(volumeValue)}%</span><br><span class="device-info">${escapeHtml(devicePrefix)} ${escapeHtml(deviceValue)}</span>`
+        : escapeHtml(t('no_alarm_active') || 'No alarm active');
         
       updateStatus('alarm-timer', statusMessage, true);
       console.log('✅ Alarm settings saved successfully');
@@ -80,14 +105,16 @@ export function saveAlarmSettings() {
     } else {
       console.error('Error saving settings:', data ? data.message : 'No data received');
       statusElement.innerHTML = originalStatus;
-      const errorMessage = (data && data.message) || t('unknown_error') || 'Unknown error';
-      alert(`${t('save_error') || 'Save error'}: ${errorMessage}`);
+      const errorMessage = String((data && data.message) || t('unknown_error') || 'Unknown error');
+      const saveErrorMsg = String(t('save_error') || 'Save error');
+      alert(`${saveErrorMsg}: ${errorMessage}`);
     }
   })
   .catch(error => {
     console.error('Error saving settings:', error);
     statusElement.innerHTML = originalStatus;
-    alert(t('save_error') || 'Error saving settings');
+    const saveErrorMsg = String(t('save_error') || 'Error saving settings');
+    alert(saveErrorMsg);
   });
 }
 
@@ -96,13 +123,13 @@ export function saveAlarmSettings() {
  * Internal function to activate sleep timer
  */
 function activateSleepTimer(formData) {
-  // Immediate UI switch like alarm system
-  const configSection = document.querySelector('#sleep-form').closest('div');
+  // Immediate UI switch with smooth animation
+  const configSection = document.querySelector('#sleep-form');
   const activeSection = document.querySelector('#active-sleep-mode');
   
   if (configSection && activeSection) {
-    configSection.classList.add('hidden');
-    activeSection.classList.remove('hidden');
+    smoothHide(configSection);
+    smoothShow(activeSection);
     
     // Update the active checkbox to checked
     const activeCheckbox = DOM.getElement('sleep_enabled_active');
@@ -138,10 +165,10 @@ function activateSleepTimer(formData) {
       updateSleepTimer();
     } else {
       console.error('Error activating sleep timer:', data ? data.message : 'No data received');
-      // Reset UI on error
+      // Reset UI on error with animation
       if (configSection && activeSection) {
-        activeSection.classList.add('hidden');
-        configSection.classList.remove('hidden');
+        smoothHide(activeSection);
+        smoothShow(configSection);
         const configCheckbox = DOM.getElement('sleep_enabled');
         if (configCheckbox) configCheckbox.checked = false;
       }
@@ -150,10 +177,10 @@ function activateSleepTimer(formData) {
   })
   .catch(error => {
     console.error('Error activating sleep timer:', error);
-    // Reset UI on error
+    // Reset UI on error with animation
     if (configSection && activeSection) {
-      activeSection.classList.add('hidden');
-      configSection.classList.remove('hidden');
+      smoothHide(activeSection);
+      smoothShow(configSection);
       const configCheckbox = DOM.getElement('sleep_enabled');
       if (configCheckbox) configCheckbox.checked = false;
     }
@@ -165,13 +192,13 @@ function activateSleepTimer(formData) {
  * Internal function to deactivate sleep timer
  */
 function deactivateSleepTimer() {
-  // Immediate UI switch like alarm system
-  const configSection = document.querySelector('#sleep-form').closest('div');
+  // Immediate UI switch with smooth animation
+  const configSection = document.querySelector('#sleep-form');
   const activeSection = document.querySelector('#active-sleep-mode');
   
   if (configSection && activeSection) {
-    activeSection.classList.add('hidden');
-    configSection.classList.remove('hidden');
+    smoothHide(activeSection);
+    smoothShow(configSection);
     
     // Update the config checkbox to unchecked
     const configCheckbox = DOM.getElement('sleep_enabled');
@@ -201,10 +228,10 @@ function deactivateSleepTimer() {
       updateSleepTimer();
     } else {
       console.error('Error deactivating sleep timer:', data ? data.message : 'No data received');
-      // Reset UI on error
+      // Reset UI on error with animation
       if (configSection && activeSection) {
-        configSection.classList.add('hidden');
-        activeSection.classList.remove('hidden');
+        smoothHide(configSection);
+        smoothShow(activeSection);
         const activeCheckbox = DOM.getElement('sleep_enabled_active');
         if (activeCheckbox) activeCheckbox.checked = true;
       }
@@ -213,10 +240,10 @@ function deactivateSleepTimer() {
   })
   .catch(error => {
     console.error('Error deactivating sleep timer:', error);
-    // Reset UI on error
+    // Reset UI on error with animation
     if (configSection && activeSection) {
-      configSection.classList.add('hidden');
-      activeSection.classList.remove('hidden');
+      smoothHide(configSection);
+      smoothShow(activeSection);
       const activeCheckbox = DOM.getElement('sleep_enabled_active');
       if (activeCheckbox) activeCheckbox.checked = true;
     }

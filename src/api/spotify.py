@@ -904,6 +904,8 @@ def get_devices(token: str) -> List[Dict[str, Any]]:
                 )
             if r.status_code == 200:
                 devices = r.json().get("devices", [])
+                # Sort devices alphabetically by name (case-insensitive)
+                devices.sort(key=lambda d: (d.get("name") or "").lower())
                 return devices
             else:
                 logging.getLogger('spotify').error(f"❌ Error fetching devices: {r.text}")

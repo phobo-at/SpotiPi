@@ -8,6 +8,28 @@ import { setUserIsDragging } from './state.js';
 let cachedSleepStatus = null;
 let cachedSleepTimestamp = 0;
 
+/**
+ * Smoothly hide an element with animation
+ * @param {HTMLElement} element - Element to hide
+ */
+function smoothHide(element) {
+  if (!element || element.classList.contains('hidden')) return;
+  
+  // Add hidden class and let CSS transition handle the rest
+  element.classList.add('hidden');
+}
+
+/**
+ * Smoothly show an element with animation
+ * @param {HTMLElement} element - Element to show
+ */
+function smoothShow(element) {
+  if (!element || !element.classList.contains('hidden')) return;
+  
+  // Remove hidden class and let CSS transition handle the rest
+  element.classList.remove('hidden');
+}
+
 function renderTrackSkeleton(statusKey = 'status_pending') {
   const trackContainer = document.querySelector('.current-track');
   if (!trackContainer) return;
@@ -466,11 +488,11 @@ export function applyAlarmStatus(data) {
 
     if (elements.alarmForm && elements.activeAlarmMode) {
       if (data.enabled) {
-        elements.alarmForm.classList.add('hidden');
-        elements.activeAlarmMode.classList.remove('hidden');
+        smoothHide(elements.alarmForm);
+        smoothShow(elements.activeAlarmMode);
       } else {
-        elements.alarmForm.classList.remove('hidden');
-        elements.activeAlarmMode.classList.add('hidden');
+        smoothShow(elements.alarmForm);
+        smoothHide(elements.activeAlarmMode);
       }
     }
 

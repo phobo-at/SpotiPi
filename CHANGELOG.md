@@ -5,6 +5,27 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.9] - 2025-11-04
+
+### 🐛 Bug Fixes
+- **Device Name Validation**: Relaxed device name validation to allow Unicode characters (emojis, special characters, international characters) while maintaining XSS protection by blocking only `<>` and control characters
+- **Alarm Settings Save**: Fixed `log_structured()` parameter conflict causing 400 BAD REQUEST errors when saving alarm settings
+- **CORS Configuration**: Improved CORS header handling to support port-agnostic hostname matching (e.g., `http://spotipi.local:5000`)
+- **Settings UI**: Fixed HTML escaping in alarm status messages to prevent template literal syntax errors with special characters in device names
+
+### ✨ UI/UX Improvements
+- **Smooth Animations**: Added CSS transitions (fade + slide) for alarm and sleep timer activation/deactivation with 300ms duration
+- **Device Sorting**: Devices are now sorted alphabetically (A-Z, case-insensitive) in all dropdown menus for better usability
+
+### 🎨 Frontend
+- Enhanced `utilities.css` with smooth show/hide animations using opacity, transform, and max-height transitions
+- Added `smoothShow()` and `smoothHide()` helper functions in JavaScript for consistent animation behavior
+- Fixed sleep timer toggle visibility issue during state transitions
+
+### 🔧 Technical
+- Updated device name validation pattern from restrictive allowlist to blocklist approach supporting full Unicode range
+- Improved error handling with proper structured logging parameter names (`validation_message`, `error_message`)
+
 ## [1.3.8] - 2025-10-24
 
 ### 🏗 Service Layer Consolidation

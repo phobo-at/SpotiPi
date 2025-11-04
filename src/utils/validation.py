@@ -38,7 +38,10 @@ class InputValidator:
     # Regex patterns
     TIME_PATTERN = re.compile(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$')
     SPOTIFY_URI_PATTERN = re.compile(r'^spotify:(playlist|album|artist|track):[a-zA-Z0-9]{22}$')
-    DEVICE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9\s\-_\.]{1,50}$')
+    # Allow Unicode characters (emojis, special chars) in device names - Spotify allows them
+    # Simplified: allow everything except control characters (< 0x20) and block certain dangerous chars
+    # This accepts ASCII, Unicode letters/numbers, emojis, and common punctuation
+    DEVICE_NAME_PATTERN = re.compile(r'^[^\x00-\x1F<>]{1,100}$', re.UNICODE)
     
     @classmethod
     def validate_volume(cls, value: Union[str, int, None], field_name: str = "volume") -> ValidationResult:
@@ -199,17 +202,17 @@ class InputValidator:
             return ValidationResult(False, None, f"{field_name} must be a string", field_name)
         
         value = value.strip()
-        if len(value) > 50:
+        if len(value) > 100:
             return ValidationResult(
                 False, None, 
-                f"{field_name} is too long (max 50 characters)", 
+                f"{field_name} is too long (max 100 characters)", 
                 field_name
             )
         
         if not cls.DEVICE_NAME_PATTERN.match(value):
             return ValidationResult(
                 False, None, 
-                f"{field_name} contains invalid characters (only letters, numbers, spaces, hyphens, underscores, dots allowed)", 
+                f"{field_name} contains invalid characters", 
                 field_name
             )
         

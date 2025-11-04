@@ -1,7 +1,61 @@
 /* ===============================================
    🔧 Utility Classes
    =============================================== */
-.hidden {
+
+/* Smooth fade-in/out animations for show/hide */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* Elements that can be shown/hidden with animation */
+#alarm-form,
+#active-alarm-mode,
+#sleep-form,
+#active-sleep-mode {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.3s ease-in-out, 
+              transform 0.3s ease-in-out,
+              max-height 0.3s ease-in-out;
+  max-height: 2000px; /* Large enough to fit content */
+  overflow: hidden;
+}
+
+/* Hidden state with smooth animation */
+#alarm-form.hidden,
+#active-alarm-mode.hidden,
+#sleep-form.hidden,
+#active-sleep-mode.hidden {
+  opacity: 0;
+  transform: translateY(-8px);
+  max-height: 0;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  pointer-events: none;
+}
+
+/* Generic hidden class for other elements */
+.hidden:not(#alarm-form):not(#active-alarm-mode):not(#sleep-form):not(#active-sleep-mode) {
   display: none;
 }
 
