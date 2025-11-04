@@ -1,6 +1,8 @@
 """
 Centralized configuration management for SpotiPi
 Handles environment-specific configs and validation with thread safety
+
+Since v1.3.8: Enhanced with Pydantic schema validation for type-safety
 """
 
 import copy
@@ -10,6 +12,14 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+# Pydantic schema validation (v1.3.8+)
+try:
+    from .config_schema import SpotiPiConfig, validate_config_dict, migrate_legacy_config
+    SCHEMA_VALIDATION_AVAILABLE = True
+except ImportError:
+    SCHEMA_VALIDATION_AVAILABLE = False
+    SpotiPiConfig = None  # type: ignore
 
 
 class ConfigManager:
@@ -93,7 +103,49 @@ class ConfigManager:
         return self.validate_config(config)
     
     def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate and clean configuration"""
+        """Validate and clean configuration.
+        
+        Since v1.3.8: Uses Pydantic schema if available for strict validation.
+        Falls back to legacy validation for backward compatibility.
+        """
+        logger = logging.getLogger(__name__)
+        
+        # Try Pydantic schema validation first (v1.3.8+)
+        if SCHEMA_VALIDATION_AVAILABLE:
+            try:
+                # Migrate legacy formats if needed
+                migrated_config = migrate_legacy_config(config)
+                
+                # Validate against schema
+                validated_model, warnings = validate_config_dict(migrated_config)
+                
+                # Log any warnings
+                for warning in warnings:
+                    logger.warning(f"Config validation warning: {warning}")
+                
+                # Convert back to dict for runtime use
+                validated_dict = validated_model.to_dict()
+                
+                # Preserve runtime metadata
+                if "_runtime" in config:
+                    validated_dict["_runtime"] = config["_runtime"]
+                
+                logger.debug("✅ Configuration validated against Pydantic schema")
+                return validated_dict
+                
+            except ValueError as e:
+                logger.error(f"❌ Configuration schema validation failed: {e}")
+                logger.warning("Falling back to legacy validation (data may be incomplete)")
+                # Fall through to legacy validation
+            except Exception as e:
+                logger.warning(f"Unexpected error in schema validation: {e}")
+                # Fall through to legacy validation
+        
+        # Legacy validation (pre-v1.3.8 compatibility)
+        return self._legacy_validate_config(config)
+    
+    def _legacy_validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Legacy validation for backward compatibility."""
         # Ensure required fields have defaults
         defaults = {
             "time": "07:00",
@@ -165,10 +217,20 @@ class ConfigManager:
         config_file = self.config_dir / f"{config_name}.json"
         
         try:
-            save_config = {k: v for k, v in config.items() if not k.startswith("_")}
+            # Use Pydantic serialization if available (v1.3.8+) for cleaner output
+            if SCHEMA_VALIDATION_AVAILABLE:
+                try:
+                    validated_model, _ = validate_config_dict(config)
+                    save_data = validated_model.to_json_safe()
+                except Exception:
+                    # Fallback to manual filtering
+                    save_data = {k: v for k, v in config.items() if not k.startswith("_")}
+            else:
+                save_data = {k: v for k, v in config.items() if not k.startswith("_")}
+            
             config_file.parent.mkdir(parents=True, exist_ok=True)
             with open(config_file, 'w') as f:
-                json.dump(save_config, f, indent=2)
+                json.dump(save_data, f, indent=2)
             return True
         except (IOError, json.JSONDecodeError):
             return False

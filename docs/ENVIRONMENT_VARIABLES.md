@@ -169,6 +169,33 @@ PORT=8080              # Custom port
 | `SPOTIPI_HTTP_LONG_TIMEOUT` | `6.0` | Extended timeout for long-running Spotify calls. |
 | `SPOTIPI_CACHE_MAX_ENTRIES` | `64` | In-memory cache size before LRU eviction. |
 
+### 🔄 **HTTP Retry Flags (Spotify API Resilience)**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SPOTIPI_HTTP_BACKOFF_FACTOR` | `0.6` | Exponential backoff multiplier for retries. Higher = longer waits between retries. |
+| `SPOTIPI_HTTP_RETRY_TOTAL` | `5` | Maximum total retries across all error types (connect, read, status). |
+| `SPOTIPI_HTTP_RETRY_CONNECT` | `3` | Maximum retries for connection errors (network unreachable, timeout). |
+| `SPOTIPI_HTTP_RETRY_READ` | `4` | Maximum retries for read timeouts (server slow to respond). |
+| `SPOTIPI_HTTP_POOL_CONNECTIONS` | `10` | Max simultaneous connections in HTTP pool. |
+| `SPOTIPI_HTTP_POOL_MAXSIZE` | `20` | Max total connections in pool (active + idle). |
+| `SPOTIPI_HTTP_TIMEOUTS` | `4.0,15.0` | Connect and read timeouts as CSV (e.g., "4.0,15.0"). |
+| `SPOTIPI_HTTP_CONNECT_TIMEOUT` | `4.0` | Connect timeout in seconds (alternative to TIMEOUTS). |
+| `SPOTIPI_HTTP_READ_TIMEOUT` | `15.0` | Read timeout in seconds (alternative to TIMEOUTS). |
+
+**Retry Behavior (since v1.0, documented v1.3.8):**
+- **Auto-retries:** 429 (rate limit), 500, 502, 503, 504 (server errors)
+- **Respects `Retry-After` header** for 429 responses
+- **No retry on:** 400, 401, 403, 404 (client errors)
+- **Backoff calculation:** `backoff_factor * (2 ** (attempt - 1))`
+  - Attempt 1: 0.6s, Attempt 2: 1.2s, Attempt 3: 2.4s, Attempt 4: 4.8s, Attempt 5: 9.6s
+- **Total retry time:** ~18.6s with default settings (5 retries, backoff=0.6)
+
+**Use Cases:**
+- **Flaky network:** Increase `SPOTIPI_HTTP_RETRY_TOTAL=8` and `BACKOFF_FACTOR=0.8`
+- **Fast network:** Reduce `RETRY_TOTAL=3` and `BACKOFF_FACTOR=0.3` for quicker failures
+- **Frequent rate limits:** Increase `BACKOFF_FACTOR=1.5` to respect Spotify's limits
+
 ### ⏰ **Deployment & Alarm Flags**
 
 | Variable | Default | Purpose |
