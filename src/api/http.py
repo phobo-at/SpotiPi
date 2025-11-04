@@ -20,6 +20,9 @@ _SESSION_LOCK = RLock()
 _SESSION_PROXY: Optional["ThreadLocalSessionProxy"] = None
 _CONFIG_LOGGED = False
 
+# Detect low-power mode for adaptive connection pooling
+_LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+
 
 def _parse_timeout_tuple() -> Tuple[float, float]:
     """Parse timeout defaults from environment variables."""
@@ -132,12 +135,22 @@ def _log_configuration(session: requests.Session) -> None:
 
 
 def build_session() -> requests.Session:
-    """Create a configured requests.Session with retries and timeouts."""
+    """Create a configured requests.Session with retries and timeouts.
+    
+    Uses adaptive connection pool sizes based on LOW_POWER_MODE:
+    - Pi Zero W: Smaller pools to reduce memory overhead
+    - Dev/Normal: Larger pools for better performance
+    """
     session = requests.Session()
 
     retry = _build_retry_configuration()
-    pool_connections = _int_env("SPOTIPI_HTTP_POOL_CONNECTIONS", 10)
-    pool_maxsize = _int_env("SPOTIPI_HTTP_POOL_MAXSIZE", 20)
+    
+    # Adaptive pool sizes: Smaller on Pi Zero W to reduce memory overhead
+    default_pool_connections = 5 if _LOW_POWER_MODE else 10
+    default_pool_maxsize = 10 if _LOW_POWER_MODE else 20
+    
+    pool_connections = _int_env("SPOTIPI_HTTP_POOL_CONNECTIONS", default_pool_connections)
+    pool_maxsize = _int_env("SPOTIPI_HTTP_POOL_MAXSIZE", default_pool_maxsize)
     adapter = HTTPAdapter(
         max_retries=retry,
         pool_connections=pool_connections,

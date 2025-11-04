@@ -1715,7 +1715,12 @@ def get_current_track(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 def _playback_cache_ttl() -> float:
-    default_ttl = 2.0 if _LOW_POWER_MODE else 0.75
+    """Get playback cache TTL with adaptive defaults.
+    
+    Longer TTL on Pi Zero W to reduce API calls - playback state doesn't 
+    change frequently when track is playing (only on skip/pause/volume change).
+    """
+    default_ttl = 5.0 if _LOW_POWER_MODE else 1.5
     ttl_env = os.getenv('SPOTIPI_PLAYBACK_CACHE_TTL', str(default_ttl))
     try:
         ttl = float(ttl_env)
@@ -1821,12 +1826,23 @@ def load_music_library_parallel(token: str) -> Dict[str, Any]:
             for name, (func, label) in section_funcs.items()
         }
     else:
+        # Use timeout to prevent indefinite blocking on Pi Zero W with poor network
+        timeout_seconds = float(os.getenv('SPOTIPI_LIBRARY_LOAD_TIMEOUT', '20.0'))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 name: executor.submit(load_with_error_handling, func, label)
                 for name, (func, label) in section_funcs.items()
             }
-            results = {key: future.result() for key, future in futures.items()}
+            results = {}
+            for key, future in futures.items():
+                try:
+                    results[key] = future.result(timeout=timeout_seconds)
+                except TimeoutError:
+                    logger.error(f"❌ {key} timed out after {timeout_seconds}s, using empty fallback")
+                    results[key] = []
+                except Exception as e:
+                    logger.error(f"❌ {key} failed with error: {e}")
+                    results[key] = []
     
     end_time = time.time()
     total_items = sum(len(data) for data in results.values())

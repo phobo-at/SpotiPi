@@ -15,7 +15,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
-_CACHE_TTL = max(0.5, float(os.getenv("SPOTIPI_CONFIG_CACHE_TTL", "2.0")))
+# Detect low-power mode for adaptive cache TTL
+_LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+
+# Adaptive Config Cache TTL: Longer on Pi Zero W to reduce SD-Card I/O
+# Default: 30s on Pi (config changes rarely), 5s on Dev machines (faster iteration)
+_DEFAULT_TTL = "30.0" if _LOW_POWER_MODE else "5.0"
+_CACHE_TTL = max(0.5, float(os.getenv("SPOTIPI_CONFIG_CACHE_TTL", _DEFAULT_TTL)))
 
 
 @dataclass

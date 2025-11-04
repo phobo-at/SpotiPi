@@ -162,12 +162,22 @@ PORT=8080              # Custom port
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `SPOTIPI_MAX_CONCURRENCY` | `2` | Limits concurrent Spotify API requests; keep low on the Pi Zero W. |
+| `SPOTIPI_LIBRARY_WORKERS` | `2` (Pi) / `3` (Dev) | Max parallel workers for library loading. Automatically respects MAX_CONCURRENCY. |
 | `SPOTIPI_DEVICE_TTL` | `10` | Device discovery cache in seconds (clamped 5-15). |
 | `SPOTIPI_LIBRARY_TTL_MINUTES` | `60` | Full library cache TTL in minutes (clamped 30-120). |
 | `SPOTIPI_SECTION_TTL_MINUTES` | `60` | Section (playlists/albums/etc.) cache TTL in minutes. |
 | `SPOTIPI_HTTP_TIMEOUT` | `3.0` | Default Spotify HTTP timeout in seconds. |
 | `SPOTIPI_HTTP_LONG_TIMEOUT` | `6.0` | Extended timeout for long-running Spotify calls. |
 | `SPOTIPI_CACHE_MAX_ENTRIES` | `64` | In-memory cache size before LRU eviction. |
+| `SPOTIPI_LIBRARY_LOAD_TIMEOUT` | `20.0` | Timeout in seconds for parallel library loading (prevents blocking on poor network). |
+| `SPOTIPI_LIBRARY_SECTION_TIMEOUT` | `15.0` | Timeout in seconds for individual section loading (playlists/albums/tracks/artists). |
+| `SPOTIPI_CONFIG_CACHE_TTL` | `30.0` (Pi) / `5.0` (Dev) | Config cache TTL in seconds. Higher on Pi to reduce SD-Card reads. |
+| `SPOTIPI_DEVICE_DISK_PERSIST_SECONDS` | `600` (Pi) / `180` (Dev) | Interval in seconds before device cache is written to disk. Higher on Pi to reduce SD-Card writes. |
+| `SPOTIPI_DEVICE_DISK_CACHE` | `1` | Enable/disable device cache persistence to disk. Set to `0` to disable disk writes entirely. |
+| `SPOTIPI_DEVICE_DISK_MIN_TTL` | `60` | Minimum TTL required for device cache to be written to disk (prevents hot-loop writes). |
+| `SPOTIPI_PLAYBACK_CACHE_TTL` | `5.0` (Pi) / `1.5` (Dev) | Playback state cache TTL in seconds. Higher on Pi to reduce Spotify API calls. |
+| `SPOTIPI_STATUS_CACHE_SECONDS` | `5.0` (Pi) / `1.5` (Dev) | Dashboard status cache TTL in seconds. Higher on Pi to reduce API polling. |
+| `SPOTIPI_PLAYBACK_STATUS_CACHE_SECONDS` | `5.0` (Pi) / `1.5` (Dev) | Playback status cache TTL in seconds. Higher on Pi to reduce API polling. |
 
 ### 🔄 **HTTP Retry Flags (Spotify API Resilience)**
 
@@ -177,8 +187,8 @@ PORT=8080              # Custom port
 | `SPOTIPI_HTTP_RETRY_TOTAL` | `5` | Maximum total retries across all error types (connect, read, status). |
 | `SPOTIPI_HTTP_RETRY_CONNECT` | `3` | Maximum retries for connection errors (network unreachable, timeout). |
 | `SPOTIPI_HTTP_RETRY_READ` | `4` | Maximum retries for read timeouts (server slow to respond). |
-| `SPOTIPI_HTTP_POOL_CONNECTIONS` | `10` | Max simultaneous connections in HTTP pool. |
-| `SPOTIPI_HTTP_POOL_MAXSIZE` | `20` | Max total connections in pool (active + idle). |
+| `SPOTIPI_HTTP_POOL_CONNECTIONS` | `5` (Pi) / `10` (Dev) | Max simultaneous connections in HTTP pool. Lower on Pi to reduce memory. |
+| `SPOTIPI_HTTP_POOL_MAXSIZE` | `10` (Pi) / `20` (Dev) | Max total connections in pool (active + idle). Lower on Pi to reduce memory. |
 | `SPOTIPI_HTTP_TIMEOUTS` | `4.0,15.0` | Connect and read timeouts as CSV (e.g., "4.0,15.0"). |
 | `SPOTIPI_HTTP_CONNECT_TIMEOUT` | `4.0` | Connect timeout in seconds (alternative to TIMEOUTS). |
 | `SPOTIPI_HTTP_READ_TIMEOUT` | `15.0` | Read timeout in seconds (alternative to TIMEOUTS). |

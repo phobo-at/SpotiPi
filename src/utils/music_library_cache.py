@@ -19,6 +19,7 @@ Bietet einheitliche Interfaces für:
 - Cache-Statistiken und -Management
 """
 
+import atexit
 import hashlib
 import json
 import logging
@@ -37,6 +38,10 @@ LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'ye
 
 
 def _get_worker_limit() -> int:
+    """Determine how many worker threads to use for library section fetches.
+    
+    Respects global MAX_CONCURRENCY to prevent overloading Pi Zero W's single CPU core.
+    """
     override = os.getenv('SPOTIPI_LIBRARY_WORKERS')
     if override:
         try:
@@ -46,7 +51,15 @@ def _get_worker_limit() -> int:
                 "Invalid SPOTIPI_LIBRARY_WORKERS=%s; using default",
                 override
             )
-    return 2 if LOW_POWER_MODE else 4
+    
+    # Import MAX_CONCURRENCY from spotify module to respect global limits
+    try:
+        from ..api.spotify import MAX_CONCURRENCY
+        base = 2 if LOW_POWER_MODE else 3
+        return max(1, min(base, MAX_CONCURRENCY))
+    except ImportError:
+        # Fallback if spotify module not available (shouldn't happen in practice)
+        return 2 if LOW_POWER_MODE else 3
 
 
 class CacheType(Enum):
@@ -158,12 +171,17 @@ class MusicLibraryCache:
 
         # Device cache persistence controls (reduce SD-card wear on Pi)
         self._device_persist_enabled = os.getenv("SPOTIPI_DEVICE_DISK_CACHE", "1") != "0"
+        
+        # Adaptive persist interval: Longer on Pi Zero W to reduce writes
+        # Default: 10 min on Pi (devices rarely change), 3 min on Dev machines
+        default_persist_interval = "600" if LOW_POWER_MODE else "180"
         try:
             self._device_persist_interval = max(
-                30, int(os.getenv("SPOTIPI_DEVICE_DISK_PERSIST_SECONDS", "180"))
+                30, int(os.getenv("SPOTIPI_DEVICE_DISK_PERSIST_SECONDS", default_persist_interval))
             )
         except ValueError:
-            self._device_persist_interval = 180
+            self._device_persist_interval = int(default_persist_interval)
+        
         try:
             self._device_disk_min_ttl = max(
                 30, int(os.getenv("SPOTIPI_DEVICE_DISK_MIN_TTL", "60"))
@@ -174,6 +192,22 @@ class MusicLibraryCache:
         self._device_last_digest: Dict[str, str] = {}
 
         self.logger.info("🎵 Unified Music Library Cache initialized")
+        
+        # Register shutdown handler to flush device cache on exit (SD-card protection)
+        if LOW_POWER_MODE:
+            atexit.register(self._flush_device_cache_on_shutdown)
+
+    def _flush_device_cache_on_shutdown(self) -> None:
+        """Force flush all pending device cache writes on shutdown."""
+        try:
+            with self._lock:
+                for cache_key, entry in self._cache.items():
+                    if entry.cache_type == CacheType.DEVICES:
+                        path = self._device_cache_path(cache_key)
+                        write_json_cache(str(path), entry.data)
+            self.logger.debug("💾 Flushed device cache on shutdown")
+        except Exception as e:
+            self.logger.debug(f"⚠️ Could not flush device cache on shutdown: {e}")
 
     def _scoped_cache_key(self, namespace: str, token: Optional[str]) -> str:
         """Build a stable cache key scoped to the current access token."""
@@ -478,10 +512,21 @@ class MusicLibraryCache:
             for sec in wanted:
                 results[sec] = load_section(sec)
         else:
+            # Use timeout to prevent indefinite blocking on Pi Zero W with poor network
+            timeout_seconds = float(os.getenv('SPOTIPI_LIBRARY_SECTION_TIMEOUT', '15.0'))
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 future_map = {sec: executor.submit(load_section, sec) for sec in wanted}
                 for sec, future in future_map.items():
-                    results[sec] = future.result()
+                    try:
+                        results[sec] = future.result(timeout=timeout_seconds)
+                    except TimeoutError:
+                        self.logger.error(f"❌ Section {sec} timed out after {timeout_seconds}s, using empty fallback")
+                        results[sec] = []
+                        section_cache_status[sec] = False
+                    except Exception as e:
+                        self.logger.error(f"❌ Section {sec} failed: {e}")
+                        results[sec] = []
+                        section_cache_status[sec] = False
         
         # Fill in empty sections
         for section in valid_sections:

@@ -109,8 +109,10 @@ rate_limiter = get_rate_limiter()
 # Initialize service manager
 service_manager = get_service_manager()
 
-_default_dashboard_ttl = 1.5 if LOW_POWER_MODE else 0.75
-_default_playback_status_ttl = 1.5 if LOW_POWER_MODE else 0.75
+# Adaptive cache TTLs: Longer on Pi Zero W to reduce API calls
+# Playback state changes infrequently (only on skip/pause/volume change)
+_default_dashboard_ttl = 5.0 if LOW_POWER_MODE else 1.5
+_default_playback_status_ttl = 5.0 if LOW_POWER_MODE else 1.5
 
 try:
     DASHBOARD_CACHE_TTL = max(
