@@ -59,6 +59,10 @@ class ConfigManager:
         """
         Load configuration based on environment
         
+        Performance: Validation moved to write-time only (v1.3.9+)
+        Saved configs are trusted to be valid (validated on save),
+        eliminating ~10-50ms Pydantic overhead per read on Pi Zero W.
+        
         Args:
             config_name: Specific config file name (without .json)
                         If None, uses environment-based config
@@ -100,7 +104,41 @@ class ConfigManager:
             "base_path": str(self.base_path)
         }
         
-        return self.validate_config(config)
+        # Performance: Skip validation on read (trust saved configs)
+        # Configs are validated on write via save_config()
+        # Fallback to legacy validation only if critical fields missing
+        if not self._has_required_fields(config):
+            logging.getLogger(__name__).warning(
+                "Config missing required fields, applying defaults"
+            )
+            return self._apply_defaults(config)
+        
+        return config
+    
+    def _has_required_fields(self, config: Dict[str, Any]) -> bool:
+        """Quick check for required fields without full validation."""
+        required = ['time', 'enabled', 'alarm_volume']
+        return all(key in config for key in required)
+    
+    def _apply_defaults(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply minimal defaults for missing required fields."""
+        defaults = {
+            "time": "07:00",
+            "enabled": False,
+            "playlist_uri": "",
+            "device_name": "",
+            "alarm_volume": 50,
+            "fade_in": False,
+            "shuffle": False,
+            "debug": False,
+            "log_level": "INFO",
+            "timezone": os.getenv("SPOTIPI_TIMEZONE", "Europe/Vienna"),
+            "last_known_devices": {},
+        }
+        for key, default_value in defaults.items():
+            if key not in config:
+                config[key] = copy.deepcopy(default_value)
+        return config
     
     def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and clean configuration.
@@ -204,12 +242,16 @@ class ConfigManager:
         """
         Save configuration to file
         
+        Performance: Validates config on write (v1.3.9+) to ensure only valid
+        configs are persisted. This catches errors early and allows load_config()
+        to skip validation entirely.
+        
         Args:
             config: Configuration to save
             config_name: Config file name (without .json)
         
         Returns:
-            True if saved successfully
+            True if saved successfully, False if validation failed
         """
         if config_name is None:
             config_name = self.environment
@@ -217,22 +259,31 @@ class ConfigManager:
         config_file = self.config_dir / f"{config_name}.json"
         
         try:
-            # Use Pydantic serialization if available (v1.3.8+) for cleaner output
+            # VALIDATE ON WRITE (fail fast if invalid)
             if SCHEMA_VALIDATION_AVAILABLE:
                 try:
-                    validated_model, _ = validate_config_dict(config)
+                    validated_model, warnings = validate_config_dict(config)
+                    for warning in warnings:
+                        logging.getLogger(__name__).warning(f"Config validation warning: {warning}")
                     save_data = validated_model.to_json_safe()
-                except Exception:
-                    # Fallback to manual filtering
-                    save_data = {k: v for k, v in config.items() if not k.startswith("_")}
+                except ValueError as e:
+                    logging.getLogger(__name__).error(f"Config validation failed: {e}")
+                    return False  # Don't persist invalid config
             else:
-                save_data = {k: v for k, v in config.items() if not k.startswith("_")}
+                # Fallback: Apply legacy validation before saving
+                save_data = self._legacy_validate_config(config)
+                # Remove runtime keys
+                save_data = {k: v for k, v in save_data.items() if not k.startswith("_")}
             
             config_file.parent.mkdir(parents=True, exist_ok=True)
             with open(config_file, 'w') as f:
                 json.dump(save_data, f, indent=2)
+            
+            logging.getLogger(__name__).debug(f"Config saved and validated: {config_file}")
             return True
-        except (IOError, json.JSONDecodeError):
+            
+        except (IOError, json.JSONDecodeError) as e:
+            logging.getLogger(__name__).error(f"Failed to save config: {e}")
             return False
     
     def get_environment(self) -> str:
