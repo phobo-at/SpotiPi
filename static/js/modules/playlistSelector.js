@@ -460,10 +460,10 @@ export class PlaylistSelector {
           const artist = item.artist || 'Unknown Artist';
           metaText = `${artist} · ${trackCount} Tracks`;
         } else if (item.type === 'artist') {
-          metaText = item.artist || t('artist') || 'Artist'; // Follower info from artist field
+          metaText = item.artist || ''; // Follower info from artist field, or empty
         } else if (item.type === 'track' && item.artist) {
           metaText = item.artist; // Artist for individual songs
-        } else {
+        } else if (item.type !== 'artist') {
           metaText = `${trackCount} ${trackText}`;
         }
         
@@ -516,10 +516,10 @@ export class PlaylistSelector {
               const artist = item.artist || 'Unknown Artist';
               metaText = `${artist} · ${trackCount} Tracks`;
             } else if (item.type === 'artist') {
-              metaText = item.artist || t('artist') || 'Artist'; // Follower info from artist field
+              metaText = item.artist || ''; // Follower info from artist field, or empty
             } else if (item.type === 'track' && item.artist) {
               metaText = item.artist; // Artist for individual songs
-            } else {
+            } else if (item.type !== 'artist') {
               metaText = `${trackCount} ${trackText}`;
             }
             
