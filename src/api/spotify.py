@@ -921,6 +921,11 @@ def get_devices(token: str) -> List[Dict[str, Any]]:
 _DEVICE_WHITESPACE_RE = re.compile(r"\s+")
 _MAX_CACHED_DEVICES = 8
 
+# Device cache invalidation debouncing (prevent API storms)
+_DEVICE_INVALIDATION_COOLDOWN = 30.0  # seconds
+_last_device_invalidation: float = 0.0
+_device_invalidation_lock = threading.Lock()
+
 
 def _remember_device_mapping(requested_name: str, actual_name: str, device_id: Optional[str]) -> None:
     if not device_id:
@@ -1024,6 +1029,8 @@ def get_device_id(token: str, device_name: str) -> Optional[str]:
     Returns:
         Optional[str]: Device ID if found, None otherwise
     """
+    global _last_device_invalidation
+    
     logger = logging.getLogger('spotify')
     normalized_requested = _normalize_device_name(device_name)
     if not normalized_requested:
@@ -1033,15 +1040,38 @@ def get_device_id(token: str, device_name: str) -> Optional[str]:
     device = _pick_device_by_name(devices, normalized_requested)
 
     if device is None:
-        try:
-            cache_migration.invalidate_devices()
-        except Exception as exc:
+        # Performance: Debounce cache invalidation to prevent API storms
+        # Check if enough time passed since last invalidation
+        now = time.time()
+        should_invalidate = False
+        
+        with _device_invalidation_lock:
+            if now - _last_device_invalidation >= _DEVICE_INVALIDATION_COOLDOWN:
+                should_invalidate = True
+                _last_device_invalidation = now
+        
+        if should_invalidate:
+            try:
+                cache_migration.invalidate_devices()
+                logger.debug(
+                    "spotify.device.cache_invalidated",
+                    extra={"device": device_name, "cooldown_sec": _DEVICE_INVALIDATION_COOLDOWN}
+                )
+            except Exception as exc:
+                logger.debug(
+                    "spotify.device.cache_invalidate_failed",
+                    extra={"error": str(exc)},
+                )
+            devices = get_devices(token)
+            device = _pick_device_by_name(devices, normalized_requested)
+        else:
             logger.debug(
-                "spotify.device.cache_invalidate_failed",
-                extra={"error": str(exc)},
+                "spotify.device.invalidation_cooldown",
+                extra={
+                    "device": device_name,
+                    "seconds_remaining": int(_DEVICE_INVALIDATION_COOLDOWN - (now - _last_device_invalidation))
+                }
             )
-        devices = get_devices(token)
-        device = _pick_device_by_name(devices, normalized_requested)
 
     if device is None:
         device = _pick_device_by_name(devices, normalized_requested, allow_partial=True)
