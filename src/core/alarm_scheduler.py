@@ -54,6 +54,9 @@ class AlarmScheduler:
         self._last_alarm_time: Optional[str] = None
         self._current_context: Optional[AlarmProbeContext] = None
         self._state: Dict[str, Any] = self._load_persisted_state()
+        # Performance: Cache config in-memory to avoid repeated disk I/O + Pydantic validation
+        self._cached_config: Optional[Dict[str, Any]] = None
+        self._config_version: int = 0
 
     def start(self) -> None:
         with self._lock:
@@ -65,7 +68,7 @@ class AlarmScheduler:
             try:
                 # Register change listener to wake the scheduler when config updates
                 cfg_mgr = get_thread_safe_config_manager()
-                cfg_mgr.add_change_listener(lambda _cfg: self.wake())
+                cfg_mgr.add_change_listener(self._on_config_changed)
             except Exception as e:
                 _logger.debug(f"Config listener registration failed: {e}")
             _logger.info("⏰ AlarmScheduler started (event-driven mode)")
@@ -77,9 +80,43 @@ class AlarmScheduler:
         self._stop_event.set()
         self._wake_event.set()
 
+    def _on_config_changed(self, new_config: Dict[str, Any]) -> None:
+        """Handle config changes by updating cache and waking scheduler.
+        
+        Performance: Deep copy only once when config changes (not every loop iteration).
+        """
+        with self._lock:
+            # Shallow copy is sufficient - config values are primitives or immutable
+            # Exception: last_known_devices needs deep copy, but it's rarely used in alarm logic
+            self._cached_config = {
+                **new_config,
+                "last_known_devices": copy.deepcopy(new_config.get("last_known_devices", {}))
+            }
+            self._config_version += 1
+            _logger.debug(f"Config cache updated (version {self._config_version})")
+        self.wake()
+
     def _compute_next_alarm(self) -> Optional[_dt.datetime]:
-        cfg = load_config()
-        self._last_config_snapshot = copy.deepcopy(cfg)
+        # Performance: Use cached config to avoid repeated disk I/O + Pydantic validation
+        with self._lock:
+            if self._cached_config is None:
+                # First load or cache invalidated - load from disk
+                self._cached_config = load_config()
+                _logger.debug("Config cache initialized (cold start)")
+            cfg = self._cached_config
+        
+        # Extract only alarm-relevant fields (avoid unnecessary deep copy of entire config)
+        self._last_config_snapshot = {
+            "enabled": cfg.get("enabled"),
+            "time": cfg.get("time"),
+            "device_name": cfg.get("device_name"),
+            "alarm_volume": cfg.get("alarm_volume"),
+            "playlist_uri": cfg.get("playlist_uri"),
+            "fade_in": cfg.get("fade_in"),
+            "shuffle": cfg.get("shuffle"),
+            "weekdays": cfg.get("weekdays"),
+        }
+        
         if not cfg.get("enabled"):
             return None
         alarm_time = cfg.get("time")
