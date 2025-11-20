@@ -55,7 +55,11 @@
 - **Alarm Settings Save**: Fixed `log_structured()` parameter conflict causing 400 BAD REQUEST errors.
 - **CORS Configuration**: Improved port-agnostic hostname matching for development environments.
 - **HTML Escaping**: Added proper escaping in JavaScript template literals to prevent injection attacks.
-- **Smooth Animations**: CSS transitions (300ms fade+slide) for alarm/sleep timer activation with `smoothShow()`/`smoothHide()` helpers.
+### 🎨 Frontend
+- Enhanced `static/css/foundation/utilities.css` with smooth show/hide animations using opacity, transform, and max-height transitions (300ms)
+- Added `smoothShow()` and `smoothHide()` helper functions in `static/js/modules/ui.js` for consistent animation behavior
+- Animation applies to `#alarm-form`, `#active-alarm-mode`, `#sleep-form`, `#active-sleep-mode` via CSS `.hidden` class
+- Fixed sleep timer toggle visibility issue during state transitions
 - **Device Sorting**: Alphabetical (A-Z, case-insensitive) sorting in all device dropdowns.
 - **Accessibility**: Enhanced ARIA attributes for dynamic content changes.
 
