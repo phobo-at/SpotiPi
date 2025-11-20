@@ -394,6 +394,27 @@ class AlarmScheduler:
                         "prewarm_device_cache",
                         extra={"device_status": device_status, "device_name": context.device_name()},
                     )
+                    
+                    # HTTP Pool Pre-Warming: Establish HTTPS connection early to avoid cold-start penalty
+                    # On Pi Zero W Wi-Fi, cold TCP+TLS handshake adds ~300-500ms to first API call
+                    try:
+                        log_alarm_probe(context, "prewarm_http_start")
+                        from ..api.http import SESSION
+                        # Cheap HEAD request to warm connection pool (triggers TLS handshake)
+                        SESSION.head(
+                            "https://api.spotify.com/v1/me",
+                            headers={"Authorization": f"Bearer {token_value}"},
+                            timeout=(2.0, 3.0)  # Short timeout for warm-up
+                        )
+                        log_alarm_probe(context, "prewarm_http_ok")
+                    except Exception as exc:
+                        # Non-fatal: Connection will establish on first real request if warm-up fails
+                        error_type = exc.__class__.__name__
+                        log_alarm_probe(
+                            context, 
+                            "prewarm_http_error", 
+                            extra={"error_type": error_type, "error": str(exc)[:100]}
+                        )
 
                 now = _dt.datetime.now(tz=LOCAL_TZ)
                 seconds_until = (next_alarm - now).total_seconds()
