@@ -158,17 +158,25 @@ declare -a UPDATED_PATHS=()
 
 while IFS= read -r line; do
   # rsync itemized lines look like ">f.st...... path/to/file"
-  if [[ "$line" == ">f"* ]]; then
-      UPDATED=$((UPDATED + 1))
+  # Key: Position 2 of itemize output indicates file content changes
+  #   'c' = checksum differs (content changed)
+  #   's' = size differs (content changed)
+  #   '+' = new file
+  if [[ "$line" =~ ^\>f[.+cstpoguax]*[\ ] ]]; then
       path="${line#* }"
       if [ "$path" != "$line" ]; then
-        UPDATED_PATHS+=("$path")
-        if [[ "$path" == deploy/systemd/* ]]; then
-          SYSTEMD_CHANGED=1
+        # Check if content actually changed (not just metadata)
+        itemize_code="${line:0:11}"
+        if [[ "$itemize_code" =~ ^\>f\+.*$ ]] || [[ "$itemize_code" =~ ^.f[cs] ]]; then
+          UPDATED=$((UPDATED + 1))
+          UPDATED_PATHS+=("$path")
+          if [[ "$path" == deploy/systemd/* ]]; then
+            SYSTEMD_CHANGED=1
+          fi
+          if [[ "$itemize_code" =~ ^\>f\+.*$ ]]; then
+            NEW_FILES=$((NEW_FILES + 1))
+          fi
         fi
-      fi
-      if [[ "${line:0:3}" == ">f+" ]]; then
-        NEW_FILES=$((NEW_FILES + 1))
       fi
   fi
 done < "$TMP_OUTPUT"
@@ -202,7 +210,9 @@ fi
 
 echo ""
 if [ "$UPDATED" -gt 0 ]; then
-  echo "📁 Updated files:"
+  if [ "$EXISTING_UPDATED" -gt 0 ]; then
+    echo "📝 Files with content changes:"
+  fi
   for idx in "${!UPDATED_PATHS[@]}"; do
     if [ "$idx" -lt 10 ]; then
       echo "   ✅ ${UPDATED_PATHS[$idx]}"
@@ -214,11 +224,12 @@ if [ "$UPDATED" -gt 0 ]; then
   if [ "$REMAINING" -gt 0 ]; then
     echo "   ... and $REMAINING more files"
   fi
-  if [ "$NEW_FILES" -gt 0 ]; then
-    echo "📁 New files created: $NEW_FILES"
-  fi
 else
-  echo "📁 No file content changes detected"
+  if [ "$BYTES_TRANSFERRED" != "0 bytes" ] && [ -n "$BYTES_TRANSFERRED" ]; then
+    echo "📁 Files synchronized (metadata/permissions updated, no content changes)"
+  else
+    echo "📁 No changes detected - all files up to date"
+  fi
 fi
 
 rm -f "$TMP_OUTPUT" "$TMP_DELETIONS"
