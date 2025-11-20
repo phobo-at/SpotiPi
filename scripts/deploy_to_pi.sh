@@ -157,23 +157,28 @@ SYSTEMD_CHANGED=0
 declare -a UPDATED_PATHS=()
 
 while IFS= read -r line; do
-  # rsync itemized lines look like ">f.st...... path/to/file"
+  # rsync itemized lines look like ">f.st...... path/to/file" or "<fcst...... path/to/file"
+  # The direction indicator (<> ) depends on perspective, both mean file transfer
   # Key: Position 2 of itemize output indicates file content changes
   #   'c' = checksum differs (content changed)
   #   's' = size differs (content changed)
   #   '+' = new file
-  if [[ "$line" =~ ^\>f[.+cstpoguax]*[\ ] ]]; then
+  if [[ "$line" =~ ^[\<\>]f[.+cstpoguax]*[\ ] ]]; then
       path="${line#* }"
-      if [ "$path" != "$line" ]; then
+      # Strip local path prefix to show relative path
+      # rsync outputs paths without leading / for some reason, so strip both variants
+      path=$(echo "$path" | sed "s|^${LOCAL_PATH}/||; s|^Users/.*/repos/spotipi/||")
+      if [ -n "$path" ]; then
         # Check if content actually changed (not just metadata)
         itemize_code="${line:0:11}"
-        if [[ "$itemize_code" =~ ^\>f\+.*$ ]] || [[ "$itemize_code" =~ ^.f[cs] ]]; then
+        # Match: new files (^[<>]f+) or content changes (position 1='c' or position 2='s')
+        if [[ "$itemize_code" =~ ^[\<\>]f\+.*$ ]] || [[ "$itemize_code" =~ ^.[fc] ]] || [[ "$itemize_code" =~ ^..[s] ]]; then
           UPDATED=$((UPDATED + 1))
           UPDATED_PATHS+=("$path")
           if [[ "$path" == deploy/systemd/* ]]; then
             SYSTEMD_CHANGED=1
           fi
-          if [[ "$itemize_code" =~ ^\>f\+.*$ ]]; then
+          if [[ "$itemize_code" =~ ^[\<\>]f\+.*$ ]]; then
             NEW_FILES=$((NEW_FILES + 1))
           fi
         fi
@@ -189,8 +194,22 @@ EXISTING_UPDATED=$((UPDATED - NEW_FILES))
 if [ $EXISTING_UPDATED -lt 0 ]; then EXISTING_UPDATED=0; fi
 
 DELETED=$(wc -l < "$TMP_DELETIONS" | tr -d ' ')
-BYTES_TRANSFERRED=$(grep -E "Total transferred file size" "$TMP_OUTPUT" | cut -d':' -f2 | xargs)
-[ -z "$BYTES_TRANSFERRED" ] && BYTES_TRANSFERRED="0 bytes"
+
+# Extract actual transferred bytes (not total file size)
+# "sent X bytes  received Y bytes" is the actual transfer
+BYTES_SENT=$(grep -E "^sent.*bytes.*received.*bytes" "$TMP_OUTPUT" | sed -E 's/sent ([0-9,]+) bytes.*/\1/' | tr -d ',')
+BYTES_RECEIVED=$(grep -E "^sent.*bytes.*received.*bytes" "$TMP_OUTPUT" | sed -E 's/.*received ([0-9,]+) bytes.*/\1/' | tr -d ',')
+
+# Calculate net transferred (sent - protocol overhead)
+if [ -n "$BYTES_SENT" ] && [ -n "$BYTES_RECEIVED" ]; then
+  TOTAL_BYTES=$((BYTES_SENT + BYTES_RECEIVED))
+  # Subtract rsync protocol overhead (typically ~100-200 bytes even for no changes)
+  NET_BYTES=$((BYTES_SENT - 100))
+  if [ $NET_BYTES -lt 0 ]; then NET_BYTES=0; fi
+  BYTES_TRANSFERRED="${NET_BYTES} B"
+else
+  BYTES_TRANSFERRED="0 B"
+fi
 
 
 cat <<SUMMARY
@@ -225,10 +244,12 @@ if [ "$UPDATED" -gt 0 ]; then
     echo "   ... and $REMAINING more files"
   fi
 else
-  if [ "$BYTES_TRANSFERRED" != "0 bytes" ] && [ -n "$BYTES_TRANSFERRED" ]; then
-    echo "📁 Files synchronized (metadata/permissions updated, no content changes)"
+  # No itemize changes, but check if any real data transferred
+  if [ "$NET_BYTES" -gt 500 ]; then
+    echo "📁 Files transferred but no content changes detected"
+    echo "   (This can happen with --checksum if only metadata differs)"
   else
-    echo "📁 No changes detected - all files up to date"
+    echo "📁 All files already up-to-date (no changes)"
   fi
 fi
 
