@@ -1,8 +1,9 @@
-## SpotiPi • Copilot Guidance (v1.3.9)
+## SpotiPi • Copilot Guidance (v1.4.0)
 
 ### Architecture Cheatsheet
 - Flask entrypoint: `run.py` imports `src/app.py`; templates/static at project root.
 - Core domains live in `src/`: `core/` (alarm & scheduler), `services/` (business logic + `ServiceResult`), `api/spotify.py` (Spotify client), `utils/` (thread-safety, caching, logging, validation).
+- **Route Blueprints (v1.4.0)**: Modular route organization available in `src/routes/` (alarm, sleep, music, playback, devices, health, cache, services). Can be optionally enabled for cleaner code organization.
 - Configuration is centralized via `src/config.py` + thread-safe wrapper in `src/utils/thread_safety.py`. Always read/write config with the provided helpers (`load_config()`, `save_config()`, `config_transaction()`).
 - **Config validation (v1.3.8)**: Use Pydantic schemas in `src/config_schema.py`. Config is automatically validated via `validate_config_dict()` with graceful fallback to legacy validation.
 
@@ -17,6 +18,7 @@
 - **Spotify Client**: Re-use helpers in `src/api/spotify.py` (they already handle retries, token refresh, low-power worker limits). Do not instantiate raw `requests.Session`; use the shared proxy from `src/api/http.py`.
   - **HTTP Retry (v1.3.8)**: All Spotify API calls automatically retry on transient errors (429, 500, 502, 503, 504) with exponential backoff. Configure via `SPOTIPI_HTTP_BACKOFF_FACTOR`, `SPOTIPI_HTTP_RETRY_TOTAL`.
   - **Device sorting (v1.3.9)**: Devices are sorted alphabetically (A-Z, case-insensitive) in all API responses for better usability.
+  - **Shared ThreadPoolExecutor (v1.4.0)**: Library loading uses `_get_library_executor()` singleton instead of creating executors per-call. Reduces thread creation overhead on Pi Zero.
 - **Validation**: All user input funnels through `src/utils/validation.py`. Raise/handle `ValidationError` rather than sprinkling manual checks.
   - **Config validation (v1.3.8)**: Pydantic models in `src/config_schema.py` provide automatic type validation, field constraints, and clear error messages.
   - **Device names (v1.3.9)**: Relaxed validation allows Unicode/emoji while blocking only `<>` and control characters for XSS protection.
@@ -27,11 +29,19 @@
 - Honour environment toggles like `SPOTIPI_LOW_POWER`, `SPOTIPI_LIBRARY_TTL_MINUTES`, `SPOTIPI_MAX_CONCURRENCY`.
 - Writes to disk are expensive—only persist when TTLs justify it (see device-cache logic).
 - **Alarm persistence (v1.3.8)**: systemd timer (`spotipi-alarm.timer`) runs daily at 05:30 as backup to in-process scheduler. Enabled by default via `SPOTIPI_ENABLE_ALARM_TIMER=1`.
+- **ThreadPoolExecutor reuse (v1.4.0)**: Library loading reuses a global executor (`_LIBRARY_EXECUTOR`) to reduce thread creation overhead on resource-constrained devices.
+
+### Security (v1.4.0)
+- **Token Encryption**: Spotify tokens are encrypted at rest using `src/utils/token_encryption.py`. Uses Fernet encryption when `cryptography` library is available, falls back to XOR obfuscation with machine-derived keys.
+- Token files have restricted permissions (0o600 - owner read/write only).
+- Machine-specific key derivation ensures tokens cannot be moved between machines.
+- Backward compatible: automatically reads legacy plain JSON tokens and re-encrypts on next save.
 
 ### Testing & Tooling
 - Unit/integration tests live in `tests/`; they use Flask's test client (no live server). Always update/add tests when touching routes, services, or Spotify interactions.
 - Run `pytest` before deployment. Common targets: `tests/test_api_contract.py`, `tests/test_service_layer.py`, `tests/test_spotify_resilience.py`.
   - **New test suites (v1.3.8)**: `tests/test_config_validation.py` (27 tests for Pydantic schemas), `tests/test_spotify_retry.py` (16 tests for HTTP retry logic).
+  - **New test suites (v1.4.0)**: `tests/test_core_functionality.py` (22 tests for alarm execution, sleep timer, scheduler, token encryption, performance optimizations).
 - Deployment uses `scripts/deploy_to_pi.sh`; it relies on rsync `--itemize-changes`. Do not alter the output format (`%i %f`) unless you update the parser too.
 
 ### When Adding New Code
@@ -62,6 +72,12 @@
 - Fixed sleep timer toggle visibility issue during state transitions
 - **Device Sorting**: Alphabetical (A-Z, case-insensitive) sorting in all device dropdowns.
 - **Accessibility**: Enhanced ARIA attributes for dynamic content changes.
+
+### v1.4.0 Security & Performance Improvements
+- **Token Encryption at Rest**: New `src/utils/token_encryption.py` module encrypts Spotify tokens using Fernet (or XOR fallback). Machine-derived keys prevent token theft. Backward-compatible with plain JSON tokens.
+- **Global ThreadPoolExecutor**: Library loading reuses `_get_library_executor()` singleton, eliminating per-call executor overhead on Pi Zero.
+- **Route Blueprints (Prepared)**: Modular blueprints in `src/routes/` ready for future integration. Enables cleaner code organization without breaking current app.py structure.
+- **Expanded Test Coverage**: New `test_core_functionality.py` covers alarm execution, sleep timer, scheduler persistence, token encryption, and performance patterns.
 
 ### Documentation References
 - **Config validation**: See `docs/CONFIG_SCHEMA_VALIDATION.md` for Pydantic schema details, validation rules, error handling.

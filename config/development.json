@@ -2,10 +2,11 @@
   "enabled": true,
   "time": "07:00",
   "playlist_uri": "",
-  "device_name": "",
+  "device_name": "Argon Radio 2i 16abad",
   "alarm_volume": 50,
   "fade_in": false,
   "shuffle": false,
+  "weekdays": null,
   "sleep_volume": 25,
   "sleep_default_duration": 15,
   "sleep_playlist_uri": "",
@@ -13,11 +14,6 @@
   "environment": "development",
   "debug": true,
   "log_level": "INFO",
-  "sleep_shuffle": true,
-  "port": 5001,
-  "host": "127.0.0.1",
-  "test_volume": 44,
-  "volume": 50,
   "timezone": "Europe/Vienna",
   "last_known_devices": {
     "forte": {
@@ -26,5 +22,10 @@
       "requested_name": "Forte",
       "updated_at": 1760551200.527403
     }
-  }
+  },
+  "sleep_shuffle": true,
+  "port": 5001,
+  "host": "127.0.0.1",
+  "test_volume": 44,
+  "volume": 50
 }
