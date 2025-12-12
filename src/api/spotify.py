@@ -127,6 +127,35 @@ _REQUEST_SEMAPHORE = threading.Semaphore(MAX_CONCURRENCY)
 _SINGLE_FLIGHT_LOCK = threading.Lock()
 _IN_FLIGHT: Dict[Tuple[str, str, Tuple[Any, ...]], "_SingleFlight"] = {}
 
+# Global ThreadPoolExecutor for library loading - reused instead of creating per-call
+# This reduces thread creation overhead, especially on Pi Zero W
+_LIBRARY_EXECUTOR: Optional[ThreadPoolExecutor] = None
+_LIBRARY_EXECUTOR_LOCK = threading.Lock()
+
+
+def _get_library_executor() -> ThreadPoolExecutor:
+    """Get or create the global library loading executor.
+    
+    Reuses a single ThreadPoolExecutor instance for all library loading
+    operations to reduce thread creation overhead.
+    
+    Returns:
+        ThreadPoolExecutor: Shared executor for library operations
+    """
+    global _LIBRARY_EXECUTOR
+    if _LIBRARY_EXECUTOR is None:
+        with _LIBRARY_EXECUTOR_LOCK:
+            if _LIBRARY_EXECUTOR is None:
+                max_workers = _get_library_worker_limit()
+                _LIBRARY_EXECUTOR = ThreadPoolExecutor(
+                    max_workers=max_workers,
+                    thread_name_prefix="spotipi-library"
+                )
+                logging.getLogger('spotify').debug(
+                    "Library executor initialized with %d workers", max_workers
+                )
+    return _LIBRARY_EXECUTOR
+
 
 def _coerce_timeout(value: Optional[Union[int, float, Tuple[float, float]]]) -> Optional[Union[float, Tuple[float, float]]]:
     if value is None:
@@ -168,24 +197,73 @@ def _compute_backoff(base: float, attempt: int, jitter: float, cap: float = 15.0
 
 
 def _save_token_atomically(payload: Dict[str, Any]) -> None:
-    """Persist token payload atomically to avoid corruption."""
+    """Persist token payload atomically with encryption to avoid corruption.
+    
+    Uses token encryption module for secure storage at rest.
+    Falls back to obfuscation if cryptography library is not available.
+    """
     try:
+        from ..utils.token_encryption import encrypt_token_payload, is_encryption_available
+        
         TOKEN_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = TOKEN_STATE_PATH.with_suffix(".tmp")
+        
+        # Encrypt or obfuscate the payload
+        encrypted_data = encrypt_token_payload(payload)
+        
         with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write(encrypted_data)
         os.replace(tmp_path, TOKEN_STATE_PATH)
+        
+        # Restrict file permissions (owner read/write only)
+        try:
+            os.chmod(TOKEN_STATE_PATH, 0o600)
+        except OSError:
+            pass  # May fail on some platforms
+            
+        encryption_type = "encrypted" if is_encryption_available() else "obfuscated"
+        logging.getLogger('spotify').debug(f"Token saved ({encryption_type})")
+    except ImportError:
+        # Fallback to legacy plain JSON if encryption module not available
+        try:
+            TOKEN_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = TOKEN_STATE_PATH.with_suffix(".tmp")
+            with tmp_path.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, sort_keys=True)
+            os.replace(tmp_path, TOKEN_STATE_PATH)
+        except Exception as exc:
+            logging.getLogger('spotify').warning("Failed to persist token payload: %s", exc)
     except Exception as exc:
         logging.getLogger('spotify').warning("Failed to persist token payload: %s", exc)
 
 
 def _load_persisted_token() -> Optional[TokenResponse]:
-    """Load persisted token data from disk if available and not expired."""
+    """Load persisted token data from disk if available and not expired.
+    
+    Supports both encrypted and legacy plain JSON formats.
+    """
     try:
         if not TOKEN_STATE_PATH.exists():
             return None
+            
         with TOKEN_STATE_PATH.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
+            raw_data = handle.read()
+        
+        # Try decryption first
+        data = None
+        try:
+            from ..utils.token_encryption import decrypt_token_payload
+            data = decrypt_token_payload(raw_data)
+        except ImportError:
+            pass  # Encryption module not available
+        
+        # Fall back to plain JSON if decryption failed or not encrypted
+        if data is None:
+            try:
+                data = json.loads(raw_data)
+            except json.JSONDecodeError:
+                logging.getLogger('spotify').warning("Could not parse persisted token (neither encrypted nor JSON)")
+                return None
 
         access_token = data.get("access_token")
         expires_at = float(data.get("expires_at", 0))
@@ -1860,21 +1938,22 @@ def load_music_library_parallel(token: str) -> Dict[str, Any]:
     else:
         # Use timeout to prevent indefinite blocking on Pi Zero W with poor network
         timeout_seconds = float(os.getenv('SPOTIPI_LIBRARY_LOAD_TIMEOUT', '20.0'))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                name: executor.submit(load_with_error_handling, func, label)
-                for name, (func, label) in section_funcs.items()
-            }
-            results = {}
-            for key, future in futures.items():
-                try:
-                    results[key] = future.result(timeout=timeout_seconds)
-                except TimeoutError:
-                    logger.error(f"❌ {key} timed out after {timeout_seconds}s, using empty fallback")
-                    results[key] = []
-                except Exception as e:
-                    logger.error(f"❌ {key} failed with error: {e}")
-                    results[key] = []
+        # Use shared executor instead of creating a new one per call
+        executor = _get_library_executor()
+        futures = {
+            name: executor.submit(load_with_error_handling, func, label)
+            for name, (func, label) in section_funcs.items()
+        }
+        results = {}
+        for key, future in futures.items():
+            try:
+                results[key] = future.result(timeout=timeout_seconds)
+            except TimeoutError:
+                logger.error(f"❌ {key} timed out after {timeout_seconds}s, using empty fallback")
+                results[key] = []
+            except Exception as e:
+                logger.error(f"❌ {key} failed with error: {e}")
+                results[key] = []
     
     end_time = time.time()
     total_items = sum(len(data) for data in results.values())

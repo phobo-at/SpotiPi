@@ -5,6 +5,34 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-01-13
+
+### 🔒 Security
+- **Token Encryption at Rest**: New `src/utils/token_encryption.py` module encrypts Spotify tokens using Fernet encryption (with `cryptography` library) or XOR obfuscation fallback
+- Machine-derived keys ensure tokens cannot be transferred between devices
+- Token files now have restricted permissions (0o600 - owner read/write only)
+- Backward compatible: automatically reads legacy plain JSON tokens and re-encrypts on next save
+
+### ⚡ Performance
+- **Global ThreadPoolExecutor**: Library loading now reuses a singleton executor (`_get_library_executor()`) instead of creating executors per-call, reducing thread creation overhead on Pi Zero
+- Optimized `spotify.py` token save/load operations with encryption integration
+
+### 🏗 Architecture
+- **Route Blueprints (Prepared)**: Modular blueprint structure in `src/routes/` (alarm, sleep, music, playback, devices, health, cache, services) ready for future integration
+- Cleaner code organization without breaking current app.py structure
+
+### 🧪 Tests
+- **Expanded Test Coverage**: New `tests/test_core_functionality.py` with 22 tests covering:
+  - Alarm execution and state management
+  - Sleep timer start/stop behavior
+  - Scheduler persistence across restarts
+  - Token encryption/decryption (Fernet and fallback)
+  - ThreadPoolExecutor reuse patterns
+
+### 📚 Documentation
+- Updated Copilot instructions with v1.4.0 security and performance guidance
+- Enhanced README with security section and performance details
+
 ## [1.3.9] - 2025-11-04
 
 ### 🐛 Bug Fixes

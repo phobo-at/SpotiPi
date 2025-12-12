@@ -1,4 +1,4 @@
-# 🎵 SpotiPi (v1.3.9)
+# 🎵 SpotiPi (v1.4.0)
 
 **Smart Spotify alarm clock and sleep timer for Raspberry Pi**
 
@@ -17,7 +17,7 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 - 🍓 **Pi Optimized** - Auto-detection and SD-card protection
 - ⚡ **Instant First Paint** - Lightweight HTML shell with async hydration
 - 🚀 **Fast Dashboard** - Aggregated status updates over a single request
-- 🛡️ **Secure** - Environment variables for all credentials
+- 🔒 **Secure** - Token encryption at rest, environment variables for credentials
 - 📈 **Resilient Alarms** - Monotonic scheduler with catch-up & structured diagnostics
 
 ## 🧱 Architecture
@@ -117,8 +117,16 @@ SPOTIPI_ENABLE_ALARM_TIMER=0 ./deploy/install.sh
 
 - **HTTP pooling & limits:** a shared `requests.Session` keeps TLS warm and caps concurrent Spotify API calls (`SPOTIPI_MAX_CONCURRENCY`, default `2`).
 - **Two-tier caching:** devices persist to `./cache/spotify_devices_<hash>.json` (default TTL `SPOTIPI_DEVICE_TTL=10s`), the music library uses an in-memory LRU backed by disk (`SPOTIPI_LIBRARY_TTL_MINUTES=60`).
+- **Global ThreadPoolExecutor:** library loading reuses a singleton executor (`_get_library_executor()`) to minimize thread creation overhead on resource-constrained devices.
 - **Instrumentation:** high-resolution timings for every Flask route plus per-endpoint P50/P95 logs; inspect via `/api/perf/metrics`.
 - **Benchmark helpers:** run `scripts/bench.sh` for Spotify API/caching latency and `scripts/bench_first_load.sh` to capture cold/warm TTFB plus first paint metrics (details in `docs/benchmark.md`).
+
+## 🔐 Security
+
+- **Token Encryption at Rest:** Spotify tokens are encrypted using Fernet (from `cryptography` library) or XOR obfuscation fallback. Machine-derived keys ensure tokens can't be transferred between devices.
+- **File Permissions:** Token files are created with restricted permissions (0o600 - owner read/write only).
+- **Backward Compatible:** Automatically reads legacy plain JSON tokens and re-encrypts on next save.
+- **Environment Variables:** All credentials stored in `.env` files, never committed to version control.
 
 ## 🚀 Deployment Workflow
 
