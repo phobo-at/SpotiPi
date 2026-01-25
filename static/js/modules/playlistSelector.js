@@ -371,6 +371,9 @@ export class PlaylistSelector {
             const trackCount = this.selectedItem.track_count || 0;
             const artist = this.selectedItem.artist || 'Unknown Artist';
             previewMeta.textContent = `${artist} · ${trackCount} Tracks`;
+          } else if (this.selectedItem.type === 'artist') {
+            // For artists, show follower count (stored in artist field)
+            previewMeta.textContent = this.selectedItem.artist || '';
           } else if (this.selectedItem.type === 'track' && this.selectedItem.artist) {
             previewMeta.textContent = this.selectedItem.artist;
           } else {
