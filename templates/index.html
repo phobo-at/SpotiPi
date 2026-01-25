@@ -69,6 +69,29 @@
             <span class="title placeholder-glow skeleton-line"></span>
             <span class="artist placeholder-glow skeleton-line"></span>
           </div>
+          
+          <!-- Playback Controls -->
+          <div class="playback-controls" role="group" aria-label="{{ t('playback_controls') or 'Playback Controls' }}">
+            <button type="button" class="playback-btn playback-btn-secondary" id="btn-previous" aria-label="{{ t('previous_track') or 'Previous Track' }}" title="{{ t('previous_track') or 'Previous' }}">
+              <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+              </svg>
+            </button>
+            <button type="button" class="playback-btn playback-btn-primary" id="btn-play-pause" aria-label="{{ t('play_pause') or 'Play/Pause' }}" title="{{ t('play_pause') or 'Play/Pause' }}">
+              <svg class="icon icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+              <svg class="icon icon-pause hidden" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+              </svg>
+            </button>
+            <button type="button" class="playback-btn playback-btn-secondary" id="btn-next" aria-label="{{ t('next_track') or 'Next Track' }}" title="{{ t('next_track') or 'Next' }}">
+              <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+              </svg>
+            </button>
+          </div>
+          
           <div class="playback-status" id="playback-status-label">{{ t('status_connecting') or 'Verbinde…' }}</div>
         </div>
 

@@ -259,6 +259,33 @@ export function updateLocalVolumeDisplay(value) {
  * @param {boolean} hasPlayback - Whether there is any playback available (false = inactive state)
  */
 export function updatePlayPauseButtonText(isPlaying, hasPlayback = true) {
+  // Update new playback controls button
+  const btnPlayPause = document.getElementById('btn-play-pause');
+  if (btnPlayPause) {
+    const playIconEl = btnPlayPause.querySelector('.icon-play');
+    const pauseIconEl = btnPlayPause.querySelector('.icon-pause');
+    
+    if (playIconEl && pauseIconEl) {
+      if (isPlaying) {
+        playIconEl.classList.add('hidden');
+        pauseIconEl.classList.remove('hidden');
+      } else {
+        playIconEl.classList.remove('hidden');
+        pauseIconEl.classList.add('hidden');
+      }
+    }
+    
+    btnPlayPause.setAttribute('aria-label', isPlaying ? t('pause') || 'Pause' : t('play') || 'Play');
+    btnPlayPause.disabled = !hasPlayback;
+  }
+  
+  // Also update prev/next buttons enabled state
+  const btnPrevious = document.getElementById('btn-previous');
+  const btnNext = document.getElementById('btn-next');
+  if (btnPrevious) btnPrevious.disabled = !hasPlayback;
+  if (btnNext) btnNext.disabled = !hasPlayback;
+  
+  // Legacy button support
   const playPauseBtn = DOM.getElement('playPauseBtn');
   if (playPauseBtn) {
     // Update icon using SVG

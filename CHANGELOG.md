@@ -5,6 +5,28 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2025-01-25
+
+### ✨ New Features
+- **Playback Controls**: Full music player controls under the album artwork
+  - Previous track button (⏮)
+  - Play/Pause button (▶/⏸) - larger and highlighted
+  - Next track button (⏭)
+- **New API Endpoints**: `/api/playback/next` and `/api/playback/previous` for track navigation
+
+### 🎨 UI/UX
+- Controls follow Material Design best practices with 44px+ touch targets
+- Primary Play/Pause button (56px) is visually prominent with Spotify green
+- Secondary buttons (44px) for Previous/Next with subtle styling
+- Smooth scale animations on hover/active states
+- Disabled state when no active playback
+- Ripple effect and haptic feedback on all control buttons
+
+### 🔧 Technical
+- New Spotify service methods: `skip_to_next()` and `skip_to_previous()`
+- Smart button state sync based on playback status
+- Graceful error handling with toast notifications
+
 ## [1.5.0] - 2025-01-25
 
 ### ✨ UI Modernization

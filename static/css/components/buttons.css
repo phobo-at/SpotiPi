@@ -183,7 +183,109 @@
 .toggle-buttons button,
 .control-btn,
 .btn-primary,
-.weekday-bubble {
+.weekday-bubble,
+.playback-btn {
   position: relative;
   overflow: hidden;
+}
+
+/* ===============================================
+   🎵 Playback Controls
+   Music player control buttons
+   =============================================== */
+.playback-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) 0;
+  margin-top: var(--spacing-sm);
+}
+
+.playback-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition-fast) var(--transition-easing);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Secondary buttons (Previous/Next) */
+.playback-btn-secondary {
+  width: 44px;
+  height: 44px;
+}
+
+.playback-btn-secondary .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.playback-btn-secondary:hover {
+  background-color: var(--color-bg-elevated);
+  transform: scale(1.05);
+}
+
+.playback-btn-secondary:active {
+  transform: scale(0.95);
+}
+
+/* Primary button (Play/Pause) - Larger and highlighted */
+.playback-btn-primary {
+  width: 56px;
+  height: 56px;
+  background-color: var(--color-primary);
+  color: var(--color-bg);
+  box-shadow: var(--shadow-md);
+}
+
+.playback-btn-primary .icon {
+  width: 28px;
+  height: 28px;
+}
+
+.playback-btn-primary:hover {
+  background-color: var(--color-primary-hover);
+  transform: scale(1.08);
+  box-shadow: var(--shadow-lg);
+}
+
+.playback-btn-primary:active {
+  transform: scale(0.95);
+}
+
+/* Icon visibility toggle */
+.playback-btn-primary .icon-play,
+.playback-btn-primary .icon-pause {
+  position: absolute;
+  transition: opacity var(--transition-fast) var(--transition-easing);
+}
+
+.playback-btn-primary .icon-play.hidden,
+.playback-btn-primary .icon-pause.hidden {
+  opacity: 0;
+}
+
+/* Disabled state */
+.playback-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .playback-btn {
+    transition: none;
+  }
+  
+  .playback-btn:hover,
+  .playback-btn:active {
+    transform: none;
+  }
 }

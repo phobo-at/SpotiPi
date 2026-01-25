@@ -2,7 +2,7 @@
 // Centralizes all event listeners
 import { DOM, setLastUserInteraction, setUserIsDragging, CONFIG } from './state.js';
 import { updateLocalVolumeDisplay, handleDurationChange, showInterface, updateTime, updatePlaybackInfo, updateVolumeSlider } from './ui.js';
-import { setVolumeImmediateThrottled, flushVolumeThrottle, togglePlayPause, fetchAPI, getPlaybackStatus } from './api.js';
+import { setVolumeImmediateThrottled, flushVolumeThrottle, togglePlayPause, fetchAPI, getPlaybackStatus, skipToNext, skipToPrevious } from './api.js';
 import { saveAlarmSettings } from './settings.js';
 
 console.log("eventListeners.js loaded");
@@ -129,7 +129,16 @@ export function initializeEventListeners() {
     if (elements.libraryTab) elements.libraryTab.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); showInterface('library'); });
     if (elements.settingsTab) elements.settingsTab.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); showInterface('settings'); });
     
-    // Play/Pause with haptic feedback
+    // Playback controls with haptic feedback
+    const btnPlayPause = document.getElementById('btn-play-pause');
+    const btnPrevious = document.getElementById('btn-previous');
+    const btnNext = document.getElementById('btn-next');
+    
+    if (btnPlayPause) btnPlayPause.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); togglePlayPause(); });
+    if (btnPrevious) btnPrevious.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); skipToPrevious(); });
+    if (btnNext) btnNext.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); skipToNext(); });
+    
+    // Legacy play/pause button (if exists)
     if (elements.playPauseBtn) elements.playPauseBtn.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); togglePlayPause(); });
 
     // Helper function to sync both volume sliders

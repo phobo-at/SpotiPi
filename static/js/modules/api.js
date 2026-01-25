@@ -237,26 +237,47 @@ export function flushVolumeThrottle(valueOverride = null) {
  */
 export async function togglePlayPause() {
     try {
-      // Get current play/pause button to provide immediate feedback
-      const playPauseBtn = document.getElementById('playPauseBtn');
+      // Get current play/pause button - check new controls first, then legacy
+      const playPauseBtn = document.getElementById('btn-play-pause') || document.getElementById('playPauseBtn');
       if (!playPauseBtn) {
         console.warn('Play/Pause button not found');
+        // Still try to toggle playback even without button
+        await fetchAPI("/toggle_play_pause", { method: "POST" });
         return;
       }
       
-      // Detect state by checking for playing class or pause icon
-      const wasPlaying = playPauseBtn.classList.contains('playing') || 
+      // For new control buttons, check icon visibility
+      const playIcon = playPauseBtn.querySelector('.icon-play');
+      const pauseIcon = playPauseBtn.querySelector('.icon-pause');
+      
+      // Detect state - new controls use hidden class, legacy uses playing class
+      const wasPlaying = pauseIcon && !pauseIcon.classList.contains('hidden') ||
+                         playPauseBtn.classList.contains('playing') || 
                          playPauseBtn.innerHTML?.includes('pause');
       
-      // Immediate UI feedback - toggle the button state with SVG icons
-      if (wasPlaying) {
-        playPauseBtn.innerHTML = playIcon();
-        playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
-        playPauseBtn.classList.remove('playing');
+      // Immediate UI feedback
+      if (playIcon && pauseIcon) {
+        // New playback controls with separate icons
+        if (wasPlaying) {
+          playIcon.classList.remove('hidden');
+          pauseIcon.classList.add('hidden');
+          playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
+        } else {
+          playIcon.classList.add('hidden');
+          pauseIcon.classList.remove('hidden');
+          playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
+        }
       } else {
-        playPauseBtn.innerHTML = pauseIcon();  
-        playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
-        playPauseBtn.classList.add('playing');
+        // Legacy button with innerHTML swap
+        if (wasPlaying) {
+          playPauseBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
+          playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
+          playPauseBtn.classList.remove('playing');
+        } else {
+          playPauseBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
+          playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
+          playPauseBtn.classList.add('playing');
+        }
       }
       
       // Fire and forget API call - don't wait for response
@@ -265,19 +286,68 @@ export async function togglePlayPause() {
         showErrorToast(t('playback_error') || 'Wiedergabe-Fehler');
         
         // Revert UI change on error
-        if (wasPlaying) {
-          playPauseBtn.innerHTML = pauseIcon();
-          playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
-          playPauseBtn.classList.add('playing');
+        const playIconEl = playPauseBtn.querySelector('.icon-play');
+        const pauseIconEl = playPauseBtn.querySelector('.icon-pause');
+        
+        if (playIconEl && pauseIconEl) {
+          // New controls - revert icon visibility
+          if (wasPlaying) {
+            playIconEl.classList.add('hidden');
+            pauseIconEl.classList.remove('hidden');
+            playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
+          } else {
+            playIconEl.classList.remove('hidden');
+            pauseIconEl.classList.add('hidden');
+            playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
+          }
         } else {
-          playPauseBtn.innerHTML = playIcon();
-          playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
-          playPauseBtn.classList.remove('playing');
+          // Legacy button
+          if (wasPlaying) {
+            playPauseBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
+            playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
+            playPauseBtn.classList.add('playing');
+          } else {
+            playPauseBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
+            playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
+            playPauseBtn.classList.remove('playing');
+          }
         }
       });
       
     } catch (error) {
       console.error('Failed to toggle play/pause:', error);
+    }
+}
+
+/**
+ * Skip to next track
+ */
+export async function skipToNext() {
+    try {
+      const response = await fetchAPI("/api/playback/next", { method: "POST" });
+      if (!response.ok) {
+        console.error('Failed to skip to next track');
+        showErrorToast(t('skip_error') || 'Konnte nicht zum nächsten Track springen');
+      }
+    } catch (error) {
+      console.error('Failed to skip to next:', error);
+      showErrorToast(t('skip_error') || 'Konnte nicht zum nächsten Track springen');
+    }
+}
+
+/**
+ * Skip to previous track
+ */
+export async function skipToPrevious() {
+    try {
+      const response = await fetchAPI("/api/playback/previous", { method: "POST" });
+      if (!response.ok) {
+        console.error('Failed to skip to previous track');
+        showErrorToast(t('skip_error') || 'Konnte nicht zum vorherigen Track springen');
+      }
+    } catch (error) {
+      console.error('Failed to skip to previous:', error);
+      showErrorToast(t('skip_error') || 'Konnte nicht zum vorherigen Track springen');
     }
 }
 

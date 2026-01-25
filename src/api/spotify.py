@@ -1755,6 +1755,89 @@ def toggle_playback_fast(token: str) -> Dict[str, Union[bool, str]]:
     """
     return toggle_playback(token)
 
+
+def skip_to_next(token: str) -> Dict[str, Union[bool, str]]:
+    """Skip to next track in Spotify playback.
+    
+    Args:
+        token: Spotify access token
+        
+    Returns:
+        Dict[str, Union[bool, str]]: Result dictionary with success status
+    """
+    logger = logging.getLogger('spotify')
+    try:
+        response = _spotify_request(
+            'POST',
+            "https://api.spotify.com/v1/me/player/next",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10
+        )
+        
+        # 204 No Content = success
+        if response.status_code in (200, 204):
+            logger.info("spotify.playback.skip_next.success")
+            return {"success": True, "action": "next"}
+        
+        if response.status_code == 401:
+            invalidate_token_cache()
+            return {"success": False, "error": "auth_required"}
+        
+        if response.status_code == 404:
+            return {"success": False, "error": "no_active_device"}
+        
+        logger.warning("spotify.playback.skip_next.failed", extra={"status": response.status_code})
+        return {"success": False, "error": f"skip_failed_{response.status_code}"}
+        
+    except requests.exceptions.RequestException as exc:
+        logger.warning("spotify.playback.skip_next.request_error", extra={"error": str(exc)})
+        return {"success": False, "error": str(exc)}
+    except Exception as exc:
+        logger.exception("spotify.playback.skip_next.unexpected", extra={"error": str(exc)})
+        return {"success": False, "error": str(exc)}
+
+
+def skip_to_previous(token: str) -> Dict[str, Union[bool, str]]:
+    """Skip to previous track in Spotify playback.
+    
+    Args:
+        token: Spotify access token
+        
+    Returns:
+        Dict[str, Union[bool, str]]: Result dictionary with success status
+    """
+    logger = logging.getLogger('spotify')
+    try:
+        response = _spotify_request(
+            'POST',
+            "https://api.spotify.com/v1/me/player/previous",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10
+        )
+        
+        # 204 No Content = success
+        if response.status_code in (200, 204):
+            logger.info("spotify.playback.skip_previous.success")
+            return {"success": True, "action": "previous"}
+        
+        if response.status_code == 401:
+            invalidate_token_cache()
+            return {"success": False, "error": "auth_required"}
+        
+        if response.status_code == 404:
+            return {"success": False, "error": "no_active_device"}
+        
+        logger.warning("spotify.playback.skip_previous.failed", extra={"status": response.status_code})
+        return {"success": False, "error": f"skip_failed_{response.status_code}"}
+        
+    except requests.exceptions.RequestException as exc:
+        logger.warning("spotify.playback.skip_previous.request_error", extra={"error": str(exc)})
+        return {"success": False, "error": str(exc)}
+    except Exception as exc:
+        logger.exception("spotify.playback.skip_previous.unexpected", extra={"error": str(exc)})
+        return {"success": False, "error": str(exc)}
+
+
 #  Exportable functions - Updated for new config system
 __all__ = [
     "refresh_access_token", 

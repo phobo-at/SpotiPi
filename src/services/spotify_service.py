@@ -13,7 +13,7 @@ from ..api.spotify import (get_access_token, get_combined_playback,
                            get_devices, get_playlists, get_user_library,
                            resume_playback, set_volume, start_playback,
                            stop_playback, toggle_playback,
-                           toggle_playback_fast)
+                           toggle_playback_fast, skip_to_next, skip_to_previous)
 from ..utils.token_cache import get_token_cache_info
 from ..utils.validation import ValidationError, validate_volume_only
 from . import BaseService, ServiceResult
@@ -278,6 +278,68 @@ class SpotifyService(BaseService):
             )
         except Exception as e:
             return self._handle_error(e, "toggle_playback_fast")
+
+    def skip_to_next(self) -> ServiceResult:
+        """Skip to next track."""
+        try:
+            auth_result = self.get_authentication_status()
+            if not auth_result.success:
+                return auth_result
+
+            token = get_access_token()
+            if not token:
+                return self._error_result(
+                    "Spotify authentication required.",
+                    error_code="auth_required"
+                )
+
+            result = skip_to_next(token)
+            if result.get("success"):
+                return self._success_result(
+                    data=result,
+                    message="Skipped to next track"
+                )
+            
+            error = result.get("error", "skip_failed")
+            if error == "auth_required":
+                return self._error_result("Authentication required", error_code="auth_required")
+            if error == "no_active_device":
+                return self._error_result("No active playback device", error_code="no_active_device")
+            
+            return self._error_result(f"Skip failed: {error}", error_code="skip_failed")
+        except Exception as e:
+            return self._handle_error(e, "skip_to_next")
+
+    def skip_to_previous(self) -> ServiceResult:
+        """Skip to previous track."""
+        try:
+            auth_result = self.get_authentication_status()
+            if not auth_result.success:
+                return auth_result
+
+            token = get_access_token()
+            if not token:
+                return self._error_result(
+                    "Spotify authentication required.",
+                    error_code="auth_required"
+                )
+
+            result = skip_to_previous(token)
+            if result.get("success"):
+                return self._success_result(
+                    data=result,
+                    message="Skipped to previous track"
+                )
+            
+            error = result.get("error", "skip_failed")
+            if error == "auth_required":
+                return self._error_result("Authentication required", error_code="auth_required")
+            if error == "no_active_device":
+                return self._error_result("No active playback device", error_code="no_active_device")
+            
+            return self._error_result(f"Skip failed: {error}", error_code="skip_failed")
+        except Exception as e:
+            return self._handle_error(e, "skip_to_previous")
 
     def set_playback_volume(self, volume: int, device_id: Optional[str] = None) -> ServiceResult:
         """Set Spotify playback volume."""

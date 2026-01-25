@@ -129,6 +129,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         
         # Actions
         'play_pause': 'Wiedergabe starten oder pausieren',
+        'previous_track': 'Vorheriger Titel',
+        'next_track': 'Nächster Titel',
+        'playback_controls': 'Wiedergabe-Steuerung',
+        'skip_error': 'Konnte nicht zum nächsten Track springen',
         'sleep_start': 'Sleep starten',
         'sleep_stop': 'Sleep stoppen',
         'currently_playing': 'Aktuell läuft',
@@ -376,6 +380,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         
         # Actions
         'play_pause': 'Start or pause playback',
+        'previous_track': 'Previous track',
+        'next_track': 'Next track',
+        'playback_controls': 'Playback controls',
+        'skip_error': 'Could not skip to track',
         'sleep_start': 'Start sleep',
         'sleep_stop': 'Stop sleep',
         'currently_playing': 'Currently playing',
