@@ -82,12 +82,15 @@ export function applyPlaybackStatus(data, { updateVolume = true } = {}) {
       if (window.location.href.includes('debug=true')) {
         console.log('No active playback or API error:', playbackData.error);
       }
+      // Set button to inactive when there's an error
+      updatePlayPauseButtonText(false, false);
       hideCurrentTrack('spotify_error');
       return;
     }
 
     if (playbackData?.is_playing !== undefined) {
-      updatePlayPauseButtonText(playbackData.is_playing);
+      // We have playback data, so enable the button
+      updatePlayPauseButtonText(playbackData.is_playing, true);
     }
 
     if (playbackData?.device) {
@@ -103,6 +106,8 @@ export function applyPlaybackStatus(data, { updateVolume = true } = {}) {
     if (playbackData?.current_track) {
       updateCurrentTrack(playbackData.current_track);
     } else {
+      // No current track = set button to inactive
+      updatePlayPauseButtonText(false, false);
       hideCurrentTrack('no_active_playback');
     }
 }
@@ -116,8 +121,8 @@ export async function updatePlaybackInfo(updateVolume = true) {
       applyPlaybackStatus(data, { updateVolume });
     } catch {
       // Errors already handled in fetchAPI
-      // Set play/pause button to "Play" and hide current track
-      updatePlayPauseButtonText(false);
+      // Set play/pause button to inactive and hide current track
+      updatePlayPauseButtonText(false, false);
       hideCurrentTrack('network_error');
     }
 }
@@ -180,18 +185,31 @@ export function updateLocalVolumeDisplay(value) {
 }
 
 /**
- * Updates the play/pause icon
+ * Updates the play/pause button state
  * @param {boolean} isPlaying - Whether playback is active
+ * @param {boolean} hasPlayback - Whether there is any playback available (false = inactive state)
  */
-export function updatePlayPauseButtonText(isPlaying) {
+export function updatePlayPauseButtonText(isPlaying, hasPlayback = true) {
   const playPauseBtn = DOM.getElement('playPauseBtn');
   if (playPauseBtn) {
+    // Update icon
     playPauseBtn.innerHTML = isPlaying ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
     playPauseBtn.setAttribute('aria-label', isPlaying ? t('play_pause') : t('play_pause'));
+    
+    // Update playing state
     if (isPlaying) {
       playPauseBtn.classList.add("playing");
     } else {
       playPauseBtn.classList.remove("playing");
+    }
+    
+    // Update disabled/inactive state
+    if (hasPlayback) {
+      playPauseBtn.disabled = false;
+      playPauseBtn.classList.remove("is-inactive");
+    } else {
+      playPauseBtn.disabled = true;
+      playPauseBtn.classList.add("is-inactive");
     }
   }
 }

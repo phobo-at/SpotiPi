@@ -130,7 +130,7 @@
               aria-selected="true"
             >
               <i class="fas fa-bell"></i>
-              <span>{{ t('alarm_tab_text') or 'Alarm' }}</span>
+              <span>{{ t('alarm_label') or 'Alarm' }}</span>
             </button>
             <button 
               type="button" 
@@ -140,7 +140,7 @@
               aria-selected="false"
             >
               <i class="fas fa-moon"></i>
-              <span>{{ t('sleep_tab_text') or 'Sleep' }}</span>
+              <span>{{ t('sleep_label') or 'Sleep' }}</span>
             </button>
             <button 
               type="button" 
@@ -150,13 +150,14 @@
               aria-selected="false"
             >
               <i class="fas fa-music"></i>
-              <span>{{ t('library_tab_text') or 'Library' }}</span>
+              <span>{{ t('library_label') or 'Library' }}</span>
             </button>
             <button 
               id="playPauseBtn" 
               type="button" 
-              class="control-btn" 
+              class="control-btn is-inactive" 
               aria-label="{{ t('play_pause') }}"
+              disabled
             >
               <i class="fas fa-pause"></i>
             </button>
