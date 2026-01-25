@@ -1,7 +1,7 @@
 // /static/js/modules/api.js
 // Handles all communication with the backend API
 import { t } from './translation.js';
-import { getActiveDevice } from './state.js';
+import { getActiveDevice, setLastUserInteraction } from './state.js';
 import { showToast, showErrorToast, showConnectionStatus } from './ui.js';
 import { playIcon, pauseIcon } from './icons.js';
 
@@ -236,6 +236,9 @@ export function flushVolumeThrottle(valueOverride = null) {
  * Toggles playback state (Play <-> Pause) with immediate UI feedback
  */
 export async function togglePlayPause() {
+    // Set cooldown to prevent polling from overwriting optimistic UI update
+    setLastUserInteraction(Date.now());
+    
     try {
       // Get current play/pause button - check new controls first, then legacy
       const playPauseBtn = document.getElementById('btn-play-pause') || document.getElementById('playPauseBtn');
@@ -323,6 +326,9 @@ export async function togglePlayPause() {
  * Skip to next track
  */
 export async function skipToNext() {
+    // Set cooldown to prevent polling from overwriting optimistic UI update
+    setLastUserInteraction(Date.now());
+    
     try {
       const response = await fetchAPI("/api/playback/next", { method: "POST" });
       if (!response.ok) {
@@ -339,6 +345,9 @@ export async function skipToNext() {
  * Skip to previous track
  */
 export async function skipToPrevious() {
+    // Set cooldown to prevent polling from overwriting optimistic UI update
+    setLastUserInteraction(Date.now());
+    
     try {
       const response = await fetchAPI("/api/playback/previous", { method: "POST" });
       if (!response.ok) {

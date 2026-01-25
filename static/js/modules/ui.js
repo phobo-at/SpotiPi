@@ -259,6 +259,11 @@ export function updateLocalVolumeDisplay(value) {
  * @param {boolean} hasPlayback - Whether there is any playback available (false = inactive state)
  */
 export function updatePlayPauseButtonText(isPlaying, hasPlayback = true) {
+  // Skip updates during user interaction cooldown (prevents overwriting optimistic updates)
+  if (Date.now() - lastUserInteraction < CONFIG.SYNC_COOLDOWN) {
+    return;
+  }
+  
   // Update new playback controls button
   const btnPlayPause = document.getElementById('btn-play-pause');
   if (btnPlayPause) {
