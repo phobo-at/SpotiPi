@@ -339,40 +339,42 @@ export function updateCurrentTrack(trackData) {
   trackContainer.querySelectorAll('.placeholder-glow').forEach(el => {
     el.classList.remove('placeholder-glow');
   });
+  
+  // Update album cover
+  const albumCover = trackContainer.querySelector('.album-cover');
+  if (albumCover) {
+    if (trackData.album_image) {
+      albumCover.innerHTML = `<img src="${trackData.album_image}" alt="Album Cover" class="album-image">`;
+    } else {
+      albumCover.innerHTML = `<div class="album-fallback">${icon('music', { size: '2x' })}</div>`;
+    }
+    albumCover.classList.remove('skeleton-tile');
+  }
+  
+  // Update track info
   const titleEl = trackContainer.querySelector('.title');
   const artistEl = trackContainer.querySelector('.artist');
-  if (titleEl) titleEl.classList.remove('placeholder-glow');
-  if (artistEl) artistEl.classList.remove('placeholder-glow');
-
-  // HTML structure
-  let html = '';
-  
-  if (trackData.album_image) {
-    html += `
-      <div class="album-cover">
-        <img src="${trackData.album_image}" alt="Album Cover" class="album-image">
-      </div>
-    `;
-  } else {
-    html += `
-      <div class="album-cover">
-        <div class="album-fallback">${icon('music', { size: '2x' })}</div>
-      </div>
-    `;
+  if (titleEl) {
+    titleEl.textContent = trackData.name;
+    titleEl.classList.remove('placeholder-glow', 'skeleton-line');
   }
-
-  html += `
-    <div class="track-info">
-      <span class="title">${trackData.name}</span>
-      <span class="artist">${trackData.artist}</span>
-    </div>
-  `;
-
-  html += `
-    <div class="playback-status">${trackData.is_playing ? (t('currently_playing') || '') : (t('no_active_playback') || '')}</div>
-  `;
-
-  trackContainer.innerHTML = html;
+  if (artistEl) {
+    artistEl.textContent = trackData.artist;
+    artistEl.classList.remove('placeholder-glow', 'skeleton-line');
+  }
+  
+  // Update playback status
+  const statusEl = trackContainer.querySelector('.playback-status');
+  if (statusEl) {
+    statusEl.textContent = trackData.is_playing ? (t('currently_playing') || 'Currently playing') : (t('paused') || 'Paused');
+  }
+  
+  // Update playing state class
+  if (trackData.is_playing) {
+    trackContainer.classList.add('is-playing');
+  } else {
+    trackContainer.classList.remove('is-playing');
+  }
 }
 
 /**
