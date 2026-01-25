@@ -1,11 +1,38 @@
 // /static/js/modules/eventListeners.js
 // Centralizes all event listeners
-import { DOM, setLastUserInteraction, setUserIsDragging } from './state.js';
-import { updateLocalVolumeDisplay, handleDurationChange, showInterface, updateTime, updatePlaybackInfo } from './ui.js';
-import { setVolumeImmediateThrottled, flushVolumeThrottle, togglePlayPause, fetchAPI } from './api.js';
+import { DOM, setLastUserInteraction, setUserIsDragging, CONFIG } from './state.js';
+import { updateLocalVolumeDisplay, handleDurationChange, showInterface, updateTime, updatePlaybackInfo, updateVolumeSlider } from './ui.js';
+import { setVolumeImmediateThrottled, flushVolumeThrottle, togglePlayPause, fetchAPI, getPlaybackStatus } from './api.js';
 import { saveAlarmSettings } from './settings.js';
 
 console.log("eventListeners.js loaded");
+
+// Delayed volume sync timer
+let volumeSyncTimer = null;
+
+/**
+ * Schedule a volume sync from Spotify after user interaction ends
+ * This ensures the slider reflects the actual Spotify volume
+ */
+function scheduleVolumeSync() {
+    if (volumeSyncTimer) {
+        clearTimeout(volumeSyncTimer);
+    }
+    
+    // Wait for cooldown + small buffer, then sync
+    volumeSyncTimer = setTimeout(async () => {
+        volumeSyncTimer = null;
+        try {
+            const data = await getPlaybackStatus();
+            const payload = data?.playback || data;
+            if (payload?.device?.volume_percent !== undefined) {
+                updateVolumeSlider(payload.device.volume_percent);
+            }
+        } catch {
+            // Errors already logged
+        }
+    }, CONFIG.SYNC_COOLDOWN + 500);
+}
 
 // Debouncing for alarm settings to prevent rapid-fire saves
 let alarmSaveTimeout = null;
@@ -76,12 +103,23 @@ export function initializeEventListeners() {
         const mobileDisplay = document.getElementById('volume-display');
         const desktopDisplay = document.getElementById('volume-display-desktop');
         
-        // Update both sliders (except the source)
+        // Update both sliders (except the source) with ARIA attributes
         if (mobileSlider && mobileSlider.id !== sourceId) {
             mobileSlider.value = value;
+            mobileSlider.setAttribute('aria-valuenow', value);
+            mobileSlider.setAttribute('aria-valuetext', `${value}%`);
         }
         if (desktopSlider && desktopSlider.id !== sourceId) {
             desktopSlider.value = value;
+            desktopSlider.setAttribute('aria-valuenow', value);
+            desktopSlider.setAttribute('aria-valuetext', `${value}%`);
+        }
+        
+        // Update the source slider's ARIA attributes too
+        const sourceSlider = document.getElementById(sourceId);
+        if (sourceSlider) {
+            sourceSlider.setAttribute('aria-valuenow', value);
+            sourceSlider.setAttribute('aria-valuetext', `${value}%`);
         }
         
         // Update both displays
@@ -93,7 +131,11 @@ export function initializeEventListeners() {
     function setupVolumeSlider(slider) {
         if (!slider) return;
         
+        // Track the last known value for touchend (which doesn't have target.value reliably)
+        let lastSliderValue = slider.value;
+        
         slider.addEventListener('input', (e) => {
+            lastSliderValue = e.target.value;
             syncVolumeSliders(e.target.value, e.target.id);
             setLastUserInteraction(Date.now());
             setVolumeImmediateThrottled(e.target.value);
@@ -106,17 +148,28 @@ export function initializeEventListeners() {
         slider.addEventListener('touchstart', () => {
             setUserIsDragging(true);
             setLastUserInteraction(Date.now());
-        });
+        }, { passive: true });
         
         slider.addEventListener('mouseup', (e) => {
             setUserIsDragging(false);
             setLastUserInteraction(Date.now());
             flushVolumeThrottle(e.target.value);
+            scheduleVolumeSync(); // Sync with Spotify after cooldown
         });
-        slider.addEventListener('touchend', (e) => {
+        slider.addEventListener('touchend', () => {
             setUserIsDragging(false);
             setLastUserInteraction(Date.now());
-            flushVolumeThrottle(e.target.value);
+            // Use tracked value since touchend event may not have reliable target.value
+            flushVolumeThrottle(lastSliderValue);
+            scheduleVolumeSync(); // Sync with Spotify after cooldown
+        }, { passive: true });
+        
+        // Handle cases where user releases mouse outside the slider
+        slider.addEventListener('mouseleave', (e) => {
+            if (e.buttons === 0 && slider.matches(':active') === false) {
+                // Mouse left while not pressing - might have released outside
+                setUserIsDragging(false);
+            }
         });
     }
 

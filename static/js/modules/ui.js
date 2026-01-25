@@ -138,7 +138,8 @@ export function initializeUI() {
 }
 
 /**
- * Updates the global volume slider and hidden input fields
+ * Updates the global volume slider and display from Spotify
+ * Handles both mobile and desktop volume controls
  * @param {number} percent - Volume value (0-100)
  */
 export function updateVolumeSlider(percent) {
@@ -149,14 +150,26 @@ export function updateVolumeSlider(percent) {
   
   const elements = DOM.getElements({
     globalSlider: '#global-volume',
-    globalLabel: '#volume-display'
+    globalSliderDesktop: '#global-volume-desktop',
+    globalLabel: '#volume-display',
+    globalLabelDesktop: '#volume-display-desktop'
   });
 
-  // Update global slider and label only
-  if (elements.globalSlider && elements.globalLabel) {
+  // Update both sliders (mobile + desktop)
+  if (elements.globalSlider) {
     elements.globalSlider.value = percent;
-    elements.globalLabel.innerText = percent;
+    elements.globalSlider.setAttribute('aria-valuenow', percent);
+    elements.globalSlider.setAttribute('aria-valuetext', `${percent}%`);
   }
+  if (elements.globalSliderDesktop) {
+    elements.globalSliderDesktop.value = percent;
+    elements.globalSliderDesktop.setAttribute('aria-valuenow', percent);
+    elements.globalSliderDesktop.setAttribute('aria-valuetext', `${percent}%`);
+  }
+  
+  // Update both labels (mobile + desktop) with % suffix
+  if (elements.globalLabel) elements.globalLabel.textContent = `${percent}%`;
+  if (elements.globalLabelDesktop) elements.globalLabelDesktop.textContent = `${percent}%`;
 
   // Note: Alarm volume (#alarm_volume_slider) and sleep volume are independent
   // and should not be updated by global volume changes
