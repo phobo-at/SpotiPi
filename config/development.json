@@ -1,8 +1,8 @@
 {
-  "enabled": true,
+  "enabled": false,
   "time": "07:00",
   "playlist_uri": "",
-  "device_name": "Argon Radio 2i 16abad",
+  "device_name": "Radio",
   "alarm_volume": 50,
   "fade_in": false,
   "shuffle": false,

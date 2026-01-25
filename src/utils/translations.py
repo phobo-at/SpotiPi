@@ -12,6 +12,9 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'alarm_tab': '<i class="fas fa-alarm-clock"></i><span>Wecker</span>',
         'sleep_tab': '<i class="fas fa-moon"></i><span>Sleep</span>',
         'library_tab': '<i class="fas fa-music"></i><span>Bibliothek</span>',
+        'alarm_label': 'Wecker',
+        'sleep_label': 'Sleep',
+        'library_label': 'Bibliothek',
         'library_play_help': 'Musik direkt abspielen',
         'volume_label': '<i class="fas fa-volume-high"></i> Lautstärke',
         
@@ -203,6 +206,9 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'alarm_tab': '<i class="fas fa-alarm-clock"></i><span>Alarm</span>',
         'sleep_tab': '<i class="fas fa-moon"></i><span>Sleep</span>',
         'library_tab': '<i class="fas fa-music"></i><span>Library</span>',
+        'alarm_label': 'Alarm',
+        'sleep_label': 'Sleep',
+        'library_label': 'Library',
         'library_play_help': 'Play music directly',
         'volume_label': '<i class="fas fa-volume-high"></i> Volume',
         

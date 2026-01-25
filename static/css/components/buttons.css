@@ -86,12 +86,29 @@
   background-color: var(--color-primary);
   border-color: var(--color-primary);
   color: var(--color-inverse-text);
+  transition: all var(--transition-fast) var(--transition-easing);
 }
 
-.toggle-buttons .control-btn:hover {
+.toggle-buttons .control-btn:hover:not(:disabled) {
   background-color: var(--color-primary-hover);
   border-color: var(--color-primary-hover);
   transform: scale(1.05);
+}
+
+/* Inactive/disabled state for play/pause button */
+.toggle-buttons .control-btn.is-inactive,
+.toggle-buttons .control-btn:disabled {
+  background-color: var(--color-bg-highlight);
+  border-color: var(--color-border);
+  color: var(--color-disabled);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.toggle-buttons .control-btn.is-inactive:hover,
+.toggle-buttons .control-btn:disabled:hover {
+  transform: none;
+  background-color: var(--color-bg-highlight);
 }
 
 /* ===============================================
