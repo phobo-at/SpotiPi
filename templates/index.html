@@ -5,14 +5,20 @@
   <title>SpotiPi</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
-  <!-- Preload critical CSS and fonts -->
+  <!-- Preload critical CSS -->
   <link rel="preload" href="{{ url_for('static', filename='css/main.css') }}" as="style">
-  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style" crossorigin="anonymous">
 
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <!-- Font Awesome Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" crossorigin="anonymous">
+  
+  <!-- Google Fonts - loaded async to avoid render blocking -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+  
+  <!-- Font Awesome - loaded async as fallback for legacy icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous"></noscript>
 
   <!-- PWA Icons & Manifest -->
   <link rel="icon" href="{{ url_for('static', filename='icons/icon-pwa-dark-180.png') }}">
@@ -129,7 +135,7 @@
               aria-controls="alarm-interface"
               aria-selected="true"
             >
-              <i class="fas fa-bell"></i>
+              <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
               <span>{{ t('alarm_label') or 'Alarm' }}</span>
             </button>
             <button 
@@ -139,7 +145,7 @@
               aria-controls="sleep-interface"
               aria-selected="false"
             >
-              <i class="fas fa-moon"></i>
+              <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.43 2.3c-2.38-.59-4.68-.27-6.63.64-.35.16-.41.64-.1.86C8.3 5.6 10 8.6 10 12c0 3.4-1.7 6.4-4.3 8.2-.32.22-.26.7.09.86 1.28.6 2.71.94 4.21.94 6.05 0 10.85-5.38 9.87-11.6-.61-3.92-3.59-7.16-7.44-8.1z"/></svg>
               <span>{{ t('sleep_label') or 'Sleep' }}</span>
             </button>
             <button 
@@ -149,17 +155,17 @@
               aria-controls="library-interface"
               aria-selected="false"
             >
-              <i class="fas fa-music"></i>
+              <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
               <span>{{ t('library_label') or 'Library' }}</span>
             </button>
             <button 
               id="playPauseBtn" 
               type="button" 
               class="control-btn is-inactive" 
-              aria-label="{{ t('play_pause') }}"
+              aria-label="{{ t('play') or 'Play' }}"
               disabled
             >
-              <i class="fas fa-pause"></i>
+              <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
             </button>
           </nav>
 
