@@ -2,8 +2,12 @@
 // Handles all communication with the backend API
 import { t } from './translation.js';
 import { getActiveDevice } from './state.js';
-import { showToast } from './ui.js';
+import { showToast, showErrorToast, showConnectionStatus } from './ui.js';
+import { playIcon, pauseIcon } from './icons.js';
 
+// Track connection state to avoid spam
+let lastConnectionState = true;
+let connectionToastShown = false;
 
 /**
  * General function for API calls
@@ -18,6 +22,14 @@ export async function fetchAPI(url, options = {}) {
       return { error: "Backoff", success: false, offline: true };
     }
     const response = await fetch(url, options);
+    
+    // Connection restored
+    if (!lastConnectionState && !connectionToastShown) {
+      showToast(t('connection_restored') || 'Verbindung wiederhergestellt', { type: 'success' });
+      connectionToastShown = true;
+      setTimeout(() => { connectionToastShown = false; }, 5000);
+    }
+    lastConnectionState = true;
 
     // If it's a POST request, return the response directly
     if (options.method === 'POST') {
@@ -34,6 +46,10 @@ export async function fetchAPI(url, options = {}) {
       if (response.status === 503) {
         window.__API_BACKOFF_MS = Math.min((window.__API_BACKOFF_MS || 2000) * 2, 30000);
         window.__API_BACKOFF_UNTIL = Date.now() + window.__API_BACKOFF_MS;
+        // Show user feedback for service unavailable
+        if (!options.silent) {
+          showErrorToast(t('service_unavailable') || 'Dienst vorübergehend nicht verfügbar');
+        }
       }
       // Return structured error response
       return { 
@@ -57,7 +73,14 @@ export async function fetchAPI(url, options = {}) {
       };
     }
   } catch (networkError) {
-    // For network errors
+    // For network errors - show user feedback
+    if (lastConnectionState && !connectionToastShown) {
+      showConnectionStatus(false);
+      connectionToastShown = true;
+      setTimeout(() => { connectionToastShown = false; }, 5000);
+    }
+    lastConnectionState = false;
+    
     if (window.location.href.includes('debug=true')) {
       console.warn(`Network error (${url}):`, networkError);
     }
@@ -221,28 +244,35 @@ export async function togglePlayPause() {
         return;
       }
       
-      const wasPlaying = playPauseBtn.innerHTML?.includes('fa-pause');
+      // Detect state by checking for playing class or pause icon
+      const wasPlaying = playPauseBtn.classList.contains('playing') || 
+                         playPauseBtn.innerHTML?.includes('pause');
       
-      // Immediate UI feedback - toggle the button state
+      // Immediate UI feedback - toggle the button state with SVG icons
       if (wasPlaying) {
-        playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
-        playPauseBtn.setAttribute('aria-label', 'Play');
+        playPauseBtn.innerHTML = playIcon();
+        playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
+        playPauseBtn.classList.remove('playing');
       } else {
-        playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';  
-        playPauseBtn.setAttribute('aria-label', 'Pause');
+        playPauseBtn.innerHTML = pauseIcon();  
+        playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
+        playPauseBtn.classList.add('playing');
       }
       
       // Fire and forget API call - don't wait for response
       fetchAPI("/toggle_play_pause", { method: "POST" }).catch(error => {
         console.error('Failed to toggle play/pause:', error);
+        showErrorToast(t('playback_error') || 'Wiedergabe-Fehler');
         
         // Revert UI change on error
         if (wasPlaying) {
-          playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
-          playPauseBtn.setAttribute('aria-label', 'Pause');
+          playPauseBtn.innerHTML = pauseIcon();
+          playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
+          playPauseBtn.classList.add('playing');
         } else {
-          playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
-          playPauseBtn.setAttribute('aria-label', 'Play');
+          playPauseBtn.innerHTML = playIcon();
+          playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
+          playPauseBtn.classList.remove('playing');
         }
       });
       

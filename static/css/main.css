@@ -8,8 +8,10 @@
 @import url('foundation/variables.css');
 @import url('foundation/base.css');
 @import url('foundation/utilities.css');
+@import url('foundation/accessibility.css');
 
 /* 2. Components (Reusable UI Elements) */
+@import url('components/icons.css');
 @import url('components/forms.css');
 @import url('components/buttons.css');
 @import url('components/toggles.css');

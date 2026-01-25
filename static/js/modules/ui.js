@@ -4,6 +4,7 @@ import { DOM, CONFIG, userIsDragging, lastUserInteraction, setActiveDevice } fro
 import { t } from './translation.js';
 import { getPlaybackStatus, getSleepStatus, fetchAPI, unwrapResponse } from './api.js';
 import { setUserIsDragging } from './state.js';
+import { playIcon, pauseIcon, icon } from './icons.js';
 
 let cachedSleepStatus = null;
 let cachedSleepTimestamp = 0;
@@ -192,9 +193,9 @@ export function updateLocalVolumeDisplay(value) {
 export function updatePlayPauseButtonText(isPlaying, hasPlayback = true) {
   const playPauseBtn = DOM.getElement('playPauseBtn');
   if (playPauseBtn) {
-    // Update icon
-    playPauseBtn.innerHTML = isPlaying ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
-    playPauseBtn.setAttribute('aria-label', isPlaying ? t('play_pause') : t('play_pause'));
+    // Update icon using SVG
+    playPauseBtn.innerHTML = isPlaying ? pauseIcon() : playIcon();
+    playPauseBtn.setAttribute('aria-label', isPlaying ? t('pause') || 'Pause' : t('play') || 'Play');
     
     // Update playing state
     if (isPlaying) {
@@ -260,7 +261,7 @@ export function updateCurrentTrack(trackData) {
   } else {
     html += `
       <div class="album-cover">
-        <div class="album-fallback"><i class="fas fa-music"></i></div>
+        <div class="album-fallback">${icon('music', { size: '2x' })}</div>
       </div>
     `;
   }
@@ -416,14 +417,28 @@ export function updateTime() {
 }
 
 /**
- * Shows a toast notification
- * @param {string} message 
+ * Shows a toast notification with optional type
+ * @param {string} message - The message to display
+ * @param {Object} options - Toast options
+ * @param {string} options.type - Toast type: 'success' | 'error' | 'warning' | 'info'
+ * @param {number} options.duration - Duration in ms (default: 3000)
  */
-export function showToast(message) {
+export function showToast(message, options = {}) {
+    const { type = 'success', duration = 3000 } = options;
+    
+    // Remove any existing toasts
+    const existingToasts = document.querySelectorAll('.toast-notification');
+    existingToasts.forEach(toast => toast.remove());
+    
     const toast = document.createElement('div');
-    toast.className = 'toast-notification';
+    toast.className = `toast-notification toast-${type}`;
     toast.textContent = message;
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
     document.body.appendChild(toast);
+    
+    // Trigger reflow for animation
+    void toast.offsetWidth;
     
     setTimeout(() => {
       toast.classList.add('show');
@@ -432,9 +447,29 @@ export function showToast(message) {
     setTimeout(() => {
       toast.classList.remove('show');
       setTimeout(() => {
-        document.body.removeChild(toast);
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
       }, 300);
-    }, 3000);
+    }, duration);
+}
+
+/**
+ * Shows an error toast with appropriate styling
+ * @param {string} message - Error message
+ */
+export function showErrorToast(message) {
+    showToast(message, { type: 'error', duration: 4000 });
+}
+
+/**
+ * Shows a connection status indicator
+ * @param {boolean} isOnline - Whether the connection is online
+ */
+export function showConnectionStatus(isOnline) {
+    if (!isOnline) {
+        showToast(t('connection_lost') || 'Verbindung verloren', { type: 'warning', duration: 5000 });
+    }
 }
 
 export function showInterface(mode) {

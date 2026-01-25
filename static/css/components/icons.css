@@ -1,0 +1,50 @@
+/* ===============================================
+   🎨 Icon System
+   Minimal SVG-based icons (replacing Font-Awesome)
+   =============================================== */
+
+/* Base icon styling */
+.icon {
+  width: 1em;
+  height: 1em;
+  display: inline-block;
+  vertical-align: -0.125em;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+/* Icon sizes */
+.icon-xs { width: 0.75em; height: 0.75em; }
+.icon-sm { width: 0.875em; height: 0.875em; }
+.icon-lg { width: 1.25em; height: 1.25em; }
+.icon-xl { width: 1.5em; height: 1.5em; }
+.icon-2x { width: 2em; height: 2em; }
+.icon-3x { width: 3em; height: 3em; }
+
+/* Font-Awesome compatibility layer */
+/* Maps fa-* classes to our SVG icon system */
+.fas, .far, .fa {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  line-height: 1;
+}
+
+/* Icon animation for loading states */
+@keyframes icon-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.icon-spin {
+  animation: icon-spin 1s linear infinite;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .icon-spin {
+    animation: none;
+  }
+}

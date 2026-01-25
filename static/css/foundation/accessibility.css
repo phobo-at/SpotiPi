@@ -1,0 +1,152 @@
+/* ===============================================
+   ♿ Accessibility Enhancements
+   =============================================== */
+
+/* -----------------------------------------------
+   🎬 Reduced Motion Support
+   Respects user preference for reduced animations
+   ----------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  
+  /* Disable specific animations */
+  .flash {
+    animation: none;
+  }
+  
+  #alarm-form,
+  #active-alarm-mode,
+  #sleep-form,
+  #active-sleep-mode {
+    transition: none;
+  }
+  
+  .toast-notification {
+    transition: opacity 0.01ms !important;
+  }
+  
+  .toggle-buttons button:hover,
+  .control-btn:hover {
+    transform: none !important;
+  }
+  
+  .current-track:hover {
+    transform: none !important;
+  }
+}
+
+/* -----------------------------------------------
+   🎯 Focus Visible Enhancement
+   Better keyboard navigation visibility
+   ----------------------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Remove default focus for mouse users */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Enhanced focus states for interactive elements */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
+}
+
+/* Slider focus state */
+input[type="range"]:focus-visible {
+  outline: none;
+}
+
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
+}
+
+/* -----------------------------------------------
+   📖 Screen Reader Utilities
+   ----------------------------------------------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sr-only-focusable:focus,
+.sr-only-focusable:active {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: inherit;
+}
+
+/* -----------------------------------------------
+   🎨 High Contrast Mode Support
+   ----------------------------------------------- */
+@media (prefers-contrast: high) {
+  :root {
+    --color-border: #ffffff;
+    --color-border-subtle: #888888;
+    --color-text-muted: #cccccc;
+  }
+  
+  button,
+  input,
+  select {
+    border-width: 2px;
+  }
+  
+  .toggle-buttons button[aria-selected="true"] {
+    border: 2px solid #ffffff;
+  }
+}
+
+/* -----------------------------------------------
+   🔄 Live Region Announcements
+   For dynamic content updates
+   ----------------------------------------------- */
+[aria-live="polite"],
+[aria-live="assertive"] {
+  /* Ensure live regions are accessible but not visually disruptive */
+  contain: layout;
+}
+
+/* Status messages styling */
+.status-message {
+  padding: var(--spacing-sm);
+  border-radius: var(--border-radius-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.status-message[role="alert"] {
+  background-color: rgba(241, 94, 108, 0.15);
+  border-left: 3px solid var(--color-error);
+}
+
+.status-message[role="status"] {
+  background-color: var(--color-primary-soft);
+  border-left: 3px solid var(--color-primary);
+}
