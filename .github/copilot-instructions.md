@@ -42,6 +42,7 @@
 - Run `pytest` before deployment. Common targets: `tests/test_api_contract.py`, `tests/test_service_layer.py`, `tests/test_spotify_resilience.py`.
   - **New test suites (v1.3.8)**: `tests/test_config_validation.py` (27 tests for Pydantic schemas), `tests/test_spotify_retry.py` (16 tests for HTTP retry logic).
   - **New test suites (v1.4.0)**: `tests/test_core_functionality.py` (22 tests for alarm execution, sleep timer, scheduler, token encryption, performance optimizations).
+- **Server Manager (dev)**: Use `python scripts/server_manager.py [start|stop|restart|status|logs]` to run the server as a background daemon. Server runs on `http://localhost:5001` with logs in `logs/server.log`.
 - Deployment uses `scripts/deploy_to_pi.sh`; it relies on rsync `--itemize-changes`. Do not alter the output format (`%i %f`) unless you update the parser too.
 
 ### When Adding New Code
@@ -78,6 +79,8 @@
 - **Global ThreadPoolExecutor**: Library loading reuses `_get_library_executor()` singleton, eliminating per-call executor overhead on Pi Zero.
 - **Route Blueprints (Prepared)**: Modular blueprints in `src/routes/` ready for future integration. Enables cleaner code organization without breaking current app.py structure.
 - **Expanded Test Coverage**: New `test_core_functionality.py` covers alarm execution, sleep timer, scheduler persistence, token encryption, and performance patterns.
+- **Settings UI**: New Settings tab with feature flags (`feature_sleep`, `feature_library`), Spotify account display, language selection, and cache management. Templates in `templates/settings.html`, styles in `static/css/features/settings.css`.
+- **Feature Flags**: Config-driven tab visibility via `feature_sleep` (default: false, Sleep is now native in Spotify) and `feature_library` (default: true). Managed via `/api/settings/feature-flags` endpoint.
 
 ### Documentation References
 - **Config validation**: See `docs/CONFIG_SCHEMA_VALIDATION.md` for Pydantic schema details, validation rules, error handling.

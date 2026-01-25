@@ -45,6 +45,21 @@ python run.py
 
 Access at `http://localhost:5001` (development) or `http://spotipi.local:5000` (Pi)
 
+## 🖥️ Server Management (Development)
+
+Use the server manager script for background daemon control during local development:
+
+```bash
+python scripts/server_manager.py start    # Start server in background
+python scripts/server_manager.py stop     # Stop the server  
+python scripts/server_manager.py restart  # Restart (stop + start)
+python scripts/server_manager.py status   # Show PID, uptime, memory usage
+python scripts/server_manager.py logs     # Last 50 lines of log
+python scripts/server_manager.py logs -f  # Follow logs (tail -f)
+```
+
+Server runs on **http://localhost:5001**, logs to `logs/server.log`.
+
 ## 🔧 Configuration
 
 Create `.env` file (either in the project root for local development or in `~/.spotipi/.env` for deployments):

@@ -77,6 +77,7 @@ export function initializeEventListeners() {
         alarmTab: '#alarm-tab',
         sleepTab: '#sleep-tab',
         libraryTab: '#library-tab',
+        settingsTab: '#settings-tab',
         playPauseBtn: '#playPauseBtn',
         globalVolume: '#global-volume',
         globalVolumeDesktop: '#global-volume-desktop',
@@ -94,6 +95,7 @@ export function initializeEventListeners() {
     if (elements.alarmTab) elements.alarmTab.addEventListener('click', () => showInterface('alarm'));
     if (elements.sleepTab) elements.sleepTab.addEventListener('click', () => showInterface('sleep'));
     if (elements.libraryTab) elements.libraryTab.addEventListener('click', () => showInterface('library'));
+    if (elements.settingsTab) elements.settingsTab.addEventListener('click', () => showInterface('settings'));
     if (elements.playPauseBtn) elements.playPauseBtn.addEventListener('click', togglePlayPause);
 
     // Helper function to sync both volume sliders

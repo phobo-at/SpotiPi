@@ -24,9 +24,9 @@ from flask_compress import Compress
 from .api.spotify import (get_access_token, get_combined_playback, get_devices,
                           get_followed_artists, get_playlists,
                           get_saved_albums, get_user_library,
-                          get_user_saved_tracks)
+                          get_user_profile, get_user_saved_tracks)
 # Import from new structure - use relative imports since we're in src/
-from .config import load_config
+from .config import load_config, save_config
 from .core.alarm_scheduler import \
     start_alarm_scheduler as start_event_alarm_scheduler
 from .core.scheduler import AlarmTimeValidator
@@ -764,7 +764,14 @@ def index():
         'lang': user_language,
         'translations': translations,
         'initial_state': initial_state,
-        'low_power': LOW_POWER_MODE
+        'low_power': LOW_POWER_MODE,
+        # Feature flags for conditional tab display
+        'feature_flags': {
+            'sleep_timer': config.get('feature_sleep', False),  # Default OFF
+            'music_library': config.get('feature_library', True),  # Default ON
+        },
+        'app_info': get_app_info(),
+        'version': VERSION
     }
     
     return render_template('index.html', **template_data)
@@ -1830,6 +1837,168 @@ def api_devices_refresh():
     except Exception as e:
         logging.error(f"❌ Error in device refresh: {e}")
         return api_response(False, message=str(e), status=503, error_code="device_refresh_error")
+
+# =====================================
+# ⚙️ API Routes - Settings
+# =====================================
+
+@app.route("/settings")
+@api_error_handler
+def settings_page():
+    """Settings page with feature flags and app configuration"""
+    config = load_config()
+    user_language = get_user_language(request)
+    translations = get_translations(user_language)
+    
+    def template_t(key, **kwargs):
+        from .utils.translations import t
+        return t(key, user_language, **kwargs)
+    
+    return render_template(
+        "settings.html",
+        config=config,
+        version=VERSION,
+        translations=translations,
+        t=template_t,
+        **_get_template_context()
+    )
+
+
+@app.route("/api/settings", methods=["GET"])
+@api_error_handler
+@rate_limit("default")
+def api_get_settings():
+    """Get current application settings including feature flags"""
+    config = load_config()
+    
+    # Extract settings-relevant fields
+    settings = {
+        "feature_flags": {
+            "sleep_timer": config.get("feature_sleep", False),  # Default OFF (native Spotify)
+            "music_library": config.get("feature_library", True),  # Default ON
+        },
+        "app": {
+            "language": config.get("language", "de"),
+            "default_volume": config.get("alarm_volume", 50),
+            "debug": config.get("debug", False),
+        },
+        "environment": config.get("_runtime", {}).get("environment", "unknown"),
+    }
+    
+    return api_response(True, data=settings)
+
+
+@app.route("/api/settings", methods=["POST", "PATCH"])
+@api_error_handler
+@rate_limit("default")
+def api_update_settings():
+    """Update application settings"""
+    data = request.get_json(silent=True) or {}
+    
+    if not data:
+        return api_response(False, message=t_api("invalid_request", request), status=400, error_code="invalid_request")
+    
+    config = load_config()
+    updated_fields = []
+    
+    # Handle feature flags
+    if "feature_flags" in data:
+        flags = data["feature_flags"]
+        if "sleep_timer" in flags:
+            config["feature_sleep"] = bool(flags["sleep_timer"])
+            updated_fields.append("feature_sleep")
+        if "music_library" in flags:
+            config["feature_library"] = bool(flags["music_library"])
+            updated_fields.append("feature_library")
+    
+    # Handle app settings
+    if "app" in data:
+        app_settings = data["app"]
+        if "language" in app_settings:
+            lang = app_settings["language"]
+            if lang in ("de", "en"):
+                config["language"] = lang
+                updated_fields.append("language")
+        if "default_volume" in app_settings:
+            try:
+                vol = max(0, min(100, int(app_settings["default_volume"])))
+                config["alarm_volume"] = vol
+                updated_fields.append("alarm_volume")
+            except (TypeError, ValueError):
+                pass
+        if "debug" in app_settings:
+            config["debug"] = bool(app_settings["debug"])
+            updated_fields.append("debug")
+    
+    if not updated_fields:
+        return api_response(False, message=t_api("no_changes", request), status=400, error_code="no_changes")
+    
+    # Save config
+    if save_config(config):
+        invalidate_config_cache()
+        logging.info(f"⚙️ Settings updated: {', '.join(updated_fields)}")
+        return api_response(True, message=t_api("settings_saved", request), data={"updated": updated_fields})
+    else:
+        return api_response(False, message=t_api("settings_save_error", request), status=500, error_code="save_error")
+
+
+@app.route("/api/settings/feature-flags", methods=["GET"])
+@api_error_handler
+@rate_limit("default")
+def api_get_feature_flags():
+    """Get only the feature flags (for lightweight requests from index.html)"""
+    config = load_config()
+    
+    flags = {
+        "sleep_timer": config.get("feature_sleep", False),  # Default OFF
+        "music_library": config.get("feature_library", True),  # Default ON
+    }
+    
+    return api_response(True, data=flags)
+
+
+@app.route("/api/spotify/profile", methods=["GET"])
+@api_error_handler
+@rate_limit("spotify_api")
+def api_spotify_profile():
+    """Get the connected Spotify user's profile"""
+    token = get_access_token()
+    if not token:
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
+    
+    profile = get_user_profile(token)
+    if profile:
+        return api_response(True, data=profile)
+    else:
+        return api_response(False, message=t_api("spotify_profile_error", request), status=503, error_code="profile_error")
+
+
+@app.route("/api/settings/cache/clear", methods=["POST"])
+@api_error_handler
+@rate_limit("default")
+def api_clear_cache():
+    """Clear all application caches"""
+    try:
+        # Clear music library cache
+        cache_migration.invalidate_library()
+        
+        # Clear device cache
+        cache_migration.invalidate_devices()
+        
+        # Clear config cache
+        invalidate_config_cache()
+        
+        # Clear dashboard snapshot
+        _dashboard_snapshot.mark_stale()
+        _playback_snapshot.mark_stale()
+        _devices_snapshot.mark_stale()
+        
+        logging.info("🗑️ All caches cleared via settings")
+        return api_response(True, message=t_api("cache_cleared", request))
+    except Exception as e:
+        logging.error(f"❌ Error clearing cache: {e}")
+        return api_response(False, message=str(e), status=500, error_code="cache_clear_error")
+
 
 # =====================================
 # 🚀 Application Runner

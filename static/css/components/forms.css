@@ -15,6 +15,13 @@ label {
   font-size: var(--font-sm);
 }
 
+/* Ensure icons in labels have proper spacing */
+label i,
+label .icon,
+label > svg {
+  margin-right: var(--spacing-xs);
+}
+
 .form-group {
   margin-bottom: var(--spacing-lg);
 }

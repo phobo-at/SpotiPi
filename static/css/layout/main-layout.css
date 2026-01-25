@@ -30,6 +30,13 @@
   color: var(--color-text);
 }
 
+/* Ensure icons in volume labels have proper spacing */
+.volume-label i,
+.volume-label .icon,
+.volume-label svg {
+  margin-right: var(--spacing-xs);
+}
+
 /* Special styling for global slider */
 #global-volume::-webkit-slider-runnable-track {
   background: var(--color-bg);
