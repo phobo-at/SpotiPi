@@ -1,0 +1,366 @@
+/* ===============================================
+   ⚙️ Settings Panel Styles
+   =============================================== */
+
+/* Settings Panel Container */
+.settings-panel {
+  padding: var(--spacing-md) 0;
+}
+
+/* Section Styling */
+.settings-section {
+  margin-bottom: var(--spacing-xl);
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-lg);
+}
+
+.settings-section-title .icon {
+  width: 1.25em;
+  height: 1.25em;
+  color: var(--color-primary);
+}
+
+/* Danger Zone */
+.settings-section-danger .settings-section-title {
+  color: var(--color-error);
+}
+
+.settings-section-danger .settings-section-title .icon {
+  color: var(--color-error);
+}
+
+/* Settings List */
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+/* Settings Item */
+.settings-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-surface);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--color-border-subtle);
+  transition: background-color var(--transition-fast) var(--transition-easing);
+}
+
+.settings-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.settings-item-readonly {
+  background: transparent;
+  border-color: transparent;
+}
+
+.settings-item-readonly:hover {
+  background: transparent;
+}
+
+.settings-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-item-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-weight: 500;
+  color: var(--color-text);
+  margin-bottom: 2px;
+}
+
+.settings-item-label .icon {
+  width: 1em;
+  height: 1em;
+  opacity: 0.7;
+}
+
+.settings-item-description {
+  display: block;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.settings-item-value {
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+  font-family: monospace;
+}
+
+/* Settings Select */
+.settings-select {
+  width: auto;
+  min-width: 120px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-sm);
+}
+
+/* Settings Buttons */
+.settings-btn {
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  border-radius: var(--border-radius-md);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast) var(--transition-easing);
+  white-space: nowrap;
+}
+
+.settings-btn-secondary {
+  background: var(--color-bg-highlight);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.settings-btn-secondary:hover {
+  background: var(--color-surface-active);
+  border-color: var(--color-text-muted);
+}
+
+.settings-btn-danger {
+  background: transparent;
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}
+
+.settings-btn-danger:hover {
+  background: rgba(241, 94, 108, 0.15);
+}
+
+/* Volume Control in Settings */
+.settings-volume-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 150px;
+}
+
+.settings-slider {
+  flex: 1;
+  height: 4px;
+}
+
+.settings-volume-value {
+  min-width: 45px;
+  text-align: right;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+  font-family: monospace;
+}
+
+/* Spotify Account Card */
+.spotify-account-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-elevated) 100%);
+  border-radius: var(--border-radius-xl);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.account-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-text-muted);
+  width: 100%;
+}
+
+.account-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account-avatar .icon {
+  width: 28px;
+  height: 28px;
+  color: var(--color-primary);
+}
+
+.account-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-name {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.account-name .badge {
+  font-size: var(--font-xs);
+  padding: 2px 6px;
+  background: var(--color-primary);
+  color: var(--color-inverse-text);
+  border-radius: var(--border-radius-full);
+  font-weight: 500;
+}
+
+.account-email {
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.account-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  color: var(--color-primary);
+}
+
+.account-status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: var(--color-primary);
+  border-radius: 50%;
+}
+
+.account-error {
+  color: var(--color-error);
+}
+
+.account-error::before {
+  background: var(--color-error);
+}
+
+/* Spinner */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Settings Panel Toggle Switch - scoped to avoid conflicts with existing toggles.css */
+.settings-panel .toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.settings-panel .toggle-switch label {
+  display: none; /* Hide the text label, we use settings-item-label instead */
+}
+
+.settings-panel .toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.settings-panel .toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--color-bg-highlight);
+  border-radius: var(--border-radius-full);
+  transition: background-color var(--transition-fast) var(--transition-easing);
+}
+
+.settings-panel .toggle-slider::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: var(--color-text);
+  border-radius: 50%;
+  transition: transform var(--transition-fast) var(--transition-easing);
+}
+
+.settings-panel .toggle-switch input:checked + .toggle-slider {
+  background-color: var(--color-primary);
+}
+
+.settings-panel .toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+}
+
+.settings-panel .toggle-switch input:focus-visible + .toggle-slider {
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+/* Desktop Enhancements */
+@media (min-width: 768px) {
+  .settings-item {
+    padding: var(--spacing-md) var(--spacing-lg);
+  }
+  
+  .settings-volume-control {
+    min-width: 200px;
+  }
+  
+  .spotify-account-card {
+    padding: var(--spacing-xl);
+  }
+  
+  .account-avatar {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    border-top-color: var(--color-primary);
+  }
+}

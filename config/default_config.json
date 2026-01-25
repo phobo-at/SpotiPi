@@ -12,5 +12,9 @@
   "sleep_device_name": "",
   "environment": "default",
   "debug": false,
-  "log_level": "INFO"
+  "log_level": "INFO",
+  "language": "de",
+  "feature_sleep": false,
+  "feature_library": true,
+  "volume": 25
 }

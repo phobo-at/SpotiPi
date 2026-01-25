@@ -490,23 +490,38 @@ export function showInterface(mode) {
       alarmInterface: '#alarm-interface',
       sleepInterface: '#sleep-interface',
       libraryInterface: '#library-interface',
+      settingsInterface: '#settings-interface',
       alarmTab: '#alarm-tab',
       sleepTab: '#sleep-tab',
-      libraryTab: '#library-tab'
+      libraryTab: '#library-tab',
+      settingsTab: '#settings-tab'
     });
     
     elements.alarmInterface.style.display = (mode === 'alarm') ? 'block' : 'none';
     elements.sleepInterface.style.display = (mode === 'sleep') ? 'block' : 'none';
     elements.libraryInterface.style.display = (mode === 'library') ? 'block' : 'none';
+    if (elements.settingsInterface) {
+      elements.settingsInterface.style.display = (mode === 'settings') ? 'block' : 'none';
+    }
     
     elements.alarmTab.setAttribute('aria-selected', String(mode === 'alarm'));
     elements.sleepTab.setAttribute('aria-selected', String(mode === 'sleep'));
     elements.libraryTab.setAttribute('aria-selected', String(mode === 'library'));
+    if (elements.settingsTab) {
+      elements.settingsTab.setAttribute('aria-selected', String(mode === 'settings'));
+    }
     
     localStorage.setItem("activeTab", mode);
     
     if (mode === 'alarm') {
       setTimeout(updateAlarmStatus, 100);
+    }
+    
+    // Load settings panel data when switching to settings tab
+    if (mode === 'settings') {
+      import('./settings.js').then(module => {
+        module.onSettingsTabActivated();
+      });
     }
 }
 

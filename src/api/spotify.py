@@ -48,7 +48,7 @@ __all__ = [
     "get_current_playback", "get_current_track", "get_current_spotify_volume", 
     "get_saved_albums", "get_user_saved_tracks", "get_followed_artists",
     "set_volume", "get_playback_status", "get_user_library", "get_combined_playback",
-    "load_music_library_parallel", "spotify_network_health"
+    "load_music_library_parallel", "spotify_network_health", "get_user_profile"
 ]
 
 # 🔧 File paths - Use path-agnostic configuration
@@ -619,6 +619,58 @@ def _spotify_request(
                 _release_singleflight(sf_key)
 
 # 🎵 Spotify API
+
+def get_user_profile(token: str) -> Optional[Dict[str, Any]]:
+    """Fetch the current user's Spotify profile.
+    
+    Args:
+        token: Spotify access token
+        
+    Returns:
+        Optional[Dict[str, Any]]: User profile dict with display_name, email, 
+        product (premium/free), images, etc. or None on error.
+    """
+    logger = logging.getLogger('spotify')
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        r = _spotify_request('GET', "https://api.spotify.com/v1/me", headers=headers, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            images = data.get("images", [])
+            avatar_url = None
+            if images:
+                # Prefer medium-sized avatar (around 300px)
+                for img in images:
+                    width = img.get("width")
+                    if width and 200 <= width <= 400:
+                        avatar_url = img.get("url")
+                        break
+                if not avatar_url and images:
+                    avatar_url = images[0].get("url")
+            
+            return {
+                "id": data.get("id"),
+                "display_name": data.get("display_name") or data.get("id"),
+                "email": data.get("email"),
+                "product": data.get("product"),  # "premium", "free", "open"
+                "country": data.get("country"),
+                "avatar_url": avatar_url,
+                "followers": data.get("followers", {}).get("total", 0),
+                "uri": data.get("uri"),
+                "external_url": data.get("external_urls", {}).get("spotify"),
+            }
+        else:
+            logger.error(f"❌ Error fetching user profile: {r.status_code} - {r.text}")
+            return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ Network error fetching user profile: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ Unexpected error fetching user profile: {e}")
+        return None
+
+
 def get_playlists(token: str) -> List[Dict[str, Any]]:
     """Fetch user's playlists from Spotify API.
     
