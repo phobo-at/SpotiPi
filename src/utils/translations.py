@@ -136,6 +136,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'sleep_start': 'Sleep starten',
         'sleep_stop': 'Sleep stoppen',
         'currently_playing': 'Aktuell läuft',
+        'paused': 'Wiedergabe pausiert',
         'cancel': 'Abbrechen',
         
         # API Messages
@@ -387,6 +388,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'sleep_start': 'Start sleep',
         'sleep_stop': 'Stop sleep',
         'currently_playing': 'Currently playing',
+        'paused': 'Paused',
         'cancel': 'Cancel',
         
         # API Messages
