@@ -1,62 +1,404 @@
 /* ===============================================
-   📱 Responsive Adjustments
+   📱 Responsive Design System
+   Mobile First → Tablet → Desktop → Wide
    =============================================== */
-@media (max-width: 480px) {
+
+/* ===============================================
+   Mobile Base (< 576px)
+   =============================================== */
+@media (max-width: 575.98px) {
   body {
-    padding: var(--spacing-md);
+    padding: var(--spacing-sm);
+    padding-top: env(safe-area-inset-top);
   }
   
   h1 {
-    font-size: 1.5rem;
-    margin-bottom: var(--spacing-xl);
+    font-size: var(--font-xl);
+    margin-bottom: var(--spacing-lg);
   }
   
   .album-image {
-    width: 50px;
-    height: 50px;
+    width: var(--artwork-sm);
+    height: var(--artwork-sm);
   }
   
   .current-track .title {
-    font-size: 0.9rem;
+    font-size: var(--font-sm);
   }
   
   .current-track .artist {
-    font-size: 0.8rem;
+    font-size: var(--font-xs);
   }
   
   .toggle-buttons button {
     flex-grow: 1;
     padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--font-sm);
   }
   
   .device-selection-modal {
     width: 95%;
-    padding: var(--spacing-lg);
+    padding: var(--spacing-md);
   }
   
   .device-selection-modal h3 {
-    font-size: 1.1rem;
+    font-size: var(--font-base);
   }
 }
 
-@media (max-width: 350px) {
-  .album-image {
-    width: 40px;
-    height: 40px;
+/* ===============================================
+   Small Tablets (576px - 767px)
+   =============================================== */
+@media (min-width: 576px) {
+  .current-track {
+    max-width: 500px;
+    padding: var(--spacing-md);
   }
   
-  body {
-    padding: var(--spacing-sm);
+  .album-image {
+    width: 80px;
+    height: 80px;
+  }
+  
+  .global-volume-container {
+    max-width: 500px;
   }
 }
 
-/* Save feedback animation */
+/* ===============================================
+   Tablets (768px - 991px)
+   =============================================== */
+@media (min-width: 768px) {
+  /* Hero Now Playing Section */
+  .current-track {
+    max-width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-lg);
+    background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-elevated) 100%);
+    border-radius: var(--border-radius-lg);
+    border-left: none;
+    border: 1px solid var(--color-border-subtle);
+  }
+  
+  .album-cover {
+    margin-right: 0;
+  }
+  
+  .album-image {
+    width: var(--artwork-lg);
+    height: var(--artwork-lg);
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-artwork);
+  }
+  
+  .album-fallback {
+    width: var(--artwork-lg);
+    height: var(--artwork-lg);
+    font-size: 3rem;
+  }
+  
+  .track-info {
+    flex: 1;
+  }
+  
+  .current-track .title {
+    font-size: var(--font-xl);
+    margin-bottom: var(--spacing-xs);
+  }
+  
+  .current-track .artist {
+    font-size: var(--font-base);
+  }
+  
+  /* Global volume */
+  .global-volume-container {
+    max-width: 100%;
+  }
+  
+  /* Navigation tabs */
+  .toggle-buttons {
+    gap: var(--spacing-sm);
+  }
+  
+  .toggle-buttons button {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    font-size: var(--font-base);
+    border-radius: var(--border-radius-full);
+  }
+  
+  /* Tab content */
+  .tab-content {
+    background: var(--color-surface);
+    border-radius: var(--border-radius-lg);
+    padding: var(--spacing-lg);
+    border: 1px solid var(--color-border-subtle);
+  }
+  
+  /* Forms */
+  .form-group {
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .options-group {
+    padding: var(--spacing-lg);
+    border-radius: var(--border-radius-md);
+  }
+}
+
+/* ===============================================
+   Desktop (992px - 1199px)
+   =============================================== */
+@media (min-width: 992px) {
+  /* App layout - two column */
+  .app-content {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: var(--spacing-xl);
+    align-items: start;
+  }
+  
+  /* Hero player becomes sidebar card */
+  .current-track {
+    flex-direction: column;
+    text-align: center;
+    padding: var(--spacing-xl);
+    position: sticky;
+    top: var(--spacing-xl);
+    background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-bg-elevated) 100%);
+  }
+  
+  .album-cover {
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .album-image {
+    width: var(--artwork-xl);
+    height: var(--artwork-xl);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-xl);
+    transition: transform var(--transition-normal) var(--transition-easing);
+  }
+  
+  .current-track:hover .album-image {
+    transform: scale(1.02);
+  }
+  
+  .album-fallback {
+    width: var(--artwork-xl);
+    height: var(--artwork-xl);
+    font-size: 4rem;
+    border-radius: var(--border-radius-lg);
+  }
+  
+  .track-info {
+    width: 100%;
+    text-align: center;
+  }
+  
+  .current-track .title {
+    font-size: var(--font-2xl);
+    font-weight: 700;
+  }
+  
+  .current-track .artist {
+    font-size: var(--font-lg);
+  }
+  
+  .current-track .playback-status {
+    margin-left: 0;
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-xs) var(--spacing-md);
+    background: var(--color-primary-soft);
+    border-radius: var(--border-radius-full);
+    display: inline-block;
+  }
+  
+  /* Main content area */
+  .container {
+    max-width: none;
+    width: 100%;
+  }
+  
+  /* Global volume in sidebar */
+  .global-volume-container {
+    margin-top: var(--spacing-lg);
+    background: var(--color-bg-highlight);
+    max-width: 100%;
+  }
+  
+  /* Tab navigation */
+  .toggle-buttons {
+    background: var(--color-bg-elevated);
+    padding: var(--spacing-xs);
+    border-radius: var(--border-radius-lg);
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .toggle-buttons button {
+    flex: 1;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+  
+  /* Tab content enhancement */
+  .tab-content {
+    padding: var(--spacing-xl);
+    min-height: 500px;
+  }
+  
+  /* Forms in two columns where applicable */
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-lg);
+  }
+  
+  /* Music library grid bigger items */
+  .music-library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--spacing-md);
+  }
+  
+  .music-item {
+    max-width: none;
+  }
+}
+
+/* ===============================================
+   Large Desktop (1200px - 1399px)
+   =============================================== */
+@media (min-width: 1200px) {
+  .app-content {
+    grid-template-columns: 420px 1fr;
+    gap: var(--spacing-xxl);
+  }
+  
+  .album-image {
+    width: var(--artwork-hero);
+    height: var(--artwork-hero);
+  }
+  
+  .album-fallback {
+    width: var(--artwork-hero);
+    height: var(--artwork-hero);
+    font-size: 5rem;
+  }
+  
+  .current-track .title {
+    font-size: var(--font-3xl);
+  }
+  
+  .current-track .artist {
+    font-size: var(--font-xl);
+  }
+  
+  /* Larger music grid */
+  .music-library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--spacing-lg);
+  }
+  
+  .music-item-name {
+    font-size: var(--font-base);
+  }
+  
+  .music-item-artist {
+    font-size: var(--font-sm);
+  }
+  
+  .music-play-btn {
+    width: 56px;
+    height: 56px;
+    font-size: 20px;
+  }
+}
+
+/* ===============================================
+   Extra Large Desktop (1400px+)
+   =============================================== */
+@media (min-width: 1400px) {
+  .app-content {
+    grid-template-columns: 480px 1fr;
+    max-width: var(--container-max);
+    margin: 0 auto;
+  }
+  
+  /* Even larger music grid */
+  .music-library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+}
+
+/* ===============================================
+   Utility Classes for Responsive Hiding
+   =============================================== */
+.hide-mobile {
+  display: none !important;
+}
+
+.hide-tablet {
+  display: inherit;
+}
+
+.hide-desktop {
+  display: inherit;
+}
+
+@media (min-width: 768px) {
+  .hide-mobile {
+    display: inherit !important;
+  }
+  
+  .hide-tablet {
+    display: none !important;
+  }
+}
+
+@media (min-width: 992px) {
+  .hide-tablet {
+    display: inherit !important;
+  }
+  
+  .hide-desktop {
+    display: none !important;
+  }
+}
+
+/* ===============================================
+   Animations & Effects
+   =============================================== */
 @keyframes saveFeedback {
-  0% { border-color: var(--color-primary); background-color: rgba(29, 185, 84, 0.1); }
-  50% { border-color: var(--color-primary); background-color: rgba(29, 185, 84, 0.2); }
-  100% { border-color: var(--color-primary); background-color: rgba(29, 185, 84, 0.1); }
+  0% { border-color: var(--color-primary); background-color: var(--color-primary-soft); }
+  50% { border-color: var(--color-primary-hover); background-color: rgba(29, 185, 84, 0.2); }
+  100% { border-color: var(--color-primary); background-color: var(--color-primary-soft); }
 }
 
 .timer-display.saved {
-  animation: saveFeedback 1s ease;
+  animation: saveFeedback 0.8s var(--transition-easing);
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: var(--shadow-lg); }
+  50% { box-shadow: var(--shadow-glow), var(--shadow-lg); }
+}
+
+.current-track.is-playing .album-image {
+  animation: pulseGlow 3s ease-in-out infinite;
+}
+
+/* ===============================================
+   Print Styles
+   =============================================== */
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+  
+  .toggle-buttons,
+  .app-footer,
+  .global-volume-container {
+    display: none;
+  }
 }

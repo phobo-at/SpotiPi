@@ -52,6 +52,7 @@ export function initializeEventListeners() {
         libraryTab: '#library-tab',
         playPauseBtn: '#playPauseBtn',
         globalVolume: '#global-volume',
+        globalVolumeDesktop: '#global-volume-desktop',
         durationSelect: '#duration',
         // Alarm form elements
         alarmEnabled: '#enabled',
@@ -68,38 +69,60 @@ export function initializeEventListeners() {
     if (elements.libraryTab) elements.libraryTab.addEventListener('click', () => showInterface('library'));
     if (elements.playPauseBtn) elements.playPauseBtn.addEventListener('click', togglePlayPause);
 
-    if (elements.globalVolume) {
-        // Update display immediately during input
-        elements.globalVolume.addEventListener('input', (e) => {
-            updateLocalVolumeDisplay(e.target.value);
+    // Helper function to sync both volume sliders
+    function syncVolumeSliders(value, sourceId) {
+        const mobileSlider = document.getElementById('global-volume');
+        const desktopSlider = document.getElementById('global-volume-desktop');
+        const mobileDisplay = document.getElementById('volume-display');
+        const desktopDisplay = document.getElementById('volume-display-desktop');
+        
+        // Update both sliders (except the source)
+        if (mobileSlider && mobileSlider.id !== sourceId) {
+            mobileSlider.value = value;
+        }
+        if (desktopSlider && desktopSlider.id !== sourceId) {
+            desktopSlider.value = value;
+        }
+        
+        // Update both displays
+        if (mobileDisplay) mobileDisplay.textContent = value + '%';
+        if (desktopDisplay) desktopDisplay.textContent = value + '%';
+    }
+
+    // Volume slider event handler factory
+    function setupVolumeSlider(slider) {
+        if (!slider) return;
+        
+        slider.addEventListener('input', (e) => {
+            syncVolumeSliders(e.target.value, e.target.id);
             setLastUserInteraction(Date.now());
-            // Set volume immediately with throttling during dragging
             setVolumeImmediateThrottled(e.target.value);
         });
         
-        elements.globalVolume.addEventListener('mousedown', () => {
+        slider.addEventListener('mousedown', () => {
             setUserIsDragging(true);
             setLastUserInteraction(Date.now());
         });
-        elements.globalVolume.addEventListener('touchstart', () => {
+        slider.addEventListener('touchstart', () => {
             setUserIsDragging(true);
             setLastUserInteraction(Date.now());
         });
         
-        // Final volume set (no config save for global volume)
-        elements.globalVolume.addEventListener('mouseup', (e) => {
+        slider.addEventListener('mouseup', (e) => {
             setUserIsDragging(false);
             setLastUserInteraction(Date.now());
-            // Global volume only sets Spotify, doesn't save to config
             flushVolumeThrottle(e.target.value);
         });
-        elements.globalVolume.addEventListener('touchend', (e) => {
+        slider.addEventListener('touchend', (e) => {
             setUserIsDragging(false);
             setLastUserInteraction(Date.now());
-            // Global volume only sets Spotify, doesn't save to config
             flushVolumeThrottle(e.target.value);
         });
     }
+
+    // Setup both volume sliders
+    setupVolumeSlider(elements.globalVolume);
+    setupVolumeSlider(elements.globalVolumeDesktop);
 
     if (elements.durationSelect) {
         elements.durationSelect.addEventListener('change', (e) => handleDurationChange(e.target.value));

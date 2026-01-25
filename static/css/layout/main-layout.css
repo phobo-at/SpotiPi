@@ -12,12 +12,22 @@
   max-width: 400px;
   margin-left: auto;
   margin-right: auto;
+  border: 1px solid var(--color-border-subtle);
+  transition: all var(--transition-normal) var(--transition-easing);
+}
+
+.global-volume-container:hover {
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-md);
 }
 
 .volume-label {
-  display: block;
-  margin-bottom: var(--spacing-xs);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
   font-weight: 600;
+  color: var(--color-text);
 }
 
 /* Special styling for global slider */
@@ -35,38 +45,57 @@
 header {
   text-align: center;
   margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md) 0;
 }
 
 .app-content {
   flex: 1;
+  width: 100%;
+}
+
+.app-wrapper {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 .app-footer {
-  margin-top: var(--spacing-xl);
+  margin-top: auto;
+  padding-top: var(--spacing-xl);
   text-align: center;
-  font-size: 0.8rem;
+  font-size: var(--font-xs);
   color: var(--color-disabled);
-  padding-top: var(--spacing-md);
-  border-top: 1px solid var(--color-surface);
+  padding-bottom: var(--spacing-md);
+  border-top: 1px solid var(--color-border-subtle);
 }
 
 /* Logo styling */
 .logo-icon {
   margin-right: var(--spacing-xs);
+  vertical-align: middle;
 }
 
 .logo-image {
-  width: 36px;
-  height: 36px;
-  vertical-align: text-top;
+  width: 40px;
+  height: 40px;
+  vertical-align: middle;
   border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-normal) var(--transition-easing);
+}
+
+.logo-image:hover {
+  transform: scale(1.1);
 }
 
 .logo-text {
-  background: linear-gradient(90deg, var(--color-primary), #4ae68a);
+  background: linear-gradient(135deg, var(--color-primary) 0%, #4ae68a 50%, var(--color-primary) 100%);
+  background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 /* Status bar with time and date */
@@ -74,14 +103,19 @@ header {
   display: flex;
   justify-content: center;
   gap: var(--spacing-md);
-  margin-top: var(--spacing-xs);
-  font-size: 0.9rem;
-  color: var(--color-disabled);
+  margin-top: var(--spacing-sm);
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
 }
 
 .current-time {
   font-weight: 600;
   color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.current-date {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Flash messages container */
@@ -89,17 +123,177 @@ header {
   margin-bottom: var(--spacing-md);
 }
 
-/* Timer display volume info */
+/* Timer display */
+.timer-display {
+  background: var(--color-surface);
+  border-radius: var(--border-radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  border: 1px solid var(--color-border-subtle);
+  font-weight: 500;
+  text-align: center;
+  transition: all var(--transition-normal) var(--transition-easing);
+}
+
 .timer-display .volume-info {
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   font-weight: normal;
   opacity: 0.8;
-  margin-left: 0.5rem;
+  margin-left: var(--spacing-xs);
+  color: var(--color-text-muted);
 }
 
 .timer-display .device-info {
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   font-weight: normal;
   opacity: 0.75;
-  margin-left: 0.5rem;
+  margin-left: var(--spacing-xs);
+  color: var(--color-text-muted);
+}
+
+/* ===============================================
+   🖥️ Desktop-specific Layout Enhancements
+   =============================================== */
+@media (min-width: 768px) {
+  header {
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  .logo-image {
+    width: 48px;
+    height: 48px;
+  }
+  
+  .status-bar {
+    font-size: var(--font-base);
+    gap: var(--spacing-lg);
+  }
+}
+
+@media (min-width: 992px) {
+  header {
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-lg) 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  header h1 {
+    margin: 0;
+    text-align: left;
+  }
+  
+  .status-bar {
+    margin-top: 0;
+  }
+  
+  .logo-image {
+    width: 56px;
+    height: 56px;
+  }
+  
+  .app-footer {
+    grid-column: 1 / -1;
+  }
+  
+  .timer-display {
+    font-size: var(--font-lg);
+    padding: var(--spacing-lg);
+  }
+}
+
+/* ===============================================
+   🎨 Tab Content Styling
+   =============================================== */
+.tab-content {
+  width: 100%;
+}
+
+.tab-content > div {
+  width: 100%;
+}
+
+.form-title {
+  font-size: var(--font-xl);
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 2px solid var(--color-primary);
+  display: inline-block;
+}
+
+@media (min-width: 768px) {
+  .form-title {
+    font-size: var(--font-2xl);
+  }
+}
+
+/* ===============================================
+   🎛️ Control Bar / Navigation
+   =============================================== */
+.toggle-buttons {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-lg);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.toggle-buttons button {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  transition: all var(--transition-fast) var(--transition-easing);
+  white-space: nowrap;
+}
+
+.toggle-buttons button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+}
+
+.toggle-buttons button[aria-selected="true"],
+.toggle-buttons button.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-inverse-text);
+  font-weight: 600;
+}
+
+.toggle-buttons .control-btn {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-inverse-text);
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-buttons .control-btn:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  transform: scale(1.05);
+}
+
+@media (min-width: 768px) {
+  .toggle-buttons {
+    gap: var(--spacing-sm);
+  }
+  
+  .toggle-buttons button {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    font-size: var(--font-base);
+    min-height: 48px;
+  }
 }

@@ -1,6 +1,7 @@
 /* ===============================================
    SpotiPi - Main CSS Orchestrator
    Modular CSS Architecture
+   Mobile First → Tablet → Desktop → Wide
    =============================================== */
 
 /* 1. Foundation (Core Variables & Base) */
@@ -18,6 +19,7 @@
 
 /* 3. Layout (Structure & Responsive) */
 @import url('layout/main-layout.css');
+@import url('layout/desktop-layout.css');
 @import url('layout/responsive.css');
 @import url('layout/pwa.css');
 

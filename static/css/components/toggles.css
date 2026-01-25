@@ -6,12 +6,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
   margin: var(--spacing-md) 0;
+  padding: var(--spacing-xs) 0;
 }
-
-/* Enable-container uses flexbox for better alignment */
-
 
 /* Toggle-switch labels (for grid layout) */
 .toggle-switch label {
@@ -22,6 +20,8 @@
   display: flex;
   align-items: center;
   min-height: 24px;
+  color: var(--color-text);
+  font-size: var(--font-sm);
 }
 
 /* Enable-container labels (for flexbox layout) */
@@ -29,12 +29,13 @@
   margin: 0;
   padding: 0;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: var(--font-base);
   line-height: 24px;
   display: flex;
   align-items: center;
   min-height: 24px;
   flex: 1;
+  color: var(--color-text);
 }
 
 /* Hide all checkboxes */
@@ -48,66 +49,132 @@
 /* Switch for toggle-switch (grid layout) */
 .toggle-switch .switch {
   width: 48px;
-  height: 24px;
+  height: 26px;
   display: flex;
   align-items: center;
   cursor: pointer;
-  background: var(--color-disabled);
-  border-radius: 24px;
+  background: var(--color-bg-highlight);
+  border-radius: var(--border-radius-full);
   position: relative;
-  transition: background-color var(--transition-fast);
+  transition: all var(--transition-fast) var(--transition-easing);
   flex-shrink: 0;
+  border: 1px solid var(--color-border);
+}
+
+.toggle-switch .switch:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-text-muted);
 }
 
 /* Switch for enable-container (flexbox layout) */
 .enable-container .switch {
-  width: 48px;
-  height: 24px;
+  width: 52px;
+  height: 28px;
   display: flex;
   align-items: center;
   cursor: pointer;
-  background: var(--color-disabled);
-  border-radius: 24px;
+  background: var(--color-bg-highlight);
+  border-radius: var(--border-radius-full);
   position: relative;
-  transition: background-color var(--transition-fast);
+  transition: all var(--transition-fast) var(--transition-easing);
   flex-shrink: 0;
+  border: 1px solid var(--color-border);
+}
+
+.enable-container .switch:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-text-muted);
 }
 
 /* Uniform slider for ALL toggles */
-.toggle-switch .switch::after, .enable-container .switch::after {
+.toggle-switch .switch::after {
   content: "";
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 20px; /* UNIFORM size */
-  height: 20px; /* UNIFORM size */
-  background: var(--color-inverse-text);
-  border-radius: 20px;
-  transition: var(--transition-normal);
+  width: 20px;
+  height: 20px;
+  background: var(--color-text-muted);
+  border-radius: 50%;
+  transition: all var(--transition-normal) var(--transition-easing);
+  box-shadow: var(--shadow-sm);
+}
+
+.enable-container .switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  background: var(--color-text-muted);
+  border-radius: 50%;
+  transition: all var(--transition-normal) var(--transition-easing);
+  box-shadow: var(--shadow-sm);
 }
 
 /* Common rules for active state */
-.toggle-switch input:checked + .switch, .enable-container input:checked + .switch {
+.toggle-switch input:checked + .switch {
   background: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
-.toggle-switch input:checked + .switch::after, .enable-container input:checked + .switch::after {
+.enable-container input:checked + .switch {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.toggle-switch input:checked + .switch::after {
   left: calc(100% - 2px);
   transform: translateX(-100%);
+  background: var(--color-text);
 }
 
-.toggle-switch .switch:active:after, .enable-container .switch:active:after {
+.enable-container input:checked + .switch::after {
+  left: calc(100% - 2px);
+  transform: translateX(-100%);
+  background: var(--color-text);
+}
+
+.toggle-switch .switch:active:after {
+  width: 26px;
+}
+
+.enable-container .switch:active:after {
   width: 28px;
 }
 
 /* Only the Enable container gets visual highlighting */
 .enable-container {
-  background-color: rgba(29, 185, 84, 0.08);
-  border: 1px solid rgba(29, 185, 84, 0.2);
-  border-radius: var(--border-radius-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-  margin: var(--spacing-md) 0;
+  background: linear-gradient(135deg, var(--color-primary-soft) 0%, rgba(29, 185, 84, 0.05) 100%);
+  border: 1px solid rgba(29, 185, 84, 0.3);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  margin: var(--spacing-lg) 0;
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
+  transition: all var(--transition-fast) var(--transition-easing);
+}
+
+.enable-container:hover {
+  border-color: rgba(29, 185, 84, 0.5);
+  background: linear-gradient(135deg, rgba(29, 185, 84, 0.15) 0%, rgba(29, 185, 84, 0.08) 100%);
+}
+
+/* ===============================================
+   🖥️ Desktop Toggle Enhancements
+   =============================================== */
+@media (min-width: 768px) {
+  .toggle-switch label {
+    font-size: var(--font-base);
+  }
+  
+  .enable-container {
+    padding: var(--spacing-md) var(--spacing-xl);
+  }
+  
+  .enable-container .enable-label {
+    font-size: var(--font-lg);
+  }
 }
