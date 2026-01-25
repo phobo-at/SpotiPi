@@ -1,0 +1,280 @@
+/* ===============================================
+   🖥️ Desktop Layout - Two Column Structure
+   Now Playing Sidebar + Main Content
+   =============================================== */
+
+/* ===============================================
+   Now Playing Sidebar
+   =============================================== */
+.now-playing-sidebar {
+  display: contents; /* Mobile: flows normally */
+}
+
+.main-content-area {
+  width: 100%;
+}
+
+/* ===============================================
+   Tablet Layout (768px - 991px)
+   =============================================== */
+@media (min-width: 768px) {
+  .now-playing-sidebar {
+    display: block;
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  /* Enhanced current track on tablet */
+  .now-playing-sidebar .current-track {
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* ===============================================
+   Desktop Layout (992px+)
+   =============================================== */
+@media (min-width: 992px) {
+  .app-content {
+    display: grid;
+    grid-template-columns: 400px 1fr;
+    gap: var(--spacing-xxl);
+    align-items: start;
+  }
+  
+  /* Sidebar styling */
+  .now-playing-sidebar {
+    position: sticky;
+    top: var(--spacing-lg);
+    margin-bottom: 0;
+  }
+  
+  .now-playing-sidebar .current-track {
+    flex-direction: column;
+    text-align: center;
+    padding: var(--spacing-xl);
+    border-left: none;
+    border-radius: var(--border-radius-xl);
+    background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-bg-elevated) 100%);
+    border: 1px solid var(--color-border-subtle);
+    max-width: none;
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .now-playing-sidebar .current-track:hover {
+    transform: none;
+  }
+  
+  .now-playing-sidebar .album-cover {
+    margin-right: 0;
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .now-playing-sidebar .album-image {
+    width: var(--artwork-xl);
+    height: var(--artwork-xl);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-xl);
+  }
+  
+  .now-playing-sidebar .album-fallback {
+    width: var(--artwork-xl);
+    height: var(--artwork-xl);
+    font-size: 4rem;
+    border-radius: var(--border-radius-lg);
+  }
+  
+  .now-playing-sidebar .track-info {
+    width: 100%;
+    text-align: center;
+  }
+  
+  .now-playing-sidebar .current-track .title {
+    font-size: var(--font-2xl);
+    font-weight: 700;
+    margin-bottom: var(--spacing-xs);
+  }
+  
+  .now-playing-sidebar .current-track .artist {
+    font-size: var(--font-lg);
+  }
+  
+  .now-playing-sidebar .current-track .playback-status {
+    margin-left: 0;
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-xs) var(--spacing-md);
+    background: var(--color-primary-soft);
+    border-radius: var(--border-radius-full);
+    display: inline-block;
+    font-weight: 500;
+  }
+  
+  /* Volume control in sidebar */
+  .now-playing-sidebar .global-volume-container {
+    max-width: none;
+    background: var(--color-bg-highlight);
+    border-radius: var(--border-radius-lg);
+  }
+  
+  /* Main content area */
+  .main-content-area {
+    min-width: 0; /* Prevent grid blowout */
+  }
+  
+  .main-content-area .container {
+    max-width: none;
+  }
+  
+  /* Tab content styling */
+  .main-content-area .tab-content {
+    background: var(--color-surface);
+    border-radius: var(--border-radius-xl);
+    padding: var(--spacing-xl);
+    border: 1px solid var(--color-border-subtle);
+    min-height: 500px;
+  }
+}
+
+/* ===============================================
+   Large Desktop (1200px+)
+   =============================================== */
+@media (min-width: 1200px) {
+  .app-content {
+    grid-template-columns: 450px 1fr;
+    gap: var(--spacing-3xl);
+  }
+  
+  .now-playing-sidebar .album-image,
+  .now-playing-sidebar .album-fallback {
+    width: var(--artwork-hero);
+    height: var(--artwork-hero);
+  }
+  
+  .now-playing-sidebar .current-track .title {
+    font-size: var(--font-3xl);
+  }
+  
+  .now-playing-sidebar .current-track .artist {
+    font-size: var(--font-xl);
+  }
+  
+  .main-content-area .tab-content {
+    padding: var(--spacing-xxl);
+  }
+}
+
+/* ===============================================
+   Extra Large Desktop (1400px+)
+   =============================================== */
+@media (min-width: 1400px) {
+  .app-content {
+    grid-template-columns: 500px 1fr;
+    max-width: var(--container-max);
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* ===============================================
+   Volume Slider Desktop Styling
+   =============================================== */
+.volume-slider-desktop {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--color-bg);
+  border-radius: var(--border-radius-full);
+  outline: none;
+  cursor: pointer;
+}
+
+.volume-slider-desktop::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition-fast) var(--transition-easing);
+  box-shadow: var(--shadow-sm);
+}
+
+.volume-slider-desktop::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  background: var(--color-primary-hover);
+}
+
+.volume-slider-desktop::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  transition: all var(--transition-fast) var(--transition-easing);
+  box-shadow: var(--shadow-sm);
+}
+
+.volume-slider-desktop::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  background: var(--color-primary-hover);
+}
+
+/* ===============================================
+   Responsive Visibility Helpers (Desktop specific)
+   =============================================== */
+@media (min-width: 992px) {
+  .hide-mobile {
+    display: block !important;
+  }
+  
+  .hide-desktop {
+    display: none !important;
+  }
+}
+
+/* ===============================================
+   Footer Positioning
+   =============================================== */
+@media (min-width: 992px) {
+  .app-footer {
+    margin-top: var(--spacing-xxl);
+  }
+}
+
+/* ===============================================
+   Skeleton Loading States (Desktop)
+   =============================================== */
+@media (min-width: 992px) {
+  .now-playing-sidebar .skeleton-media {
+    width: var(--artwork-xl);
+    height: var(--artwork-xl);
+    border-radius: var(--border-radius-lg);
+  }
+  
+  .now-playing-sidebar .skeleton-tile {
+    width: var(--artwork-xl);
+    height: var(--artwork-xl);
+    margin: 0 auto var(--spacing-lg);
+  }
+  
+  .now-playing-sidebar .skeleton-line {
+    width: 80%;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  
+  .now-playing-sidebar .skeleton-line:last-child {
+    width: 50%;
+  }
+}
+
+@media (min-width: 1200px) {
+  .now-playing-sidebar .skeleton-media,
+  .now-playing-sidebar .skeleton-tile {
+    width: var(--artwork-hero);
+    height: var(--artwork-hero);
+  }
+}

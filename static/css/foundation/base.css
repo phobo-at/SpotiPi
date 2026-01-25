@@ -1,28 +1,116 @@
 /* ===============================================
    📄 Base Layout
    =============================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
 body {
   padding-top: env(safe-area-inset-top);
-  padding-left: var(--spacing-xl);
-  padding-right: var(--spacing-xl);
+  padding-left: var(--spacing-md);
+  padding-right: var(--spacing-md);
   padding-bottom: var(--spacing-xl);
   background-color: var(--color-bg);
   color: var(--color-text);
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   margin: 0;
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1 {
-  font-size: 1.8rem;
+  font-size: var(--font-2xl);
   margin-top: 0;
-  margin-bottom: var(--spacing-xxl);
+  margin-bottom: var(--spacing-lg);
   margin-left: 0;
   margin-right: 0;
   text-align: center;
   color: var(--color-primary);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: var(--font-xl);
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0 0 var(--spacing-md) 0;
+}
+
+h3 {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0 0 var(--spacing-sm) 0;
 }
 
 .container {
-  max-width: 400px;
+  width: 100%;
+  max-width: var(--container-mobile);
   margin: 0 auto;
+  padding: 0;
+}
+
+/* Responsive container scaling */
+@media (min-width: 576px) {
+  body {
+    padding-left: var(--spacing-lg);
+    padding-right: var(--spacing-lg);
+  }
+}
+
+@media (min-width: 768px) {
+  body {
+    padding-left: var(--spacing-xl);
+    padding-right: var(--spacing-xl);
+    padding-bottom: var(--spacing-xxl);
+  }
+  
+  h1 {
+    font-size: var(--font-3xl);
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  .container {
+    max-width: var(--container-tablet);
+  }
+}
+
+@media (min-width: 992px) {
+  body {
+    padding-left: var(--spacing-xxl);
+    padding-right: var(--spacing-xxl);
+  }
+  
+  h1 {
+    font-size: var(--font-4xl);
+  }
+  
+  .container {
+    max-width: var(--container-desktop);
+  }
+}
+
+@media (min-width: 1200px) {
+  body {
+    padding-left: var(--spacing-3xl);
+    padding-right: var(--spacing-3xl);
+  }
+  
+  .container {
+    max-width: var(--container-wide);
+  }
+}
+
+@media (min-width: 1400px) {
+  .container {
+    max-width: var(--container-max);
+  }
 }

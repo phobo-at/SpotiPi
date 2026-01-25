@@ -163,12 +163,18 @@ export function updateVolumeSlider(percent) {
 export function updateLocalVolumeDisplay(value) {
   const elements = DOM.getElements({
     globalSlider: '#global-volume',
-    globalLabel: '#volume-display'
+    globalSliderDesktop: '#global-volume-desktop',
+    globalLabel: '#volume-display',
+    globalLabelDesktop: '#volume-display-desktop'
   });
 
-  // Update global label and slider only
-  if (elements.globalLabel) elements.globalLabel.innerText = value;
+  // Update global labels (mobile + desktop)
+  if (elements.globalLabel) elements.globalLabel.innerText = value + '%';
+  if (elements.globalLabelDesktop) elements.globalLabelDesktop.innerText = value + '%';
+  
+  // Update sliders (mobile + desktop)
   if (elements.globalSlider) elements.globalSlider.value = value;
+  if (elements.globalSliderDesktop) elements.globalSliderDesktop.value = value;
 
   // Note: Alarm and sleep volume controls are independent of global volume
 }

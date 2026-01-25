@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <title>SpotiPi</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
   <!-- Preload critical CSS and fonts -->
   <link rel="preload" href="{{ url_for('static', filename='css/main.css') }}" as="style">
-  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" as="style" crossorigin="anonymous">
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style" crossorigin="anonymous">
 
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Font Awesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" crossorigin="anonymous">
 
@@ -28,148 +28,179 @@
   <meta name="description" content="Wake up to your favorite music and fall asleep with Spotify sleep timer">
 </head>
 <body>
-  <header>
-    <h1>
-      <span class="logo-icon">
-        <img src="{{ url_for('static', filename='icons/icon-round.png') }}" alt="SpotiPi Logo" class="logo-image">
-      </span>
-      <span class="logo-text">SpotiPi</span>
-    </h1>
-    
-    <!-- Status display: time and date -->
-    <div class="status-bar">
-      <time id="current-time" class="current-time">{{ now.strftime('%H:%M') }}</time>
-      <span class="current-date">
-        {% if lang == 'de' %}
-          {{ now.strftime('%d.%m.%Y') }}
-        {% else %}
-          {{ now.strftime('%m/%d/%Y') }}
-        {% endif %}
-      </span>
-    </div>
-  </header>
-
-  <main class="app-content">
-    <!-- Current track with album cover -->
-    <div class="current-track is-loading" role="status" id="currently-playing" aria-live="polite">
-      <div class="album-cover skeleton-tile">
-        <div class="placeholder-glow skeleton-media"></div>
+  <div class="app-wrapper">
+    <header>
+      <h1>
+        <span class="logo-icon">
+          <img src="{{ url_for('static', filename='icons/icon-round.png') }}" alt="SpotiPi Logo" class="logo-image">
+        </span>
+        <span class="logo-text">SpotiPi</span>
+      </h1>
+      
+      <!-- Status display: time and date -->
+      <div class="status-bar">
+        <time id="current-time" class="current-time">{{ now.strftime('%H:%M') }}</time>
+        <span class="current-date">
+          {% if lang == 'de' %}
+            {{ now.strftime('%d.%m.%Y') }}
+          {% else %}
+            {{ now.strftime('%m/%d/%Y') }}
+          {% endif %}
+        </span>
       </div>
-      <div class="track-info">
-        <span class="title placeholder-glow skeleton-line"></span>
-        <span class="artist placeholder-glow skeleton-line"></span>
-      </div>
-      <div class="playback-status" id="playback-status-label">{{ t('status_connecting') or 'Verbinde…' }}</div>
-    </div>
+    </header>
 
-    <div class="container">
-      <!-- Flash messages -->
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          <div class="flash-container" aria-live="polite">
-            {% for category, message in messages %}
-              <div class="flash {{ category }}">{{ message }}</div>
-            {% endfor %}
+    <main class="app-content">
+      <!-- Now Playing Hero Section (moves to sidebar on desktop) -->
+      <aside class="now-playing-sidebar">
+        <!-- Current track with album cover -->
+        <div class="current-track is-loading" role="status" id="currently-playing" aria-live="polite">
+          <div class="album-cover skeleton-tile">
+            <div class="placeholder-glow skeleton-media"></div>
           </div>
-        {% endif %}
-      {% endwith %}
+          <div class="track-info">
+            <span class="title placeholder-glow skeleton-line"></span>
+            <span class="artist placeholder-glow skeleton-line"></span>
+          </div>
+          <div class="playback-status" id="playback-status-label">{{ t('status_connecting') or 'Verbinde…' }}</div>
+        </div>
 
-      <!-- Global volume control -->
-      <div class="global-volume-container">
-        <label for="global-volume" class="volume-label">
-          {{ t('volume_label')|safe }}
-          (<span id="volume-display">{{ initial_volume }}</span>%)
-        </label>
-        <input
-          type="range"
-          id="global-volume"
-          class="form-input"
-          min="0"
-          max="100"
-          value="{{ initial_volume }}"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-valuenow="{{ initial_volume }}"
-          aria-valuetext="{{ initial_volume }}%"
-        >
+        <!-- Global volume control (desktop sidebar) -->
+        <div class="global-volume-container hide-mobile">
+          <label for="global-volume-desktop" class="volume-label">
+            <span>{{ t('volume_label')|safe }}</span>
+            <span id="volume-display-desktop">{{ initial_volume }}%</span>
+          </label>
+          <input
+            type="range"
+            id="global-volume-desktop"
+            class="form-input volume-slider-desktop"
+            min="0"
+            max="100"
+            value="{{ initial_volume }}"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="{{ initial_volume }}"
+            aria-valuetext="{{ initial_volume }}%"
+          >
+        </div>
+      </aside>
+
+      <!-- Main Content Area -->
+      <div class="main-content-area">
+        <div class="container">
+          <!-- Flash messages -->
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              <div class="flash-container" aria-live="polite">
+                {% for category, message in messages %}
+                  <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          {% endwith %}
+
+          <!-- Global volume control (mobile) -->
+          <div class="global-volume-container hide-tablet hide-desktop">
+            <label for="global-volume" class="volume-label">
+              <span>{{ t('volume_label')|safe }}</span>
+              <span id="volume-display">{{ initial_volume }}%</span>
+            </label>
+            <input
+              type="range"
+              id="global-volume"
+              class="form-input"
+              min="0"
+              max="100"
+              value="{{ initial_volume }}"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="{{ initial_volume }}"
+              aria-valuetext="{{ initial_volume }}%"
+            >
+          </div>
+
+          <!-- Main navigation -->
+          <nav class="toggle-buttons" role="tablist">
+            <button 
+              type="button" 
+              role="tab" 
+              id="alarm-tab"
+              aria-controls="alarm-interface"
+              aria-selected="true"
+            >
+              <i class="fas fa-bell"></i>
+              <span>{{ t('alarm_tab_text') or 'Alarm' }}</span>
+            </button>
+            <button 
+              type="button" 
+              role="tab" 
+              id="sleep-tab"
+              aria-controls="sleep-interface"
+              aria-selected="false"
+            >
+              <i class="fas fa-moon"></i>
+              <span>{{ t('sleep_tab_text') or 'Sleep' }}</span>
+            </button>
+            <button 
+              type="button" 
+              role="tab" 
+              id="library-tab"
+              aria-controls="library-interface"
+              aria-selected="false"
+            >
+              <i class="fas fa-music"></i>
+              <span>{{ t('library_tab_text') or 'Library' }}</span>
+            </button>
+            <button 
+              id="playPauseBtn" 
+              type="button" 
+              class="control-btn" 
+              aria-label="{{ t('play_pause') }}"
+            >
+              <i class="fas fa-pause"></i>
+            </button>
+          </nav>
+
+          <!-- Main content area -->
+          <section class="tab-content">
+            <!-- Alarm interface -->
+            <div 
+              id="alarm-interface" 
+              role="tabpanel"
+              aria-labelledby="alarm-tab"
+            >
+              {% include 'alarm.html' %}
+            </div>
+
+            <!-- Sleep interface -->
+            <div 
+              id="sleep-interface" 
+              role="tabpanel"
+              aria-labelledby="sleep-tab"
+              style="display: none;"
+            >
+              {% include 'sleep.html' %}
+            </div>
+
+            <!-- Music Library interface -->
+            <div 
+              id="library-interface" 
+              role="tabpanel"
+              aria-labelledby="library-tab"
+              style="display: none;"
+            >
+              {% include 'music_library.html' %}
+            </div>
+          </section>
+        </div>
       </div>
+    </main>
 
-      <!-- Main navigation -->
-      <nav class="toggle-buttons" role="tablist">
-        <button 
-          type="button" 
-          role="tab" 
-          id="alarm-tab"
-          aria-controls="alarm-interface"
-          aria-selected="true"
-        >
-          {{ t('alarm_tab')|safe }}
-        </button>
-        <button 
-          type="button" 
-          role="tab" 
-          id="sleep-tab"
-          aria-controls="sleep-interface"
-          aria-selected="false"
-        >
-          {{ t('sleep_tab')|safe }}
-        </button>
-        <button 
-          type="button" 
-          role="tab" 
-          id="library-tab"
-          aria-controls="library-interface"
-          aria-selected="false"
-        >
-          {{ t('library_tab')|safe }}
-        </button>
-        <button 
-          id="playPauseBtn" 
-          type="button" 
-          class="control-btn" 
-          aria-label="{{ t('play_pause') }}"
-        >
-          <i class="fas fa-pause"></i>
-        </button>
-      </nav>
-
-      <!-- Main content area -->
-      <section class="tab-content">
-        <!-- Alarm interface -->
-        <div 
-          id="alarm-interface" 
-          role="tabpanel"
-          aria-labelledby="alarm-tab"
-        >
-          {% include 'alarm.html' %}
-        </div>
-
-        <!-- Sleep interface -->
-        <div 
-          id="sleep-interface" 
-          role="tabpanel"
-          aria-labelledby="sleep-tab"
-          style="display: none;"
-        >
-          {% include 'sleep.html' %}
-        </div>
-
-        <!-- Music Library interface -->
-        <div 
-          id="library-interface" 
-          role="tabpanel"
-          aria-labelledby="library-tab"
-          style="display: none;"
-        >
-          {% include 'music_library.html' %}
-        </div>
-      </section>
-    </div>
-  </main>
-
-  <footer class="app-footer">
-    <p class="version-info">{{ app_info }}</p>
-  </footer>
+    <footer class="app-footer">
+      <p class="version-info">{{ app_info }}</p>
+    </footer>
+  </div>
 
   <!-- Make translations and Spotify data available to JavaScript -->
 <script id="translations-data" type="application/json">
@@ -198,4 +229,5 @@
   <!-- Main JavaScript with togglePlayPause etc. -->
   <script defer type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
+</html>
 </html>

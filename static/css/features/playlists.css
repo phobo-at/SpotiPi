@@ -268,30 +268,104 @@ body {
 }
 
 .playlist-no-results {
-  padding: var(--spacing-lg);
+  padding: var(--spacing-xl);
   text-align: center;
   color: var(--color-text-muted);
   font-style: italic;
 }
 
-/* Mobile optimizations */
-@media (max-width: 768px) {
+/* ===============================================
+   📱 Mobile optimizations
+   =============================================== */
+@media (max-width: 575.98px) {
   .playlist-modal {
-    max-height: 300px;
+    max-height: 280px;
   }
   
   .playlist-item {
-    min-height: 56px;
+    min-height: 52px;
+    padding: var(--spacing-xs) var(--spacing-sm);
   }
   
   .playlist-item-image {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
   }
   
   .playlist-preview-image {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
+  }
+  
+  .playlist-item-name {
+    font-size: var(--font-sm);
+  }
+  
+  .playlist-item-meta {
+    font-size: 11px;
+  }
+}
+
+/* ===============================================
+   🖥️ Desktop playlist enhancements
+   =============================================== */
+@media (min-width: 768px) {
+  .playlist-modal.show {
+    height: 50vh;
+    max-height: 50vh;
+  }
+  
+  .playlist-item {
+    padding: var(--spacing-sm) var(--spacing-md);
+    min-height: 64px;
+    border-radius: var(--border-radius-md);
+  }
+  
+  .playlist-item-image {
+    width: 52px;
+    height: 52px;
+    border-radius: var(--border-radius-md);
+  }
+  
+  .playlist-item-name {
+    font-size: var(--font-base);
+  }
+  
+  .playlist-item-meta {
+    font-size: var(--font-sm);
+  }
+  
+  .playlist-preview {
+    gap: var(--spacing-md);
+  }
+  
+  .playlist-preview-image {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--border-radius-md);
+  }
+  
+  .playlist-preview-name {
+    font-size: var(--font-lg);
+  }
+  
+  .playlist-input {
+    padding: var(--spacing-md);
+    min-height: 72px;
+    border-radius: var(--border-radius-lg);
+  }
+}
+
+@media (min-width: 992px) {
+  .playlist-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm);
+  }
+  
+  .playlist-modal.show {
+    height: 45vh;
+    max-height: 45vh;
   }
 }
 

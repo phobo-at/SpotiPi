@@ -4,13 +4,13 @@
 
 /* Base style for all buttons */
 .control-btn, .toggle-buttons button {
-  font-size: 1rem;
+  font-size: var(--font-sm);
   font-weight: 600;
   border: none;
   border-radius: var(--border-radius-md);
   cursor: pointer;
-  transition: background-color var(--transition-fast);
-  min-height: 60px;
+  transition: all var(--transition-fast) var(--transition-easing);
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -19,26 +19,26 @@
 /* Tab buttons should stack icon over text */
 .toggle-buttons button[role="tab"] {
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .toggle-buttons button[role="tab"] i {
-  font-size: 1.1em;
+  font-size: 1.2em;
 }
 
 .toggle-buttons button[role="tab"] span {
-  font-size: 0.9em;
+  font-size: 0.85em;
   margin-top: 2px;
 }
 
 /* For all buttons */
 .toggle-buttons button {
   flex: 1;
-  background-color: var(--color-primary);
-  color: var(--color-inverse-text);
+  background-color: var(--color-surface);
+  color: var(--color-text-muted);
   padding: var(--spacing-sm);
   box-sizing: border-box;
-  border: 2px solid transparent;
+  border: 1px solid var(--color-border);
   text-align: center;
   line-height: 1.2;
 }
@@ -46,24 +46,93 @@
 /* Specific styles for tab buttons */
 .toggle-buttons {
   display: flex;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs);
   margin-bottom: var(--spacing-lg);
   flex-wrap: nowrap;
 }
 
 .toggle-buttons button:hover {
-  background-color: var(--color-primary-hover);
+  background-color: var(--color-surface-hover);
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+  transform: translateY(-1px);
 }
 
 /* For the selected button */
 .toggle-buttons[role="tablist"] button[aria-selected="true"] {
-  background-color: var(--color-primary-hover);
+  background-color: var(--color-primary);
   border-color: var(--color-primary);
-  box-shadow: none;
+  color: var(--color-inverse-text);
+  box-shadow: var(--shadow-sm);
+}
+
+.toggle-buttons[role="tablist"] button[aria-selected="true"]:hover {
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  transform: translateY(-1px);
 }
 
 /* Disabled state */
 .control-btn:disabled {
   background-color: var(--color-disabled);
   cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Play/Pause control button */
+.toggle-buttons .control-btn {
+  flex: 0 0 auto;
+  min-width: 52px;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-inverse-text);
+}
+
+.toggle-buttons .control-btn:hover {
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  transform: scale(1.05);
+}
+
+/* ===============================================
+   🖥️ Desktop Button Enhancements
+   =============================================== */
+@media (min-width: 768px) {
+  .control-btn, .toggle-buttons button {
+    font-size: var(--font-base);
+    min-height: 56px;
+    border-radius: var(--border-radius-lg);
+  }
+  
+  .toggle-buttons {
+    gap: var(--spacing-sm);
+  }
+  
+  .toggle-buttons button[role="tab"] {
+    flex-direction: row;
+    gap: var(--spacing-xs);
+  }
+  
+  .toggle-buttons button[role="tab"] span {
+    font-size: var(--font-sm);
+    margin-top: 0;
+  }
+  
+  .toggle-buttons .control-btn {
+    min-width: 56px;
+  }
+}
+
+@media (min-width: 992px) {
+  .toggle-buttons {
+    background: var(--color-bg-elevated);
+    padding: var(--spacing-xs);
+    border-radius: var(--border-radius-xl);
+    border: 1px solid var(--color-border-subtle);
+  }
+  
+  .toggle-buttons button {
+    border-radius: var(--border-radius-lg);
+    padding: var(--spacing-sm) var(--spacing-lg);
+  }
 }

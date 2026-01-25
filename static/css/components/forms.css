@@ -4,51 +4,58 @@
 form {
   display: flex;
   flex-direction: column;
-  /* Use explicit margins on children for consistent spacing */
   gap: 0;
 }
 
 label {
   font-weight: 600;
-  margin-bottom: var(--spacing-sm); /* Increased from xs to sm for better spacing */
-  display: block; /* Ensure consistent block display */
+  margin-bottom: var(--spacing-sm);
+  display: block;
+  color: var(--color-text);
+  font-size: var(--font-sm);
 }
 
 .form-group {
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
 }
 
 .form-input {
   width: 100%;
-  font-size: 18px; /* Mobile-optimized font size */
-  padding: var(--spacing-md) var(--spacing-sm); /* Mobile-optimized padding */
-  min-height: 48px; /* Touch target size */
+  font-size: var(--font-base);
+  padding: var(--spacing-md) var(--spacing-sm);
+  min-height: 48px;
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius-md);
   background-color: var(--color-surface);
   color: var(--color-text);
   box-sizing: border-box;
-  transition: border-color var(--transition-fast);
+  transition: all var(--transition-fast) var(--transition-easing);
 }
 
-/* iOS Safari dropdown fixes */
-select.form-input {
-  min-height: 56px; /* Increased height for dropdowns */
-  padding: var(--spacing-md) var(--spacing-lg); /* More horizontal padding for text */
-  font-size: 18px; /* Ensure consistent font size */
-  line-height: 1.4; /* Better line height for text display */
-  -webkit-appearance: none; /* Remove iOS default styling */
-  appearance: none; /* Remove default styling */
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right var(--spacing-sm) center;
-  background-size: 16px;
-  padding-right: calc(var(--spacing-lg) + 24px); /* Space for custom arrow */
+.form-input:hover {
+  border-color: var(--color-text-muted);
 }
 
 .form-input:focus {
   outline: none;
   border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+/* iOS Safari dropdown fixes */
+select.form-input {
+  min-height: 52px;
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-size: var(--font-base);
+  line-height: 1.4;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23a7a7a7' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--spacing-sm) center;
+  background-size: 16px;
+  padding-right: calc(var(--spacing-lg) + 24px);
+  cursor: pointer;
 }
 
 /* Device selector loading state */
@@ -78,69 +85,129 @@ select.form-input.loading::after {
   100% { transform: translateY(-50%) rotate(360deg); }
 }
 
-.form-title {
-  font-size: 1.3rem;
-  color: var(--color-primary);
-  margin-top: 0;
-  /* Provide explicit spacing below the form title for consistency */
-  margin-bottom: var(--spacing-md);
-  text-align: center;
-}
-
 .form-help {
   display: block;
-  font-size: 0.85rem;
+  font-size: var(--font-xs);
   margin-top: var(--spacing-xs);
-  color: var(--color-disabled);
+  color: var(--color-text-muted);
+  line-height: 1.4;
 }
 
 .muted-text {
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: var(--font-sm);
 }
 
 input[type="time"] {
   appearance: none;
-  font-size: 1rem;
-  padding: var(--spacing-sm);
-  border: none;
+  font-size: var(--font-lg);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
   border-radius: var(--border-radius-md);
   background-color: var(--color-surface);
-  color: var(--color-inverse-text);
+  color: var(--color-text);
   width: 100%;
-  height: 48px;
+  height: 52px;
   box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+  transition: all var(--transition-fast) var(--transition-easing);
+}
+
+input[type="time"]:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 
 select {
-  height: 48px;
+  height: 52px;
   width: 100%;
 }
 
 /* Options group with exactly uniform spacing */
 .options-group {
-  border: 1px solid var(--color-surface);
-  border-radius: var(--border-radius-md);
-  padding: var(--spacing-md);
-  padding-top: calc(var(--spacing-md) + 8px);
-  padding-bottom: var(--spacing-lg);
-  margin-top: var(--spacing-lg); /* Extra top margin for better spacing */
-  margin-bottom: var(--spacing-md);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-lg);
+  padding-top: calc(var(--spacing-lg) + 8px);
+  margin-top: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
   position: relative;
+  background: var(--color-bg-elevated);
 }
 
 .options-group legend {
-  padding: 0 var(--spacing-xs);
+  padding: 0 var(--spacing-sm);
   font-weight: 600;
   color: var(--color-primary);
   position: absolute;
   top: 0;
   transform: translateY(-50%);
   background-color: var(--color-bg);
+  font-size: var(--font-sm);
+  border-radius: var(--border-radius-sm);
 }
 
 .options-group-content {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+}
+
+/* ===============================================
+   🖥️ Desktop Form Enhancements
+   =============================================== */
+@media (min-width: 768px) {
+  .form-group {
+    margin-bottom: var(--spacing-xl);
+  }
+  
+  label {
+    font-size: var(--font-base);
+    margin-bottom: var(--spacing-sm);
+  }
+  
+  .form-input {
+    font-size: var(--font-base);
+    padding: var(--spacing-md);
+    min-height: 52px;
+  }
+  
+  select.form-input {
+    min-height: 56px;
+    font-size: var(--font-base);
+  }
+  
+  input[type="time"] {
+    font-size: var(--font-xl);
+    height: 56px;
+  }
+  
+  .form-help {
+    font-size: var(--font-sm);
+  }
+  
+  .options-group {
+    padding: var(--spacing-xl);
+    padding-top: calc(var(--spacing-xl) + 8px);
+  }
+  
+  .options-group-content {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--spacing-xl);
+  }
+}
+
+@media (min-width: 992px) {
+  /* Two-column form layout for desktop */
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-xl);
+  }
+  
+  .form-row .form-group {
+    margin-bottom: 0;
+  }
 }
