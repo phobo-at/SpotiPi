@@ -166,7 +166,7 @@ ssh pi@spotipi.local 'cd /home/pi/spotipi && SPOTIPI_ENABLE_ALARM_TIMER=0 ./depl
 The deploy script uses an allowlist `rsync` (run.py, requirements, `src/`, `static/`, `templates/`, `config/`), keeping the Raspberry Pi installation minimal.
 
 ## 📸 Screenshots
-<img src="docs/images/spotipi.png" alt="SpotiPi Interface" width="80%">
+<img src="docs/images/spotipi.png" alt="SpotiPi Interface" width="100%">
 
 ## 🏗️ Architecture
 
