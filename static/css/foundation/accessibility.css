@@ -21,6 +21,21 @@
     animation: none;
   }
   
+  /* Disable shimmer animation for skeleton loaders */
+  .placeholder-glow,
+  .skeleton-line,
+  .skeleton-media,
+  .skeleton-tile {
+    animation: none !important;
+    background: var(--color-surface-muted, rgba(255, 255, 255, 0.08)) !important;
+  }
+  
+  /* Disable ripple effects */
+  .ripple {
+    animation: none;
+    display: none;
+  }
+  
   #alarm-form,
   #active-alarm-mode,
   #sleep-form,

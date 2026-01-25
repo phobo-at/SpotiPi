@@ -90,3 +90,30 @@
   --font-5xl: 3rem;
   --font-hero: 4rem;
 }
+
+/* ===============================================
+   🌙 OLED Black Mode
+   True black for AMOLED displays
+   =============================================== */
+:root[data-theme="oled"] {
+  --color-bg: #000000;
+  --color-bg-elevated: #0a0a0a;
+  --color-bg-highlight: #1a1a1a;
+  --color-surface: #0f0f0f;
+  --color-surface-hover: #1a1a1a;
+  --color-surface-active: #222222;
+  --color-border: #222222;
+  --color-border-subtle: #1a1a1a;
+}
+
+/* Smooth theme transition */
+:root {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Disable transition if user prefers reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    transition: none;
+  }
+}

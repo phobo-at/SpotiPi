@@ -508,7 +508,42 @@ export function initSettingsPanel() {
     });
   }
   
+  // OLED Mode toggle
+  const oledToggle = document.getElementById('setting-oled-mode');
+  if (oledToggle) {
+    // Initialize from saved preference
+    oledToggle.checked = localStorage.getItem('theme') === 'oled';
+    
+    oledToggle.addEventListener('change', (e) => {
+      toggleOLEDMode(e.target.checked);
+    });
+  }
+  
   console.log('⚙️ Settings panel initialized');
+}
+
+/**
+ * Toggle OLED Black Mode
+ * @param {boolean} enable - Whether to enable OLED mode
+ */
+export function toggleOLEDMode(enable) {
+  if (enable) {
+    document.documentElement.dataset.theme = 'oled';
+    localStorage.setItem('theme', 'oled');
+  } else {
+    delete document.documentElement.dataset.theme;
+    localStorage.setItem('theme', 'default');
+  }
+}
+
+/**
+ * Initialize theme from localStorage on page load
+ */
+export function initTheme() {
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme === 'oled') {
+    document.documentElement.dataset.theme = 'oled';
+  }
 }
 
 /**

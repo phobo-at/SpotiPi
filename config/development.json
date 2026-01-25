@@ -26,9 +26,9 @@
   "language": "en",
   "feature_sleep": false,
   "feature_library": true,
+  "volume": 50,
   "sleep_shuffle": true,
   "port": 5001,
   "host": "127.0.0.1",
-  "test_volume": 44,
-  "volume": 25
+  "test_volume": 44
 }

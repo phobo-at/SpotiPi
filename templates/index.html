@@ -109,22 +109,25 @@
 
           <!-- Global volume control (mobile) -->
           <div class="global-volume-container hide-tablet hide-desktop">
-            <label for="global-volume" class="volume-label">
-              <span>{{ t('volume_label')|safe }}</span>
-              <span id="volume-display">{{ initial_volume }}%</span>
-            </label>
-            <input
-              type="range"
-              id="global-volume"
-              class="form-input"
-              min="0"
-              max="100"
-              value="{{ initial_volume }}"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              aria-valuenow="{{ initial_volume }}"
-              aria-valuetext="{{ initial_volume }}%"
-            >
+            <div class="volume-control">
+              <svg class="icon volume-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+              </svg>
+              <input
+                type="range"
+                id="global-volume"
+                class="volume-slider"
+                min="0"
+                max="100"
+                value="{{ initial_volume }}"
+                aria-label="{{ t('volume_label') }}"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="{{ initial_volume }}"
+                aria-valuetext="{{ initial_volume }}%"
+              >
+              <span class="volume-display" id="volume-display">{{ initial_volume }}%</span>
+            </div>
           </div>
 
           <!-- Main navigation -->

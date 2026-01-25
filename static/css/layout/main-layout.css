@@ -3,17 +3,51 @@
    =============================================== */
 .global-volume-container {
   background-color: var(--color-surface);
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--border-radius-md);
   margin-bottom: var(--spacing-md);
   box-shadow: var(--shadow-sm);
   width: 100%;
   box-sizing: border-box;
-  max-width: 400px;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: none;
   border: 1px solid var(--color-border-subtle);
   transition: all var(--transition-normal) var(--transition-easing);
+}
+
+.global-volume-container .volume-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.global-volume-container .volume-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.global-volume-container .volume-slider {
+  flex: 1;
+}
+
+.global-volume-container .volume-display {
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: var(--font-sm);
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Desktop: centered with max-width */
+@media (min-width: 768px) {
+  .global-volume-container {
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: var(--spacing-md);
+  }
 }
 
 .global-volume-container:hover {

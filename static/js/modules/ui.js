@@ -10,6 +10,58 @@ let cachedSleepStatus = null;
 let cachedSleepTimestamp = 0;
 
 /**
+ * Creates a ripple effect on button click
+ * Material Design-inspired touch feedback
+ * @param {MouseEvent|TouchEvent} event
+ */
+export function createRipple(event) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  
+  const button = event.currentTarget;
+  if (!button) return;
+  
+  const rect = button.getBoundingClientRect();
+  const ripple = document.createElement('span');
+  
+  const x = (event.clientX || event.touches?.[0]?.clientX) - rect.left;
+  const y = (event.clientY || event.touches?.[0]?.clientY) - rect.top;
+  const size = Math.max(rect.width, rect.height) * 2;
+  
+  ripple.className = 'ripple';
+  ripple.style.cssText = `
+    left: ${x - size / 2}px;
+    top: ${y - size / 2}px;
+    width: ${size}px;
+    height: ${size}px;
+  `;
+  
+  button.appendChild(ripple);
+  ripple.addEventListener('animationend', () => ripple.remove());
+}
+
+/**
+ * Initialize ripple effects on all interactive buttons
+ */
+export function initRippleEffects() {
+  const selectors = [
+    '.toggle-buttons button',
+    '.control-btn',
+    '.btn-primary',
+    '.weekday-bubble'
+  ];
+  
+  selectors.forEach(selector => {
+    document.querySelectorAll(selector).forEach(button => {
+      // Avoid duplicate listeners
+      if (!button.dataset.rippleInit) {
+        button.addEventListener('click', createRipple);
+        button.dataset.rippleInit = 'true';
+      }
+    });
+  });
+}
+
+/**
  * Smoothly hide an element with animation
  * @param {HTMLElement} element - Element to hide
  */
@@ -135,6 +187,9 @@ export function initializeUI() {
     renderTrackSkeleton();
     showInterface(saved);
     updateTime();
+    
+    // Initialize ripple effects on interactive buttons
+    initRippleEffects();
 }
 
 /**
@@ -497,11 +552,32 @@ export function showInterface(mode) {
       settingsTab: '#settings-tab'
     });
     
-    elements.alarmInterface.style.display = (mode === 'alarm') ? 'block' : 'none';
-    elements.sleepInterface.style.display = (mode === 'sleep') ? 'block' : 'none';
-    elements.libraryInterface.style.display = (mode === 'library') ? 'block' : 'none';
-    if (elements.settingsInterface) {
-      elements.settingsInterface.style.display = (mode === 'settings') ? 'block' : 'none';
+    const panels = [
+      elements.alarmInterface,
+      elements.sleepInterface,
+      elements.libraryInterface,
+      elements.settingsInterface
+    ].filter(Boolean);
+    
+    const targetPanel = {
+      'alarm': elements.alarmInterface,
+      'sleep': elements.sleepInterface,
+      'library': elements.libraryInterface,
+      'settings': elements.settingsInterface
+    }[mode];
+    
+    // Use View Transitions API if available and motion is allowed
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    
+    if (document.startViewTransition && !prefersReducedMotion) {
+      document.startViewTransition(() => {
+        panels.forEach(p => { if (p) p.style.display = 'none'; });
+        if (targetPanel) targetPanel.style.display = 'block';
+      });
+    } else {
+      // Fallback for browsers without View Transitions API
+      panels.forEach(p => { if (p) p.style.display = 'none'; });
+      if (targetPanel) targetPanel.style.display = 'block';
     }
     
     elements.alarmTab.setAttribute('aria-selected', String(mode === 'alarm'));

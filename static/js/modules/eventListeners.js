@@ -7,6 +7,37 @@ import { saveAlarmSettings } from './settings.js';
 
 console.log("eventListeners.js loaded");
 
+// -----------------------------------------------
+// 📳 Haptic Feedback System
+// -----------------------------------------------
+
+/**
+ * Haptic feedback patterns (duration in ms)
+ */
+const HAPTIC = {
+  TAP: 10,           // Light tap for navigation
+  SUCCESS: [10, 50, 10], // Double pulse for success
+  ERROR: [50, 30, 50],   // Stronger pattern for errors
+  TOGGLE: 15         // Slightly longer for toggles
+};
+
+/**
+ * Triggers haptic feedback on supported devices
+ * @param {number|number[]} pattern - Vibration pattern in ms
+ */
+function triggerHaptic(pattern = HAPTIC.TAP) {
+  if ('vibrate' in navigator) {
+    try {
+      navigator.vibrate(pattern);
+    } catch {
+      // Silently fail on unsupported devices
+    }
+  }
+}
+
+// Export for use in other modules
+export { triggerHaptic, HAPTIC };
+
 // Delayed volume sync timer
 let volumeSyncTimer = null;
 
@@ -92,11 +123,14 @@ export function initializeEventListeners() {
         shuffleCheckbox: '#shuffle'
     });
 
-    if (elements.alarmTab) elements.alarmTab.addEventListener('click', () => showInterface('alarm'));
-    if (elements.sleepTab) elements.sleepTab.addEventListener('click', () => showInterface('sleep'));
-    if (elements.libraryTab) elements.libraryTab.addEventListener('click', () => showInterface('library'));
-    if (elements.settingsTab) elements.settingsTab.addEventListener('click', () => showInterface('settings'));
-    if (elements.playPauseBtn) elements.playPauseBtn.addEventListener('click', togglePlayPause);
+    // Tab switching with haptic feedback
+    if (elements.alarmTab) elements.alarmTab.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); showInterface('alarm'); });
+    if (elements.sleepTab) elements.sleepTab.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); showInterface('sleep'); });
+    if (elements.libraryTab) elements.libraryTab.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); showInterface('library'); });
+    if (elements.settingsTab) elements.settingsTab.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); showInterface('settings'); });
+    
+    // Play/Pause with haptic feedback
+    if (elements.playPauseBtn) elements.playPauseBtn.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); togglePlayPause(); });
 
     // Helper function to sync both volume sliders
     function syncVolumeSliders(value, sourceId) {
@@ -194,12 +228,14 @@ export function initializeEventListeners() {
     if (elements.alarmEnabled) {
         elements.alarmEnabled.addEventListener('change', function() {
             console.log('🚨 Alarm enabled changed:', this.checked);
+            triggerHaptic(HAPTIC.TOGGLE);
             throttledSaveAlarmSettings({ immediate: true });
         });
     }
     if (elements.alarmEnabledActive) {
         elements.alarmEnabledActive.addEventListener('change', function() {
             console.log('🚨 Alarm active toggle changed:', this.checked);
+            triggerHaptic(HAPTIC.TOGGLE);
             const configToggle = DOM.getElement('enabled');
             if (configToggle) {
                 configToggle.checked = this.checked;
@@ -249,5 +285,119 @@ export function initializeEventListeners() {
         });
     }
 
+    // Initialize pull-to-refresh gesture
+    initPullToRefresh();
+
     console.log("Event Listeners Initialized");
+}
+
+// -----------------------------------------------
+// 📲 Pull-to-Refresh Gesture
+// -----------------------------------------------
+
+let pullStartY = 0;
+let pullDistance = 0;
+const PULL_THRESHOLD = 80;
+let pullIndicator = null;
+
+/**
+ * Initialize pull-to-refresh gesture for mobile devices
+ */
+function initPullToRefresh() {
+  const container = document.querySelector('.app-content');
+  if (!container || !('ontouchstart' in window)) return;
+  
+  // Create pull indicator element
+  pullIndicator = document.createElement('div');
+  pullIndicator.className = 'pull-indicator';
+  pullIndicator.innerHTML = `
+    <svg class="pull-icon" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+    </svg>
+  `;
+  pullIndicator.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%) translateY(-50px);
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    color: var(--color-primary);
+    pointer-events: none;
+  `;
+  document.body.appendChild(pullIndicator);
+  
+  container.addEventListener('touchstart', (e) => {
+    if (window.scrollY === 0) {
+      pullStartY = e.touches[0].clientY;
+    }
+  }, { passive: true });
+  
+  container.addEventListener('touchmove', (e) => {
+    if (pullStartY === 0) return;
+    pullDistance = e.touches[0].clientY - pullStartY;
+    
+    if (pullDistance > 0 && pullDistance < PULL_THRESHOLD * 1.5) {
+      updatePullIndicator(pullDistance / PULL_THRESHOLD);
+    }
+  }, { passive: true });
+  
+  container.addEventListener('touchend', () => {
+    if (pullDistance >= PULL_THRESHOLD) {
+      triggerPullRefresh();
+    }
+    resetPullState();
+  });
+}
+
+/**
+ * Update the pull indicator visual state
+ * @param {number} progress - Progress from 0 to 1+
+ */
+function updatePullIndicator(progress) {
+  if (!pullIndicator) return;
+  
+  const clampedProgress = Math.min(progress, 1.2);
+  pullIndicator.style.opacity = Math.min(clampedProgress, 1);
+  pullIndicator.style.transform = `translateX(-50%) translateY(${clampedProgress * 50 - 50}px) rotate(${clampedProgress * 360}deg)`;
+}
+
+/**
+ * Reset pull state
+ */
+function resetPullState() {
+  pullStartY = 0;
+  pullDistance = 0;
+  if (pullIndicator) {
+    pullIndicator.style.opacity = '0';
+    pullIndicator.style.transform = 'translateX(-50%) translateY(-50px)';
+  }
+}
+
+/**
+ * Trigger refresh action
+ */
+async function triggerPullRefresh() {
+  triggerHaptic(HAPTIC.SUCCESS);
+  
+  // Dynamically import deviceManager and refresh devices
+  try {
+    const { deviceManager } = await import('./deviceManager.js');
+    if (deviceManager?.refreshDevices) {
+      await deviceManager.refreshDevices();
+    }
+    
+    // Also refresh playback status
+    const { updatePlaybackInfo } = await import('./ui.js');
+    await updatePlaybackInfo();
+    
+    // Show success feedback via toast if available
+    const { t } = await import('./translation.js');
+    const message = t('devices_refreshed') || 'Devices refreshed';
+    console.log(`✅ ${message}`);
+  } catch (error) {
+    console.error('Pull refresh failed:', error);
+    triggerHaptic(HAPTIC.ERROR);
+  }
 }

@@ -6,10 +6,13 @@ import { initializeUI, updateSleepTimer, updateAlarmStatus, updatePlaybackInfo, 
 import { DOM, CONFIG } from './modules/state.js';
 import { getPlaybackStatus, fetchAPI, playMusic, getDashboardStatus } from './modules/api.js';
 import { PlaylistSelector } from './modules/playlistSelector.js';
-import { saveAlarmSettings, activateSleepTimerDirect, deactivateSleepTimerDirect } from './modules/settings.js';
+import { saveAlarmSettings, activateSleepTimerDirect, deactivateSleepTimerDirect, initTheme } from './modules/settings.js';
 import { initializeDeviceManager } from './modules/deviceManager.js';
 import { loadMusicLibraryProgressively } from './modules/streamingLoader.js';
 import { t } from './modules/translation.js';
+
+// Initialize theme early to prevent flash of unstyled content
+initTheme();
 
 /**
  * Synchronizes the volume slider with the actual Spotify volume

@@ -1,4 +1,4 @@
-## SpotiPi • Copilot Guidance (v1.4.0)
+## SpotiPi • Copilot Guidance (v1.5.0)
 
 ### Architecture Cheatsheet
 - Flask entrypoint: `run.py` imports `src/app.py`; templates/static at project root.
@@ -9,7 +9,7 @@
 
 ### Coding Patterns to Follow
 - **Concurrency**: Alarm scheduler and token cache are multi-threaded; never mutate config or caches without the thread-safe helpers.
-- **Type hints**: Do not use PEP 604 unions (`A | B`); target 3.9-compatible syntax (`Optional[A]`, `Union[...]`).
+- **Type hints**: Do not use PEP 604 unions (`A | B`); target 3.9-compatible syntax (`Optional[A]`, `Union[...]`).
 - **API Responses**: Prefer `api_response(...)` and `ServiceResult.to_dict()` to keep the JSON envelope consistent (`success/timestamp/request_id`).
 - **Logging**: Import `setup_logger` from `src/utils/logger.py`. Logs already use emoji prefixes—follow that convention sparingly, keep messages short.
   - **Structured logging (v1.3.8)**: Use `log_structured(logger, level, msg, **context)` for production logs with structured fields. Auto-enabled on Pi via `SPOTIPI_JSON_LOGS=1`.
@@ -37,6 +37,18 @@
 - Machine-specific key derivation ensures tokens cannot be moved between machines.
 - Backward compatible: automatically reads legacy plain JSON tokens and re-encrypts on next save.
 
+### UI/UX Patterns (v1.5.0)
+- **Skeleton Loading**: Use `.skeleton-shimmer` class for loading placeholders with animated shimmer effect
+- **Empty States**: SVG illustrations with friendly messages when no content (alarm/sleep inactive)
+- **Ripple Effect**: Material Design ripple on buttons via `initRippleEffects()` in `ui.js`
+- **View Transitions**: Tab switching uses CSS view transitions (300ms) via `showInterface()` helper
+- **Haptic Feedback**: Use `triggerHaptic(pattern)` from `eventListeners.js` for touch interactions. Patterns: `light`, `medium`, `heavy`, `success`, `warning`, `error`
+- **OLED Mode**: Pure black theme via `data-theme="oled"` on root element. Toggle with `toggleOLEDMode()`
+- **Progressive Disclosure**: Use `<details class="options-accordion">` for advanced settings
+- **Pull-to-Refresh**: Touch gesture handler in `eventListeners.js` for mobile refresh
+- **Reduced Motion**: All animations respect `prefers-reduced-motion` media query
+- **Language Persistence**: `get_language()` checks config first, then Accept-Language header
+
 ### Testing & Tooling
 - Unit/integration tests live in `tests/`; they use Flask's test client (no live server). Always update/add tests when touching routes, services, or Spotify interactions.
 - Run `pytest` before deployment. Common targets: `tests/test_api_contract.py`, `tests/test_service_layer.py`, `tests/test_spotify_resilience.py`.
@@ -53,34 +65,19 @@
 - **Config changes (v1.3.8)**: Update Pydantic models in `src/config_schema.py` when adding new config fields. Add field validators for constraints (ranges, patterns, enums).
 - **Logging best practices (v1.3.8)**: Use structured logging for error paths, especially in alarm/playback code. Include contextual fields (alarm_id, device_name, error_code) for correlation.
 - **CORS configuration (v1.3.9)**: Port-agnostic hostname matching supports development environments (e.g., `http://spotipi.local:5000`).
-- **UI/UX patterns (v1.3.9)**: Use CSS transitions (300ms) with `smoothShow()` and `smoothHide()` helpers for consistent fade+slide effects. Always include ARIA attributes for accessibility.
+- **UI/UX patterns (v1.5.0)**: Use CSS transitions (300ms) with view transitions API. Include ARIA attributes for accessibility. Respect reduced motion preferences.
 
-### v1.3.8 Critical Improvements
-- **Alarm Persistence**: systemd timer provides backup scheduling layer (daily 05:30 check, persistent catch-up after downtime).
-- **Structured Logging**: JSON logs with structured fields for production observability. Automatically enabled on Pi, queryable via `journalctl -o json`.
-- **Config Validation**: Pydantic v2 schemas validate all config fields (time format, volume range, timezone, weekdays). Prevents runtime errors from malformed configs.
-- **HTTP Retry**: Automatic retry with exponential backoff for transient Spotify API errors (429 rate limits, 503 service unavailable). Respects `Retry-After` headers.
-
-### v1.3.9 Bug Fixes & UX Improvements
-- **Device Name Validation**: Relaxed to allow Unicode/emoji while maintaining XSS protection (blocks only `<>` and control chars).
-- **Alarm Settings Save**: Fixed `log_structured()` parameter conflict causing 400 BAD REQUEST errors.
-- **CORS Configuration**: Improved port-agnostic hostname matching for development environments.
-- **HTML Escaping**: Added proper escaping in JavaScript template literals to prevent injection attacks.
-### 🎨 Frontend
-- Enhanced `static/css/foundation/utilities.css` with smooth show/hide animations using opacity, transform, and max-height transitions (300ms)
-- Added `smoothShow()` and `smoothHide()` helper functions in `static/js/modules/ui.js` for consistent animation behavior
-- Animation applies to `#alarm-form`, `#active-alarm-mode`, `#sleep-form`, `#active-sleep-mode` via CSS `.hidden` class
-- Fixed sleep timer toggle visibility issue during state transitions
-- **Device Sorting**: Alphabetical (A-Z, case-insensitive) sorting in all device dropdowns.
-- **Accessibility**: Enhanced ARIA attributes for dynamic content changes.
-
-### v1.4.0 Security & Performance Improvements
-- **Token Encryption at Rest**: New `src/utils/token_encryption.py` module encrypts Spotify tokens using Fernet (or XOR fallback). Machine-derived keys prevent token theft. Backward-compatible with plain JSON tokens.
-- **Global ThreadPoolExecutor**: Library loading reuses `_get_library_executor()` singleton, eliminating per-call executor overhead on Pi Zero.
-- **Route Blueprints (Prepared)**: Modular blueprints in `src/routes/` ready for future integration. Enables cleaner code organization without breaking current app.py structure.
-- **Expanded Test Coverage**: New `test_core_functionality.py` covers alarm execution, sleep timer, scheduler persistence, token encryption, and performance patterns.
-- **Settings UI**: New Settings tab with feature flags (`feature_sleep`, `feature_library`), Spotify account display, language selection, and cache management. Templates in `templates/settings.html`, styles in `static/css/features/settings.css`.
-- **Feature Flags**: Config-driven tab visibility via `feature_sleep` (default: false, Sleep is now native in Spotify) and `feature_library` (default: true). Managed via `/api/settings/feature-flags` endpoint.
+### v1.5.0 UI Modernization
+- **Skeleton Shimmer**: CSS keyframe animation in `utilities.css` for loading states
+- **Empty States**: SVG illustrations in `alarm.html` and `sleep.html` with translation keys
+- **Button Ripple**: Material Design ripple effect in `buttons.css` + `ui.js`
+- **View Transitions**: Smooth tab switching via CSS `view-transition` in `ui.js`
+- **Haptic Feedback**: Vibration API patterns in `eventListeners.js` (`triggerHaptic()`)
+- **Glassmorphism**: Frosted glass effect on desktop now-playing card in `desktop-layout.css`
+- **OLED Mode**: Pure black theme in `variables.css`, toggle in `settings.js`
+- **Progressive Disclosure**: Collapsible options via `<details>` in `forms.css`
+- **Pull-to-Refresh**: Touch gesture handler with visual indicator in `utilities.css`
+- **Language Fix**: `get_language()` in `translations.py` now checks config first
 
 ### Documentation References
 - **Config validation**: See `docs/CONFIG_SCHEMA_VALIDATION.md` for Pydantic schema details, validation rules, error handling.

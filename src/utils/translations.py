@@ -240,6 +240,17 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'account_error': 'Fehler beim Laden des Kontos',
         'premium': 'Premium',
         'free': 'Free',
+        
+        # Empty States
+        'empty_alarm_title': 'Noch kein Wecker',
+        'empty_alarm_description': 'Starte deinen Tag mit deiner Lieblingsmusik!',
+        'empty_sleep_title': 'Kein Sleep-Timer',
+        'empty_sleep_description': 'Schlaf sanft ein mit entspannender Musik.',
+        'devices_refreshed': 'Geräte aktualisiert',
+        
+        # Theme
+        'oled_mode_label': 'OLED Black Mode',
+        'oled_mode_desc': 'Tiefschwarzer Hintergrund für AMOLED-Displays',
     },
     
     'en': {
@@ -476,11 +487,27 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         'account_error': 'Error loading account',
         'premium': 'Premium',
         'free': 'Free',
+        
+        # Empty States
+        'empty_alarm_title': 'No alarm set',
+        'empty_alarm_description': 'Start your day with your favorite music!',
+        'empty_sleep_title': 'No sleep timer',
+        'empty_sleep_description': 'Fall asleep gently with relaxing music.',
+        'devices_refreshed': 'Devices refreshed',
+        
+        # Theme
+        'oled_mode_label': 'OLED Black Mode',
+        'oled_mode_desc': 'True black background for AMOLED displays',
     }
 }
 
 def get_language(request: Optional[Any] = None) -> str:
-    """Determines language based on Accept-Language header.
+    """Determines language based on config setting, then Accept-Language header.
+    
+    Priority:
+    1. Config file setting (language field)
+    2. Accept-Language header from browser
+    3. Default to English
     
     Args:
         request: Flask request object with headers
@@ -488,6 +515,17 @@ def get_language(request: Optional[Any] = None) -> str:
     Returns:
         str: Language code ('de' or 'en')
     """
+    # First, check config for explicit language setting
+    try:
+        from src.config import load_config
+        config = load_config()
+        config_lang = config.get('language', '').lower()
+        if config_lang in ('de', 'en'):
+            return config_lang
+    except Exception:
+        pass  # Fall through to browser detection
+    
+    # Fallback to Accept-Language header
     if not request or not hasattr(request, 'headers'):
         return 'en'
     

@@ -59,10 +59,6 @@
     width: 80px;
     height: 80px;
   }
-  
-  .global-volume-container {
-    max-width: 500px;
-  }
 }
 
 /* ===============================================
@@ -110,11 +106,6 @@
   
   .current-track .artist {
     font-size: var(--font-base);
-  }
-  
-  /* Global volume */
-  .global-volume-container {
-    max-width: 100%;
   }
   
   /* Navigation tabs */

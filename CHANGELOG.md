@@ -5,6 +5,34 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2025-01-25
+
+### ✨ UI Modernization
+- **Skeleton Shimmer Animation**: Animated loading states with CSS shimmer effect for album art and track info
+- **Empty States with Illustrations**: Friendly SVG illustrations when no alarm/sleep timer is active
+- **Button Ripple Effect**: Material Design-inspired touch feedback on all buttons
+- **View Transitions**: Smooth CSS transitions when switching between tabs (300ms fade)
+- **Haptic Feedback**: Subtle vibration patterns on mobile for interactions (via Vibration API)
+- **Glassmorphism Now Playing**: Frosted glass effect on desktop sidebar now-playing card
+- **OLED Black Mode**: Pure black theme option for OLED displays (saves battery, reduces burn-in)
+- **Enhanced Time Input**: Larger, more touch-friendly time picker with visual feedback
+- **Progressive Disclosure**: Collapsible "Optionen" accordion for advanced alarm/sleep settings
+- **Pull-to-Refresh Gesture**: Native-feeling refresh on mobile with visual indicator
+
+### 🎨 UI/UX Polish
+- **Unified Volume Control**: Global volume slider now matches alarm volume design (icon + slider + percentage)
+- **Mobile-First Volume**: Volume control uses full width on mobile devices
+- **Language Persistence**: Language selection in Settings now properly saves and applies
+
+### 🔧 Technical
+- Updated `get_language()` to check config setting before Accept-Language header
+- Added CSS custom properties for OLED theme (`--oled-*` variables)
+- New JavaScript modules for haptic feedback and pull-to-refresh gestures
+- Reduced motion support for accessibility (respects `prefers-reduced-motion`)
+
+### 📚 Documentation
+- Updated Copilot instructions with v1.5.0 UI patterns and guidelines
+
 ## [1.4.0] - 2025-01-13
 
 ### 🔒 Security

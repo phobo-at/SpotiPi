@@ -153,3 +153,37 @@
     padding: var(--spacing-sm) var(--spacing-lg);
   }
 }
+
+/* ===============================================
+   🌊 Ripple Effect
+   Material Design-inspired touch feedback
+   =============================================== */
+.ripple-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(0);
+  animation: ripple-animation 0.6s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes ripple-animation {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+/* Apply ripple container to interactive buttons */
+.toggle-buttons button,
+.control-btn,
+.btn-primary,
+.weekday-bubble {
+  position: relative;
+  overflow: hidden;
+}

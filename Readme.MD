@@ -1,4 +1,4 @@
-# 🎵 SpotiPi (v1.4.0)
+# 🎵 SpotiPi (v1.5.0)
 
 **Smart Spotify alarm clock and sleep timer for Raspberry Pi**
 
@@ -19,6 +19,8 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 - 🚀 **Fast Dashboard** - Aggregated status updates over a single request
 - 🔒 **Secure** - Token encryption at rest, environment variables for credentials
 - 📈 **Resilient Alarms** - Monotonic scheduler with catch-up & structured diagnostics
+- 🎨 **Modern UI** - Glassmorphism effects, shimmer loading, OLED black mode
+- 📳 **Haptic Feedback** - Native-feeling touch interactions on mobile
 
 ## 🧱 Architecture
 

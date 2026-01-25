@@ -2,6 +2,19 @@
   <!-- ✅ Filled by JavaScript - no static text needed -->
 </div>
 
+<!-- Empty State (shown when no sleep timer is active) -->
+<div class="empty-state {% if sleep_status.active %}hidden{% endif %}" id="sleep-empty-state">
+  <div class="empty-state-icon">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12.34 2.02C6.59 1.82 2 6.42 2 12c0 5.52 4.48 10 10 10 3.71 0 6.93-2.02 8.66-5.02-7.51-.25-12.09-8.43-8.32-14.96z"/>
+      <path d="M15 4l1 2 2 1-2 1-1 2-1-2-2-1 2-1z" opacity="0.6"/>
+      <path d="M19 10l.5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5z" opacity="0.4"/>
+    </svg>
+  </div>
+  <h3 class="empty-state-title">{{ t('empty_sleep_title') }}</h3>
+  <p class="empty-state-description">{{ t('empty_sleep_description') }}</p>
+</div>
+
 <!-- Sleep Configuration Form (shown when timer is inactive) -->
 <form method="POST" id="sleep-form" aria-labelledby="sleep-form-title"
       data-current-sleep-playlist-uri="{{ config.get('sleep_playlist_uri', '') }}"
@@ -89,10 +102,15 @@
   <input type="hidden" id="sleep-volume" name="volume" value="{{ initial_volume }}">
   <input type="hidden" name="playlist_uri" value="{{ config.get('sleep_playlist_uri', '') }}">
 
-  <!-- Options -->
-  <fieldset class="options-group">
-    <legend>{{ t('further_options') }}</legend>
-    <div class="options-group-content">
+  <!-- Options with Progressive Disclosure -->
+  <details class="options-accordion" id="sleep-options">
+    <summary class="options-accordion-header">
+      <span>{{ t('further_options') }}</span>
+      <svg class="accordion-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M7 10l5 5 5-5z"/>
+      </svg>
+    </summary>
+    <div class="options-accordion-content">
       <!-- Option: Only stop running music -->
       <div class="toggle-switch">
         <label for="stop_if_playing">{{ t('stop_if_playing') }}</label>
@@ -117,7 +135,7 @@
         <label for="sleep_shuffle" class="switch"></label>
       </div>
     </div>
-  </fieldset>
+  </details>
 
   <!-- Sleep Toggle Container in style of "Enable Container" -->
   <div class="toggle-switch enable-container">

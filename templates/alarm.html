@@ -9,6 +9,18 @@
   {% endif %}
 </div>
 
+<!-- Empty State (shown when no alarm is configured and form is hidden) -->
+<div class="empty-state {% if config.get('enabled', False) or config.get('time') %}hidden{% endif %}" id="alarm-empty-state">
+  <div class="empty-state-icon">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/>
+      <path d="M7.88 3.39L6.6 1.86 2 5.71l1.29 1.53 4.59-3.85zM22 5.72l-4.6-3.86-1.29 1.53 4.6 3.86L22 5.72z"/>
+    </svg>
+  </div>
+  <h3 class="empty-state-title">{{ t('empty_alarm_title') }}</h3>
+  <p class="empty-state-description">{{ t('empty_alarm_description') }}</p>
+</div>
+
 <form method="POST" aria-labelledby="alarm-form-title" id="alarm-form" 
       data-current-playlist-uri="{{ config.get('playlist_uri', '') }}"
       class="{% if config.get('enabled', False) %}hidden{% endif %}">
@@ -89,11 +101,15 @@
   <!-- Hidden field for playlist URI -->
   <input type="hidden" id="playlist_uri" name="playlist_uri" value="{{ config.get('playlist_uri', '') }}">
   
-  <!-- Options Section -->
-  <fieldset class="options-group">
-    <legend>{{ t('further_options') }}</legend>
-    
-    <div class="options-group-content">
+  <!-- Options Section with Progressive Disclosure -->
+  <details class="options-accordion" id="alarm-options">
+    <summary class="options-accordion-header">
+      <span>{{ t('further_options') }}</span>
+      <svg class="accordion-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M7 10l5 5 5-5z"/>
+      </svg>
+    </summary>
+    <div class="options-accordion-content">
       <!-- Fade-In Toggle -->
       <div class="toggle-switch">
         <label for="fade_in">{{ t('fade_in') }}</label>
@@ -118,7 +134,7 @@
         <label for="shuffle" class="switch"></label>
       </div>
     </div>
-  </fieldset>
+  </details>
 
   <!-- Enable Checkbox - consistent with other toggles -->
   <div class="toggle-switch enable-container">
