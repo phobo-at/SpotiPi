@@ -13,6 +13,7 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 - 🎵 **Spotify Integration** - Wake up to any playlist, album, or track
 - ⏰ **Smart Alarms** - Single-use alarms that automatically disable after ringing
 - 😴 **Sleep Timer** - Peaceful fade-out for better sleep
+- ▶️ **Playback Controls** - Skip tracks, play/pause directly from the web UI
 - 📱 **Mobile First** - Responsive web interface, PWA support
 - 🍓 **Pi Optimized** - Auto-detection and SD-card protection
 - ⚡ **Instant First Paint** - Lightweight HTML shell with async hydration

@@ -1,4 +1,4 @@
-## SpotiPi • Copilot Guidance (v1.5.0)
+## SpotiPi • Copilot Guidance (v1.5.1)
 
 ### Architecture Cheatsheet
 - Flask entrypoint: `run.py` imports `src/app.py`; templates/static at project root.
@@ -78,6 +78,15 @@
 - **Progressive Disclosure**: Collapsible options via `<details>` in `forms.css`
 - **Pull-to-Refresh**: Touch gesture handler with visual indicator in `utilities.css`
 - **Language Fix**: `get_language()` in `translations.py` now checks config first
+
+### v1.5.1 Playback Controls
+- **Playback Buttons**: Previous/Play-Pause/Next controls in `index.html` under album artwork
+- **Spotify API**: `skip_to_next()` and `skip_to_previous()` in `src/api/spotify.py`
+- **API Endpoints**: `POST /api/playback/next` and `POST /api/playback/previous` in `src/app.py`
+- **Service Layer**: Playback methods in `src/services/spotify_service.py`
+- **Button Styling**: `.playback-controls`, `.playback-btn-primary` (56px), `.playback-btn-secondary` (44px) in `buttons.css`
+- **SVG Icons**: Inline SVG for prev/play/pause/next with `.hidden` class toggle
+- **Haptic Feedback**: `triggerHaptic('medium')` on button press for native feel
 
 ### Documentation References
 - **Config validation**: See `docs/CONFIG_SCHEMA_VALIDATION.md` for Pydantic schema details, validation rules, error handling.
