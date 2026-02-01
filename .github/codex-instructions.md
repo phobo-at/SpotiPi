@@ -40,6 +40,7 @@
 ### Deployment Notes
 - Deployment script `scripts/deploy_to_pi.sh` parses rsync `--itemize-changes` output `%i %f`. If you touch deployment logic, keep that format intact.
 - Minimise disk writes on the Pi; persistent caches/logs should only be written when TTL/config justify it.
+- **Fresh Pi installer**: `deploy/install_fresh_pi.sh` is an interactive setup script that prepares venv + `.env` and sets systemd overrides for the current install path (no symlink required).
 
 ### UI/UX Patterns (v1.3.9)
 - **Smooth animations**: Use CSS transitions (300ms) with `smoothShow()` and `smoothHide()` helpers for consistent fade+slide effects.

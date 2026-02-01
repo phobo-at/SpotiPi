@@ -130,6 +130,15 @@ pip install -r requirements.txt && python generate_token.py
 # Disable the alarm readiness timer if desired (not recommended)
 SPOTIPI_ENABLE_ALARM_TIMER=0 ./deploy/install.sh
 ```
+If you clone to a different path, use the guided installer below (it sets systemd overrides for the current path).
+
+### Guided Fresh Pi Install (interactive)
+
+```bash
+cd /path/to/spotipi
+./deploy/install_fresh_pi.sh
+```
+Der Installer setzt systemd-Overrides auf den aktuellen Pfad (kein Symlink nötig).
 
 ## 🧠 Performance Setup (Pi Zero W)
 

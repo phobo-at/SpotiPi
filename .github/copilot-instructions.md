@@ -56,6 +56,7 @@
   - **New test suites (v1.4.0)**: `tests/test_core_functionality.py` (22 tests for alarm execution, sleep timer, scheduler, token encryption, performance optimizations).
 - **Server Manager (dev)**: Use `python scripts/server_manager.py [start|stop|restart|status|logs]` to run the server as a background daemon. Server runs on `http://localhost:5001` with logs in `logs/server.log`.
 - Deployment uses `scripts/deploy_to_pi.sh`; it relies on rsync `--itemize-changes`. Do not alter the output format (`%i %f`) unless you update the parser too.
+- **Fresh Pi installer**: `deploy/install_fresh_pi.sh` is interactive and sets systemd overrides for the current install path (no symlink required).
 
 ### When Adding New Code
 - Stick to existing module boundaries (route → service manager → core utilities).
