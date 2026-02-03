@@ -27,10 +27,9 @@ from .utils.cache_migration import get_cache_migration_layer
 from .utils.async_snapshot import AsyncSnapshot
 from .utils.logger import setup_logger, setup_logging
 from .utils.perf_monitor import perf_monitor
-from .utils.translations import get_translations, get_user_language, t_api
+from .utils.translations import get_translations, get_user_language
 from .utils.wsgi_logging import TidyRequestHandler
 from .version import VERSION, get_app_info
-from .routes.helpers import api_response
 from .routes.errors import register_error_handlers
 from .routes.alarm import alarm_bp
 from .routes.cache import cache_bp
