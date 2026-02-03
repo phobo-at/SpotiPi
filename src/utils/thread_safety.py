@@ -8,6 +8,7 @@ public API while reducing allocations and lock contention.
 
 from __future__ import annotations
 
+import copy
 import os
 import threading
 import time
@@ -51,6 +52,9 @@ class ThreadSafeConfigManager:
     # ------------------------------------------------------------------
     def _snapshot(self, config: Dict[str, Any]) -> Dict[str, Any]:
         return dict(config)
+
+    def _deep_snapshot(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        return copy.deepcopy(config)
 
     def _cache_stale(self) -> bool:
         if self._cache is None:
@@ -139,14 +143,14 @@ class _ConfigTransactionContext:
 
     def __init__(self, manager: ThreadSafeConfigManager):
         self._manager = manager
-        self._original = manager.load_config()
-        self._pending = self._manager._snapshot(self._original)
+        self._original = manager._deep_snapshot(manager.load_config())
+        self._pending = self._manager._deep_snapshot(self._original)
 
     def load(self) -> Dict[str, Any]:
-        return self._manager._snapshot(self._pending)
+        return self._manager._deep_snapshot(self._pending)
 
     def save(self, config: Dict[str, Any]) -> bool:
-        self._pending = self._manager._snapshot(config)
+        self._pending = self._manager._deep_snapshot(config)
         return self._manager.save_config(self._pending)
 
     def rollback(self) -> bool:
@@ -195,4 +199,3 @@ def invalidate_config_cache() -> None:
 
 def get_config_stats() -> Dict[str, Any]:
     return get_thread_safe_config_manager().get_stats()
-
