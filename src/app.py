@@ -15,7 +15,7 @@ from threading import Thread
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlparse
 
-from flask import (Flask, Response, g, render_template, request)
+from flask import (Flask, Response, g, request)
 from flask_compress import Compress
 
 from .api.spotify import (get_access_token, get_combined_playback, get_devices,
@@ -28,10 +28,11 @@ from .services.service_manager import get_service
 from .utils.cache_migration import get_cache_migration_layer
 from .utils.logger import setup_logger, setup_logging
 from .utils.perf_monitor import perf_monitor
-from .utils.translations import get_translations, get_user_language, t_api
+from .utils.translations import t_api
 from .utils.wsgi_logging import TidyRequestHandler
 from .version import VERSION, get_app_info
 from .routes.helpers import api_response
+from .routes.errors import register_error_handlers
 from .routes.alarm import alarm_bp
 from .routes.cache import cache_bp
 from .routes.devices import devices_bp, init_snapshots as init_devices_snapshots
@@ -67,6 +68,7 @@ app.register_blueprint(music_bp)
 app.register_blueprint(playback_bp)
 app.register_blueprint(services_bp)
 app.register_blueprint(sleep_bp)
+register_error_handlers(app)
 
 # Optimize template handling for low-power environments
 app.config['TEMPLATES_AUTO_RELOAD'] = not LOW_POWER_MODE
@@ -579,89 +581,6 @@ if not hasattr(app, '_warmup_started'):
 # 🚨 Error Handlers
 # =====================================
 
-@app.errorhandler(404)
-def not_found_error(error):
-    """Handle 404 errors by rendering a minimal error page"""
-    if request.path.startswith("/api/") or request.is_json:
-        return api_response(
-            False,
-            message=t_api("page_not_found", request),
-            status=404,
-            error_code="not_found",
-        )
-    config = {}
-    try:
-        config = load_config()
-    except Exception:
-        config = {}
-    user_language = get_user_language(request)
-    translations = get_translations(user_language)
-
-    def template_t(key, **kwargs):
-        from .utils.translations import t
-        return t(key, user_language, **kwargs)
-
-    feature_flags = {
-        "sleep_timer": config.get("feature_sleep", False) if isinstance(config, dict) else False,
-        "music_library": config.get("feature_library", True) if isinstance(config, dict) else True,
-    }
-    return render_template('index.html', 
-                         error_message=t_api("page_not_found"),
-                         config=config,
-                         devices=[],
-                         playlists=[],
-                         next_alarm_info="",
-                         sleep_status={},
-                         initial_state={},
-                         feature_flags=feature_flags,
-                         t=template_t,
-                         translations=translations,
-                         lang=user_language,
-                         now=datetime.datetime.now(),
-                         app_info=get_app_info(),
-                         version=VERSION), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    """Handle 500 errors by rendering a minimal error page"""
-    if request.path.startswith("/api/") or request.is_json:
-        return api_response(
-            False,
-            message=t_api("internal_server_error_page", request),
-            status=500,
-            error_code="internal_error",
-        )
-    config = {}
-    try:
-        config = load_config()
-    except Exception:
-        config = {}
-    user_language = get_user_language(request)
-    translations = get_translations(user_language)
-
-    def template_t(key, **kwargs):
-        from .utils.translations import t
-        return t(key, user_language, **kwargs)
-
-    feature_flags = {
-        "sleep_timer": config.get("feature_sleep", False) if isinstance(config, dict) else False,
-        "music_library": config.get("feature_library", True) if isinstance(config, dict) else True,
-    }
-    return render_template('index.html', 
-                         error_message=t_api("internal_server_error_page"),
-                         config=config,
-                         devices=[],
-                         playlists=[],
-                         next_alarm_info="",
-                         sleep_status={},
-                         initial_state={},
-                         feature_flags=feature_flags,
-                         t=template_t,
-                         translations=translations,
-                         lang=user_language,
-                         now=datetime.datetime.now(),
-                         app_info=get_app_info(),
-                         version=VERSION), 500
 
 # =====================================
 # 🚀 Application Startup
