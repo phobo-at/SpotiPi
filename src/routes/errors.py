@@ -13,7 +13,7 @@ from flask import Flask, render_template, request
 from ..config import load_config
 from ..utils.translations import get_translations, get_user_language, t_api
 from ..version import VERSION, get_app_info
-from .helpers import api_response
+from .helpers import api_error
 
 
 def _build_template_context(config: Dict[str, Any], *, error_message: str) -> Dict[str, Any]:
@@ -53,9 +53,8 @@ def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(404)
     def not_found_error(_error):  # type: ignore[unused-argument]
         if request.path.startswith("/api/") or request.is_json:
-            return api_response(
-                False,
-                message=t_api("page_not_found", request),
+            return api_error(
+                t_api("page_not_found", request),
                 status=404,
                 error_code="not_found",
             )
@@ -70,9 +69,8 @@ def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(500)
     def internal_error(_error):  # type: ignore[unused-argument]
         if request.path.startswith("/api/") or request.is_json:
-            return api_response(
-                False,
-                message=t_api("internal_server_error_page", request),
+            return api_error(
+                t_api("internal_server_error_page", request),
                 status=500,
                 error_code="internal_error",
             )
@@ -83,4 +81,3 @@ def register_error_handlers(app: Flask) -> None:
             config = {}
         context = _build_template_context(config, error_message=t_api("internal_server_error_page"))
         return render_template("index.html", **context), 500
-

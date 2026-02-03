@@ -63,6 +63,23 @@ def api_response(
     return resp
 
 
+def api_error(
+    message: str,
+    *,
+    status: int = 400,
+    error_code: Optional[str] = None,
+    data: Optional[Any] = None,
+) -> Response:
+    """Convenience wrapper for standardized error responses."""
+    return api_response(
+        False,
+        data=data,
+        message=message,
+        status=status,
+        error_code=error_code,
+    )
+
+
 def api_error_handler(func: Callable) -> Callable:
     """Decorator for consistent API error handling.
     
@@ -76,11 +93,10 @@ def api_error_handler(func: Callable) -> Callable:
         except Exception as e:
             logging.exception(f"Error in {func.__name__}")
             if request.is_json or request.path.startswith('/api/'):
-                return api_response(
-                    False,
-                    message=t_api("an_internal_error_occurred", request),
+                return api_error(
+                    t_api("an_internal_error_occurred", request),
                     status=500,
-                    error_code="unhandled_exception"
+                    error_code="unhandled_exception",
                 )
             session['error_message'] = str(e)
             return redirect(url_for('main.index'))
