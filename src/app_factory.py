@@ -7,13 +7,12 @@ Provides a stable factory entrypoint while preserving the existing
 
 from __future__ import annotations
 
-from .app import app as _app
+from .app import create_app as _create_app
 
 
 def create_app():
-    """Return the configured Flask application."""
-    return _app
+    """Return a freshly constructed Flask application."""
+    return _create_app()
 
 
 __all__ = ["create_app"]
-

@@ -27,7 +27,7 @@ from .utils.cache_migration import get_cache_migration_layer
 from .utils.async_snapshot import AsyncSnapshot
 from .utils.logger import setup_logger, setup_logging
 from .utils.perf_monitor import perf_monitor
-from .utils.translations import t_api
+from .utils.translations import get_translations, get_user_language, t_api
 from .utils.wsgi_logging import TidyRequestHandler
 from .version import VERSION, get_app_info
 from .routes.helpers import api_response
@@ -50,120 +50,366 @@ static_dir = project_root / "static"
 # Detect low power mode (e.g. Pi Zero) to tailor runtime features
 LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
 
-app = Flask(
-    __name__,
-    template_folder=str(template_dir),
-    static_folder=str(static_dir),
-    static_url_path='/static'
-)
+logger = logging.getLogger("spotipi")
+cache_migration = None
+_dashboard_snapshot = None
+_playback_snapshot = None
+_devices_snapshot = None
 
-# Register route blueprints
-app.register_blueprint(main_bp)
-app.register_blueprint(alarm_bp)
-app.register_blueprint(cache_bp)
-app.register_blueprint(devices_bp)
-app.register_blueprint(health_bp)
-app.register_blueprint(music_bp)
-app.register_blueprint(playback_bp)
-app.register_blueprint(services_bp)
-app.register_blueprint(sleep_bp)
-register_error_handlers(app)
 
-# Optimize template handling for low-power environments
-app.config['TEMPLATES_AUTO_RELOAD'] = not LOW_POWER_MODE
-app.jinja_env.auto_reload = not LOW_POWER_MODE
+def _configure_app(app: Flask) -> None:
+    """Apply runtime configuration to the Flask app."""
+    app.config['TEMPLATES_AUTO_RELOAD'] = not LOW_POWER_MODE
+    app.jinja_env.auto_reload = not LOW_POWER_MODE
 
-app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
+    app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
 
-app.config.setdefault('COMPRESS_REGISTER', True)
-app.config.setdefault('COMPRESS_ALGORITHM', os.getenv('SPOTIPI_COMPRESS_ALGO', 'gzip'))
-app.config.setdefault(
-    'COMPRESS_MIMETYPES',
-    (
-        'text/html',
-        'text/css',
-        'text/javascript',
-        'application/javascript',
-        'application/json',
-        'application/xml',
-        'image/svg+xml',
-    ),
-)
-try:
-    app.config['COMPRESS_LEVEL'] = max(1, min(9, int(os.getenv('SPOTIPI_COMPRESS_LEVEL', '6'))))
-except ValueError:
-    app.config['COMPRESS_LEVEL'] = 6
-try:
-    app.config['COMPRESS_MIN_SIZE'] = max(256, int(os.getenv('SPOTIPI_COMPRESS_MIN_BYTES', '1024')))
-except ValueError:
-    app.config['COMPRESS_MIN_SIZE'] = 1024
-
-if not LOW_POWER_MODE:
+    app.config.setdefault('COMPRESS_REGISTER', True)
+    app.config.setdefault('COMPRESS_ALGORITHM', os.getenv('SPOTIPI_COMPRESS_ALGO', 'gzip'))
+    app.config.setdefault(
+        'COMPRESS_MIMETYPES',
+        (
+            'text/html',
+            'text/css',
+            'text/javascript',
+            'application/javascript',
+            'application/json',
+            'application/xml',
+            'image/svg+xml',
+        ),
+    )
     try:
-        app.config['SEND_FILE_MAX_AGE_DEFAULT'] = int(os.getenv('SPOTIPI_STATIC_CACHE_SECONDS', str(31536000)))
+        app.config['COMPRESS_LEVEL'] = max(1, min(9, int(os.getenv('SPOTIPI_COMPRESS_LEVEL', '6'))))
     except ValueError:
-        app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000
+        app.config['COMPRESS_LEVEL'] = 6
+    try:
+        app.config['COMPRESS_MIN_SIZE'] = max(256, int(os.getenv('SPOTIPI_COMPRESS_MIN_BYTES', '1024')))
+    except ValueError:
+        app.config['COMPRESS_MIN_SIZE'] = 1024
 
-compress = Compress()
-compress.init_app(app)
+    if not LOW_POWER_MODE:
+        try:
+            app.config['SEND_FILE_MAX_AGE_DEFAULT'] = int(os.getenv('SPOTIPI_STATIC_CACHE_SECONDS', str(31536000)))
+        except ValueError:
+            app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000
 
-# Setup logging
-setup_logging()
-logger = setup_logger("spotipi")
+    compress = Compress()
+    compress.init_app(app)
 
-# Initialize cache migration layer
-cache_migration = get_cache_migration_layer(project_root)
 
-# Adaptive cache TTLs: Longer on Pi Zero W to reduce API calls
-# Playback state changes infrequently (only on skip/pause/volume change)
-_default_dashboard_ttl = 5.0 if LOW_POWER_MODE else 1.5
-_default_playback_status_ttl = 5.0 if LOW_POWER_MODE else 1.5
+def _register_blueprints(app: Flask) -> None:
+    """Register blueprints and error handlers."""
+    app.register_blueprint(main_bp)
+    app.register_blueprint(alarm_bp)
+    app.register_blueprint(cache_bp)
+    app.register_blueprint(devices_bp)
+    app.register_blueprint(health_bp)
+    app.register_blueprint(music_bp)
+    app.register_blueprint(playback_bp)
+    app.register_blueprint(services_bp)
+    app.register_blueprint(sleep_bp)
+    register_error_handlers(app)
 
-try:
-    DASHBOARD_CACHE_TTL = max(
-        0.1,
-        float(os.getenv("SPOTIPI_STATUS_CACHE_SECONDS", str(_default_dashboard_ttl))),
+
+def _init_snapshots() -> tuple[AsyncSnapshot, AsyncSnapshot, AsyncSnapshot]:
+    """Initialize snapshot helpers and return them."""
+    # Adaptive cache TTLs: Longer on Pi Zero W to reduce API calls
+    # Playback state changes infrequently (only on skip/pause/volume change)
+    _default_dashboard_ttl = 5.0 if LOW_POWER_MODE else 1.5
+    _default_playback_status_ttl = 5.0 if LOW_POWER_MODE else 1.5
+
+    try:
+        dashboard_cache_ttl = max(
+            0.1,
+            float(os.getenv("SPOTIPI_STATUS_CACHE_SECONDS", str(_default_dashboard_ttl))),
+        )
+    except ValueError:
+        dashboard_cache_ttl = _default_dashboard_ttl
+
+    try:
+        playback_status_cache_ttl = max(
+            0.1,
+            float(os.getenv("SPOTIPI_PLAYBACK_STATUS_CACHE_SECONDS", str(_default_playback_status_ttl))),
+        )
+    except ValueError:
+        playback_status_cache_ttl = _default_playback_status_ttl
+
+    dashboard_snapshot = AsyncSnapshot(
+        "dashboard",
+        dashboard_cache_ttl,
+        min_retry=1.2 if LOW_POWER_MODE else 0.6
     )
-except ValueError:
-    DASHBOARD_CACHE_TTL = _default_dashboard_ttl
 
-try:
-    PLAYBACK_STATUS_CACHE_TTL = max(
-        0.1,
-        float(os.getenv("SPOTIPI_PLAYBACK_STATUS_CACHE_SECONDS", str(_default_playback_status_ttl))),
+    try:
+        device_snapshot_ttl = max(
+            3.0,
+            float(os.getenv("SPOTIPI_DEVICE_SNAPSHOT_SECONDS", os.getenv("SPOTIPI_DEVICE_TTL", "6")))
+        )
+    except (TypeError, ValueError):
+        device_snapshot_ttl = 8.0 if LOW_POWER_MODE else 5.0
+
+    playback_snapshot = AsyncSnapshot(
+        "playback",
+        playback_status_cache_ttl,
+        min_retry=0.8 if LOW_POWER_MODE else 0.4
     )
-except ValueError:
-    PLAYBACK_STATUS_CACHE_TTL = _default_playback_status_ttl
-
-_dashboard_snapshot = AsyncSnapshot(
-    "dashboard",
-    DASHBOARD_CACHE_TTL,
-    min_retry=1.2 if LOW_POWER_MODE else 0.6
-)
-
-try:
-    DEVICE_SNAPSHOT_TTL = max(
-        3.0,
-        float(os.getenv("SPOTIPI_DEVICE_SNAPSHOT_SECONDS", os.getenv("SPOTIPI_DEVICE_TTL", "6")))
+    devices_snapshot = AsyncSnapshot(
+        "devices",
+        device_snapshot_ttl,
+        min_retry=1.5 if LOW_POWER_MODE else 0.75
     )
-except (TypeError, ValueError):
-    DEVICE_SNAPSHOT_TTL = 8.0 if LOW_POWER_MODE else 5.0
 
-_playback_snapshot = AsyncSnapshot(
-    "playback",
-    PLAYBACK_STATUS_CACHE_TTL,
-    min_retry=0.8 if LOW_POWER_MODE else 0.4
-)
-_devices_snapshot = AsyncSnapshot(
-    "devices",
-    DEVICE_SNAPSHOT_TTL,
-    min_retry=1.5 if LOW_POWER_MODE else 0.75
-)
+    return dashboard_snapshot, playback_snapshot, devices_snapshot
 
-# Inject snapshot references into blueprints that need them
-init_devices_snapshots(_playback_snapshot, _devices_snapshot)
-init_health_snapshots(_dashboard_snapshot, _playback_snapshot, _devices_snapshot)
-init_main_snapshots(_dashboard_snapshot, _playback_snapshot, _devices_snapshot)
+
+def _register_snapshot_injections(
+    dashboard_snapshot: AsyncSnapshot,
+    playback_snapshot: AsyncSnapshot,
+    devices_snapshot: AsyncSnapshot,
+) -> None:
+    """Inject snapshot references into blueprints."""
+    init_devices_snapshots(playback_snapshot, devices_snapshot)
+    init_health_snapshots(dashboard_snapshot, playback_snapshot, devices_snapshot)
+    init_main_snapshots(dashboard_snapshot, playback_snapshot, devices_snapshot)
+
+
+def _register_request_hooks(app: Flask) -> None:
+    """Attach request hooks and template context."""
+
+    @app.before_request
+    def _perf_before_request():
+        """Capture request start timestamp for perf monitoring."""
+        try:
+            g.perf_started = time.perf_counter()
+            g.perf_route = request.endpoint or request.path
+            g.perf_method = request.method
+            g.perf_recorded = False
+        except Exception:
+            g.perf_started = None
+
+    @app.after_request
+    def after_request(response: Response):
+        """Add CORS headers + (optional) gzip compression & cache related headers."""
+        # ---- CORS ----
+        allowed_origins_env = os.getenv('SPOTIPI_CORS_ORIGINS')
+        request_origin = request.headers.get('Origin')
+
+        if allowed_origins_env:
+            allowed_entries = [entry.strip() for entry in allowed_origins_env.split(',') if entry.strip()]
+
+            if any(entry == '*' for entry in allowed_entries):
+                acao_value = request_origin or '*'
+                response.headers['Access-Control-Allow-Origin'] = acao_value
+                if request_origin:
+                    response.headers.setdefault('Vary', 'Origin')
+            elif request_origin and any(_matches_origin(request_origin, entry) for entry in allowed_entries):
+                response.headers['Access-Control-Allow-Origin'] = request_origin
+                response.headers.setdefault('Vary', 'Origin')
+            elif request_origin == 'null' and any(entry.lower() == 'null' for entry in allowed_entries):
+                response.headers['Access-Control-Allow-Origin'] = 'null'
+        else:
+            # Default: allow same-origin and spotipi.local (with any port)
+            default_host = os.getenv('SPOTIPI_DEFAULT_HOST', 'spotipi.local')
+            if request_origin:
+                parsed_origin = urlparse(request_origin)
+                # Allow if hostname matches (ignore port difference)
+                if parsed_origin.hostname and parsed_origin.hostname.endswith(default_host):
+                    response.headers['Access-Control-Allow-Origin'] = request_origin
+                    response.headers.setdefault('Vary', 'Origin')
+                else:
+                    # Fallback to default origin
+                    response.headers['Access-Control-Allow-Origin'] = f'http://{default_host}'
+                    response.headers.setdefault('Vary', 'Origin')
+            # No Origin header = same-origin request, no CORS needed
+
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+        response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+
+        # ---- Static asset caching ----
+        try:
+            if request.path.startswith(app.static_url_path):
+                response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        except Exception:
+            pass
+
+        # ---- Performance instrumentation ----
+        try:
+            start = getattr(g, 'perf_started', None)
+            if start is not None:
+                duration = time.perf_counter() - start
+                route_name = getattr(g, 'perf_route', request.endpoint or request.path)
+                method = getattr(g, 'perf_method', request.method)
+                perf_monitor.record_request(
+                    route_name,
+                    duration,
+                    method=method,
+                    status=response.status_code,
+                    path=request.path,
+                )
+                g.perf_recorded = True
+        except Exception as perf_err:
+            logging.debug(f"Perf monitor skipped: {perf_err}")
+
+        return response
+
+    @app.teardown_request
+    def _perf_teardown(exception):
+        """Ensure timings are recorded even if after_request was skipped."""
+        try:
+            if getattr(g, 'perf_recorded', False):
+                return
+            start = getattr(g, 'perf_started', None)
+            if start is None:
+                return
+            duration = time.perf_counter() - start
+            route_name = getattr(g, 'perf_route', request.endpoint or request.path)
+            method = getattr(g, 'perf_method', request.method if request else 'UNKNOWN')
+            status = 500 if exception else 200
+            perf_monitor.record_request(
+                route_name,
+                duration,
+                method=method,
+                status=status,
+                path=request.path if request else route_name,
+            )
+            g.perf_recorded = True
+        except Exception as perf_err:
+            logging.debug(f"Perf teardown skipped: {perf_err}")
+
+    @app.context_processor
+    def inject_global_vars():
+        """Inject global variables into all templates"""
+        if hasattr(g, 'current_config'):
+            config = g.current_config
+        else:
+            config = load_config()
+            g.current_config = config
+        sleep_service = get_service("sleep")
+        sleep_status_result = sleep_service.get_sleep_status()
+        if sleep_status_result.success:
+            sleep_status_payload = (sleep_status_result.data or {}).get("raw_status") or sleep_status_result.data
+        else:
+            sleep_status_payload = {
+                "active": False,
+                "error": sleep_status_result.message,
+                "error_code": sleep_status_result.error_code or "sleep_status_error"
+            }
+
+        # Get user language from current request
+        user_language = get_user_language(request)
+        translations = get_translations(user_language)
+
+        # Create a translation function that supports parameters
+        def template_t(key, **kwargs):
+            from .utils.translations import t
+            return t(key, user_language, **kwargs)
+
+        return {
+            'app_version': VERSION,
+            'app_info': get_app_info(),
+            'current_config': config,
+            'sleep_status': sleep_status_payload,
+            'translations': translations,
+            't': template_t,
+            'lang': user_language,
+            'static_css_path': '/static/css/',
+            'static_js_path': '/static/js/',
+            'static_icons_path': '/static/icons/',
+            'now': datetime.datetime.now()
+        }
+
+
+def _start_warmup(
+    app: Flask,
+    dashboard_snapshot: AsyncSnapshot,
+    playback_snapshot: AsyncSnapshot,
+    devices_snapshot: AsyncSnapshot,
+) -> None:
+    """Start the background warmup routine once per app instance."""
+    if hasattr(app, '_warmup_started'):
+        return
+
+    def _warmup_fetch():
+        try:
+            logging.info("🌅 Warmup: starting background prefetch")
+            token = get_access_token()
+            if not token:
+                logging.info("🌅 Warmup: no token available yet (user not authenticated)")
+                return
+            snapshot_ts = _iso_timestamp_now()
+            devices_payload = {"status": "pending", "devices": [], "fetched_at": snapshot_ts}
+            playback_payload = {"status": "pending", "playback": None, "fetched_at": snapshot_ts}
+            try:
+                devices_payload = _build_devices_snapshot(token, timestamp=snapshot_ts)
+                devices_snapshot.set(devices_payload)
+                logging.info(
+                    "🌅 Warmup: devices snapshot status=%s (count=%s)",
+                    devices_payload.get("status"),
+                    len(devices_payload.get("devices") or [])
+                )
+            except Exception as e:
+                logging.info(f"🌅 Warmup: device snapshot error: {e}")
+                devices_payload = {"status": "error", "devices": [], "error": str(e), "fetched_at": snapshot_ts}
+            try:
+                playback_payload = _build_playback_snapshot(token, timestamp=snapshot_ts)
+                playback_snapshot.set(playback_payload)
+                if playback_payload.get("status") == "ok":
+                    logging.info("🌅 Warmup: playback snapshot primed")
+            except Exception as e:
+                logging.debug(f"🌅 Warmup: playback snapshot error: {e}")
+                playback_payload = {"status": "error", "playback": None, "error": str(e), "fetched_at": snapshot_ts}
+
+            dashboard_snapshot.set({
+                "playback": playback_payload,
+                "devices": devices_payload,
+                "fetched_at": snapshot_ts
+            })
+
+            if not LOW_POWER_MODE:
+                try:
+                    cache_migration.get_full_library_cached(token, get_user_library, force_refresh=True)
+                    logging.info("🌅 Warmup: music library prefetched into cache")
+                except Exception as e:
+                    logging.info(f"🌅 Warmup: library fetch error: {e}")
+        except Exception as e:
+            logging.info(f"🌅 Warmup: unexpected error: {e}")
+
+    try:
+        Thread(target=_warmup_fetch, daemon=True).start()
+        app._warmup_started = True
+    except Exception as e:
+        logging.info(f"🌅 Warmup: could not start: {e}")
+
+
+def create_app() -> Flask:
+    """Build and configure a Flask application instance."""
+    global logger, cache_migration, _dashboard_snapshot, _playback_snapshot, _devices_snapshot
+
+    app = Flask(
+        __name__,
+        template_folder=str(template_dir),
+        static_folder=str(static_dir),
+        static_url_path='/static'
+    )
+
+    _configure_app(app)
+    _register_blueprints(app)
+
+    setup_logging()
+    logger = setup_logger("spotipi")
+
+    cache_migration = get_cache_migration_layer(project_root)
+
+    dashboard_snapshot, playback_snapshot, devices_snapshot = _init_snapshots()
+    _dashboard_snapshot = dashboard_snapshot
+    _playback_snapshot = playback_snapshot
+    _devices_snapshot = devices_snapshot
+
+    _register_snapshot_injections(dashboard_snapshot, playback_snapshot, devices_snapshot)
+    _register_request_hooks(app)
+    _start_warmup(app, dashboard_snapshot, playback_snapshot, devices_snapshot)
+
+    return app
 
 
 
@@ -224,18 +470,6 @@ def _build_devices_snapshot(token: Optional[str], *, timestamp: Optional[str] = 
 
 
 
-@app.before_request
-def _perf_before_request():
-    """Capture request start timestamp for perf monitoring."""
-    try:
-        g.perf_started = time.perf_counter()
-        g.perf_route = request.endpoint or request.path
-        g.perf_method = request.method
-        g.perf_recorded = False
-    except Exception:
-        g.perf_started = None
-
-
 def _matches_origin(origin: str, allowed_entry: str) -> bool:
     """Check if a request origin matches an allowed CORS entry."""
     if not allowed_entry:
@@ -286,197 +520,12 @@ def _matches_origin(origin: str, allowed_entry: str) -> bool:
     return True
 
 
-@app.after_request
-def after_request(response: Response):
-    """Add CORS headers + (optional) gzip compression & cache related headers."""
-    # ---- CORS ----
-    allowed_origins_env = os.getenv('SPOTIPI_CORS_ORIGINS')
-    request_origin = request.headers.get('Origin')
-
-    if allowed_origins_env:
-        allowed_entries = [entry.strip() for entry in allowed_origins_env.split(',') if entry.strip()]
-
-        if any(entry == '*' for entry in allowed_entries):
-            acao_value = request_origin or '*'
-            response.headers['Access-Control-Allow-Origin'] = acao_value
-            if request_origin:
-                response.headers.setdefault('Vary', 'Origin')
-        elif request_origin and any(_matches_origin(request_origin, entry) for entry in allowed_entries):
-            response.headers['Access-Control-Allow-Origin'] = request_origin
-            response.headers.setdefault('Vary', 'Origin')
-        elif request_origin == 'null' and any(entry.lower() == 'null' for entry in allowed_entries):
-            response.headers['Access-Control-Allow-Origin'] = 'null'
-    else:
-        # Default: allow same-origin and spotipi.local (with any port)
-        default_host = os.getenv('SPOTIPI_DEFAULT_HOST', 'spotipi.local')
-        if request_origin:
-            parsed_origin = urlparse(request_origin)
-            # Allow if hostname matches (ignore port difference)
-            if parsed_origin.hostname and parsed_origin.hostname.endswith(default_host):
-                response.headers['Access-Control-Allow-Origin'] = request_origin
-                response.headers.setdefault('Vary', 'Origin')
-            else:
-                # Fallback to default origin
-                response.headers['Access-Control-Allow-Origin'] = f'http://{default_host}'
-                response.headers.setdefault('Vary', 'Origin')
-        # No Origin header = same-origin request, no CORS needed
-
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
-
-    # ---- Static asset caching ----
-    try:
-        if request.path.startswith(app.static_url_path):
-            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
-    except Exception:
-        pass
-
-    # ---- Performance instrumentation ----
-    try:
-        start = getattr(g, 'perf_started', None)
-        if start is not None:
-            duration = time.perf_counter() - start
-            route_name = getattr(g, 'perf_route', request.endpoint or request.path)
-            method = getattr(g, 'perf_method', request.method)
-            perf_monitor.record_request(
-                route_name,
-                duration,
-                method=method,
-                status=response.status_code,
-                path=request.path,
-            )
-            g.perf_recorded = True
-    except Exception as perf_err:
-        logging.debug(f"Perf monitor skipped: {perf_err}")
-
-    return response
-
-
-@app.teardown_request
-def _perf_teardown(exception):
-    """Ensure timings are recorded even if after_request was skipped."""
-    try:
-        if getattr(g, 'perf_recorded', False):
-            return
-        start = getattr(g, 'perf_started', None)
-        if start is None:
-            return
-        duration = time.perf_counter() - start
-        route_name = getattr(g, 'perf_route', request.endpoint or request.path)
-        method = getattr(g, 'perf_method', request.method if request else 'UNKNOWN')
-        status = 500 if exception else 200
-        perf_monitor.record_request(
-            route_name,
-            duration,
-            method=method,
-            status=status,
-            path=request.path if request else route_name,
-        )
-        g.perf_recorded = True
-    except Exception as perf_err:
-        logging.debug(f"Perf teardown skipped: {perf_err}")
-
 ## Legacy minute-based alarm_scheduler removed; replaced by event-driven version in core.alarm_scheduler
-
-@app.context_processor
-def inject_global_vars():
-    """Inject global variables into all templates"""
-    if hasattr(g, 'current_config'):
-        config = g.current_config
-    else:
-        config = load_config()
-        g.current_config = config
-    sleep_service = get_service("sleep")
-    sleep_status_result = sleep_service.get_sleep_status()
-    if sleep_status_result.success:
-        sleep_status_payload = (sleep_status_result.data or {}).get("raw_status") or sleep_status_result.data
-    else:
-        sleep_status_payload = {
-            "active": False,
-            "error": sleep_status_result.message,
-            "error_code": sleep_status_result.error_code or "sleep_status_error"
-        }
-    
-    # Get user language from current request
-    user_language = get_user_language(request)
-    translations = get_translations(user_language)
-    
-    # Create a translation function that supports parameters
-    def template_t(key, **kwargs):
-        from .utils.translations import t
-        return t(key, user_language, **kwargs)
-    
-    return {
-        'app_version': VERSION,
-        'app_info': get_app_info(),
-        'current_config': config,
-        'sleep_status': sleep_status_payload,
-        'translations': translations,
-        't': template_t,
-        'lang': user_language,
-        'static_css_path': '/static/css/',
-        'static_js_path': '/static/js/',
-        'static_icons_path': '/static/icons/',
-        'now': datetime.datetime.now()
-    }
 
 def _iso_timestamp_now() -> str:
     """Return ISO 8601 timestamp in UTC with a trailing Z."""
     now_utc = datetime.datetime.now(tz=datetime.timezone.utc)
     return now_utc.isoformat(timespec="microseconds").replace("+00:00", "Z")
-
-# Background warmup (runs once after startup) to prefetch devices. On Pi Zero
-# we keep the warmup lightweight (devices + playback cache only).
-if not hasattr(app, '_warmup_started'):
-    def _warmup_fetch():
-        try:
-            logging.info("🌅 Warmup: starting background prefetch")
-            token = get_access_token()
-            if not token:
-                logging.info("🌅 Warmup: no token available yet (user not authenticated)")
-                return
-            snapshot_ts = _iso_timestamp_now()
-            devices_payload = {"status": "pending", "devices": [], "fetched_at": snapshot_ts}
-            playback_payload = {"status": "pending", "playback": None, "fetched_at": snapshot_ts}
-            try:
-                devices_payload = _build_devices_snapshot(token, timestamp=snapshot_ts)
-                _devices_snapshot.set(devices_payload)
-                logging.info(
-                    "🌅 Warmup: devices snapshot status=%s (count=%s)",
-                    devices_payload.get("status"),
-                    len(devices_payload.get("devices") or [])
-                )
-            except Exception as e:
-                logging.info(f"🌅 Warmup: device snapshot error: {e}")
-                devices_payload = {"status": "error", "devices": [], "error": str(e), "fetched_at": snapshot_ts}
-            try:
-                playback_payload = _build_playback_snapshot(token, timestamp=snapshot_ts)
-                _playback_snapshot.set(playback_payload)
-                if playback_payload.get("status") == "ok":
-                    logging.info("🌅 Warmup: playback snapshot primed")
-            except Exception as e:
-                logging.debug(f"🌅 Warmup: playback snapshot error: {e}")
-                playback_payload = {"status": "error", "playback": None, "error": str(e), "fetched_at": snapshot_ts}
-
-            _dashboard_snapshot.set({
-                "playback": playback_payload,
-                "devices": devices_payload,
-                "fetched_at": snapshot_ts
-            })
-
-            if not LOW_POWER_MODE:
-                try:
-                    cache_migration.get_full_library_cached(token, get_user_library, force_refresh=True)
-                    logging.info("🌅 Warmup: music library prefetched into cache")
-                except Exception as e:
-                    logging.info(f"🌅 Warmup: library fetch error: {e}")
-        except Exception as e:
-            logging.info(f"🌅 Warmup: unexpected error: {e}")
-    try:
-        Thread(target=_warmup_fetch, daemon=True).start()
-        app._warmup_started = True
-    except Exception as e:
-        logging.info(f"🌅 Warmup: could not start: {e}")
 
 # =====================================
 # 🚨 Error Handlers
@@ -486,6 +535,8 @@ if not hasattr(app, '_warmup_started'):
 # =====================================
 # 🚀 Application Startup
 # =====================================
+
+app = create_app()
 
 def start_alarm_scheduler():  # backward compatibility alias
     start_event_alarm_scheduler()
