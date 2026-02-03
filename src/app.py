@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from flask import (Flask, Response, g, request)
 from flask_compress import Compress
+from werkzeug.local import LocalProxy
 
 from .api.spotify import (get_access_token, get_combined_playback, get_devices,
                           get_user_library)
@@ -49,7 +50,7 @@ static_dir = project_root / "static"
 # Detect low power mode (e.g. Pi Zero) to tailor runtime features
 LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
 
-app: Flask | None = None
+_app: Flask | None = None
 logger = logging.getLogger("spotipi")
 cache_migration = None
 _dashboard_snapshot = None
@@ -383,7 +384,7 @@ def _start_warmup(
 
 def create_app(*, start_warmup: Optional[bool] = None) -> Flask:
     """Build and configure a Flask application instance."""
-    global app, logger, cache_migration, _dashboard_snapshot, _playback_snapshot, _devices_snapshot
+    global _app, logger, cache_migration, _dashboard_snapshot, _playback_snapshot, _devices_snapshot
 
     flask_app = Flask(
         __name__,
@@ -417,16 +418,16 @@ def create_app(*, start_warmup: Optional[bool] = None) -> Flask:
     if start_warmup:
         _start_warmup(flask_app, dashboard_snapshot, playback_snapshot, devices_snapshot)
 
-    app = flask_app
+    _app = flask_app
     return flask_app
 
 
 def get_app() -> Flask:
     """Return the current app, creating it if needed."""
-    global app
-    if app is None:
-        app = create_app()
-    return app
+    global _app
+    if _app is None:
+        _app = create_app()
+    return _app
 
 
 
@@ -552,6 +553,8 @@ def _iso_timestamp_now() -> str:
 # =====================================
 # 🚀 Application Startup
 # =====================================
+
+app = LocalProxy(get_app)
 
 def start_alarm_scheduler():  # backward compatibility alias
     start_event_alarm_scheduler()
