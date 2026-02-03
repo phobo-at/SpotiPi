@@ -7,7 +7,6 @@ import datetime
 import logging
 import os
 import secrets
-import threading
 import time
 from pathlib import Path
 from threading import Thread
