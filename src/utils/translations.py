@@ -512,11 +512,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 }
 
 def get_language(request: Optional[Any] = None) -> str:
-    """Determines language based on config setting, then Accept-Language header.
-    
+    """Determine language based on Accept-Language header, then config.
+
     Priority:
-    1. Config file setting (language field)
-    2. Accept-Language header from browser
+    1. Accept-Language header from browser (if present)
+    2. Config file setting (language field)
     3. Default to English
     
     Args:
@@ -525,7 +525,18 @@ def get_language(request: Optional[Any] = None) -> str:
     Returns:
         str: Language code ('de' or 'en')
     """
-    # First, check config for explicit language setting
+    # Prefer explicit Accept-Language when provided.
+    if request and hasattr(request, 'headers'):
+        try:
+            accept_language = request.headers.get('Accept-Language', '').lower()
+            if accept_language:
+                if 'de' in accept_language:
+                    return 'de'
+                return 'en'
+        except (AttributeError, TypeError):
+            pass
+
+    # Fallback to config for server-side defaults.
     try:
         from src.config import load_config
         config = load_config()
@@ -533,24 +544,9 @@ def get_language(request: Optional[Any] = None) -> str:
         if config_lang in ('de', 'en'):
             return config_lang
     except Exception:
-        pass  # Fall through to browser detection
-    
-    # Fallback to Accept-Language header
-    if not request or not hasattr(request, 'headers'):
-        return 'en'
-    
-    try:
-        accept_language = request.headers.get('Accept-Language', '').lower()
-        
-        # German if explicitly requesting German
-        if 'de' in accept_language:
-            return 'de'
-        
-        # All other languages = English
-        return 'en'
-    except (AttributeError, TypeError):
-        # Fallback for malformed requests
-        return 'en'
+        pass
+
+    return 'en'
 
 def get_user_language(request: Optional[Any] = None) -> str:
     """Alias for get_language for backward compatibility.

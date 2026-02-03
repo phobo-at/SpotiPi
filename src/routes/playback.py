@@ -8,7 +8,6 @@ import logging
 from flask import Blueprint, request
 
 from ..services.service_manager import get_service
-from ..utils.rate_limiting import rate_limit
 from ..utils.translations import t_api
 from .helpers import api_error_handler, api_response
 
@@ -98,3 +97,37 @@ def play_endpoint():
 
     status = 503 if error_code == "playlists_unavailable" else 500
     return api_response(False, message=message, status=status, error_code=error_code)
+
+
+@playback_bp.route("/api/playback/next", methods=["POST"])
+@api_error_handler
+def playback_next():
+    """Skip to next track."""
+    spotify_service = get_service("spotify")
+    result = spotify_service.skip_to_next()
+
+    if result.success:
+        return api_response(True, data=result.data, message=t_api("ok", request))
+
+    error_code = result.error_code or "skip_failed"
+    if error_code == "auth_required":
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
+
+    return api_response(False, message=result.message or "Skip failed", status=503, error_code=error_code)
+
+
+@playback_bp.route("/api/playback/previous", methods=["POST"])
+@api_error_handler
+def playback_previous():
+    """Skip to previous track."""
+    spotify_service = get_service("spotify")
+    result = spotify_service.skip_to_previous()
+
+    if result.success:
+        return api_response(True, data=result.data, message=t_api("ok", request))
+
+    error_code = result.error_code or "skip_failed"
+    if error_code == "auth_required":
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
+
+    return api_response(False, message=result.message or "Skip failed", status=503, error_code=error_code)

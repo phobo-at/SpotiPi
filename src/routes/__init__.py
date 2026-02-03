@@ -11,6 +11,7 @@ from .music import music_bp
 from .playback import playback_bp
 from .services import services_bp
 from .sleep import sleep_bp
+from .main import main_bp
 
 __all__ = [
     "alarm_bp",
@@ -21,4 +22,5 @@ __all__ = [
     "playback_bp",
     "services_bp",
     "sleep_bp",
+    "main_bp",
 ]
