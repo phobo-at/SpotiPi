@@ -11,8 +11,6 @@ import concurrent.futures
 
 import pytest
 
-from src.app import app
-
 
 @pytest.fixture(autouse=True)
 def reset_rate_limits(client):
@@ -58,7 +56,7 @@ def test_config_change_rate_limit(client):
     assert all(resp.status_code in success_codes for resp in responses)
 
 
-def test_concurrent_requests():
+def test_concurrent_requests(app):
     """Simulate concurrent requests by spawning fresh clients per thread."""
 
     def make_request() -> int:

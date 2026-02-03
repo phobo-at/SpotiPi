@@ -148,7 +148,7 @@ def test_toggle_play_pause_failure_propagates(client, monkeypatch):
 
 def test_dashboard_status_endpoint(client, monkeypatch):
     # Force predictable responses
-    monkeypatch.setattr('src.app.get_access_token', lambda: None)
+    monkeypatch.setattr('src.routes.health.get_access_token', lambda: None)
 
     response = client.get('/api/dashboard/status')
     assert response.status_code == 200

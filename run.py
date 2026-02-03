@@ -12,7 +12,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Import the configured app from src structure
-from src.app import app, start_alarm_scheduler  # noqa: E402
+from src.app import create_app, start_alarm_scheduler  # noqa: E402
 from src.config import load_config  # noqa: E402
 from src.utils.logger import setup_logger  # noqa: E402
 from src.utils.wsgi_logging import TidyRequestHandler  # noqa: E402
@@ -24,6 +24,7 @@ except ImportError:  # pragma: no cover - waitress installed in deployment
 
 if __name__ == "__main__":
     logger = setup_logger("runner")
+    app = create_app()
     # Load configuration for port and debug settings
     config = load_config()
     

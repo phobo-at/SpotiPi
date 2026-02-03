@@ -49,6 +49,7 @@ static_dir = project_root / "static"
 # Detect low power mode (e.g. Pi Zero) to tailor runtime features
 LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
 
+app: Flask | None = None
 logger = logging.getLogger("spotipi")
 cache_migration = None
 _dashboard_snapshot = None
@@ -380,19 +381,19 @@ def _start_warmup(
         logging.info(f"🌅 Warmup: could not start: {e}")
 
 
-def create_app() -> Flask:
+def create_app(*, start_warmup: Optional[bool] = None) -> Flask:
     """Build and configure a Flask application instance."""
-    global logger, cache_migration, _dashboard_snapshot, _playback_snapshot, _devices_snapshot
+    global app, logger, cache_migration, _dashboard_snapshot, _playback_snapshot, _devices_snapshot
 
-    app = Flask(
+    flask_app = Flask(
         __name__,
         template_folder=str(template_dir),
         static_folder=str(static_dir),
         static_url_path='/static'
     )
 
-    _configure_app(app)
-    _register_blueprints(app)
+    _configure_app(flask_app)
+    _register_blueprints(flask_app)
 
     setup_logging()
     logger = setup_logger("spotipi")
@@ -405,9 +406,26 @@ def create_app() -> Flask:
     _devices_snapshot = devices_snapshot
 
     _register_snapshot_injections(dashboard_snapshot, playback_snapshot, devices_snapshot)
-    _register_request_hooks(app)
-    _start_warmup(app, dashboard_snapshot, playback_snapshot, devices_snapshot)
+    _register_request_hooks(flask_app)
 
+    if start_warmup is None:
+        warmup_env = os.getenv("SPOTIPI_WARMUP", "1").strip().lower()
+        start_warmup = warmup_env not in {"0", "false", "no", "off"}
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            start_warmup = False
+
+    if start_warmup:
+        _start_warmup(flask_app, dashboard_snapshot, playback_snapshot, devices_snapshot)
+
+    app = flask_app
+    return flask_app
+
+
+def get_app() -> Flask:
+    """Return the current app, creating it if needed."""
+    global app
+    if app is None:
+        app = create_app()
     return app
 
 
@@ -535,8 +553,6 @@ def _iso_timestamp_now() -> str:
 # 🚀 Application Startup
 # =====================================
 
-app = create_app()
-
 def start_alarm_scheduler():  # backward compatibility alias
     start_event_alarm_scheduler()
 
@@ -547,7 +563,8 @@ def start_alarm_scheduler():  # backward compatibility alias
 def run_app(host="0.0.0.0", port=5001, debug=False):
     """Run the Flask app with event-driven alarm scheduler."""
     start_event_alarm_scheduler()
-    app.run(
+    flask_app = get_app()
+    flask_app.run(
         host=host,
         port=port,
         debug=debug,
@@ -558,6 +575,7 @@ def run_app(host="0.0.0.0", port=5001, debug=False):
 # Do not start scheduler at import time to avoid duplicate threads in WSGI
 
 if __name__ == "__main__":
+    create_app()
     logging.info(f"🎵 Starting {get_app_info()}")
     logging.info(f"📁 Project root: {project_root}")
     logging.info(f"⚙️ Config loaded: {bool(load_config())}")
