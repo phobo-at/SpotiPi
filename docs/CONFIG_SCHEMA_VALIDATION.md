@@ -185,7 +185,7 @@ python -m pytest tests/test_config_validation.py -v
 
 ### Leere Strings
 
-Leere Strings sind für `playlist_uri` und `device_name` valide (Schema-Ebene). Die **App-Logik** (z.B. in `app.py`) muss prüfen, ob diese Werte sinnvoll sind (z.B. Alarm mit leerem Playlist → Fehler).
+Leere Strings sind für `playlist_uri` und `device_name` valide (Schema-Ebene). Die **App-Logik** (z.B. in `src/services/alarm_service.py` oder den Route-Handlern) muss prüfen, ob diese Werte sinnvoll sind (z.B. Alarm mit leerem Playlist → Fehler).
 
 ---
 

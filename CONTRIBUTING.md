@@ -38,11 +38,13 @@ python run.py
 ```
 SpotiPi/
 ├── src/                    # Main application code
-│   ├── app.py             # Flask app & routes
+│   ├── app.py             # Flask app wiring + middleware
+│   ├── app_factory.py     # create_app() entrypoint for WSGI/tests
 │   ├── config.py          # Configuration management
 │   ├── api/               # Spotify API integration
 │   ├── core/              # Core logic (alarm, sleep, scheduler)
 │   ├── services/          # Service layer architecture
+│   ├── routes/            # Flask blueprints (HTTP endpoints)
 │   └── utils/             # Utilities (logger, cache, etc.)
 ├── static/                # Frontend assets
 ├── templates/             # HTML templates

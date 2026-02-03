@@ -235,7 +235,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Avoid blocking `psutil` CPU sampling on the Pi Zero and reuse the last known reading when low-power mode is active.
 
 ### 🔒 Security & Config
-- Default CORS now locks to `http://spotipi.local` (overridable via `SPOTIPI_DEFAULT_ORIGIN`) instead of `*`.
+- Default CORS now locks to `http://spotipi.local` (overridable via `SPOTIPI_DEFAULT_HOST`) instead of `*`.
 - Per-request config snapshots are cached in `flask.g`, eliminating duplicate disk reads for each template render.
 
 ### 🧪 Tests

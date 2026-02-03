@@ -26,6 +26,7 @@ Wake up to your favorite Spotify music with this elegant web-based alarm system.
 ## 🧱 Architecture
 
 - Flask controllers stay thin—they validate HTTP specifics and delegate business logic to the service layer (`src/services/*`) for shared validation, caching, and state changes.
+- HTTP routes live in `src/routes/` (blueprints). `src/app.py` wires the app + middleware, and `src/app_factory.py` provides a clean `create_app()` entrypoint for WSGI.
 - Spotify music-library endpoints now hydrate through a single cache & hashing pipeline (`utils.library_utils`), so `/api/music-library` and `/api/music-library/sections` expose identical headers and payload semantics.
 
 ## 🚀 Quick Start
@@ -74,7 +75,8 @@ SPOTIFY_USERNAME=your_username
 # Optional: Pi Zero / low-power mode optimizations
 SPOTIPI_LOW_POWER=1
 SPOTIPI_TIMEZONE=Europe/Vienna                 # Override detected timezone for alarms & scheduler
-SPOTIPI_DEFAULT_ORIGIN=http://spotipi.local   # CORS allowlist fallback for LAN UI
+SPOTIPI_DEFAULT_HOST=spotipi.local            # CORS fallback host for LAN UI
+SPOTIPI_CORS_ORIGINS=http://spotipi.local     # Comma-separated allowlist for CORS (optional)
 SPOTIPI_PLAYBACK_CACHE_TTL=3.0                # Seconds to cache /me/player snapshot
 SPOTIPI_DEVICE_TTL=10                         # Device cache TTL in seconds (5-15 on Pi Zero)
 SPOTIPI_LIBRARY_TTL_MINUTES=60                # Library cache TTL in minutes (30-120)
@@ -83,6 +85,7 @@ SPOTIPI_CATCHUP_GRACE_SECONDS=600             # Catch-up window in seconds for m
 SPOTIPI_NETWORK_PROBE_HOST=api.spotify.com    # TCP probe host for readiness checks
 SPOTIPI_NETWORK_PROBE_TIMEOUT=1.5             # Probe timeout in seconds
 SPOTIPI_DNS_PROBE_HOST=api.spotify.com        # DNS probe host for readiness checks
+SPOTIPI_WARMUP=0                              # Disable background snapshot warmup (e.g., tests)
 ```
 
 Everything else is auto-configured with smart defaults.

@@ -1,7 +1,7 @@
 # Code Review - Kritische Lücken behoben (v1.3.8)
 
 **Status:** ✅ Alle 4 kritischen Gaps erfolgreich behoben  
-**Tests:** 70 Tests, alle bestehen ✅  
+**Tests:** 116 Tests (2 skipped), alle bestehen ✅  
 **Deployment:** Bereit für `scripts/deploy_to_pi.sh`
 
 ---
@@ -40,7 +40,7 @@
 
 **Geänderte Dateien:**
 - `src/utils/logger.py` (100+ Zeilen): JSONFormatter, log_structured()
-- `src/app.py`: Error-Logging in save_alarm(), api_alarm_execute()
+- `src/routes/alarm.py`: Error-Logging in alarm save + manual execute paths
 - `docs/JSON_LOGGING.md` (318 Zeilen): Comprehensive guide
 - `docs/ENVIRONMENT_VARIABLES.md`: SPOTIPI_JSON_LOGS docs
 

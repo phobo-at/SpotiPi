@@ -6,13 +6,13 @@
 1. **Clone repo & install dependencies:**
 ```bash
 git clone <repo-url>
-cd spotify_wakeup
+cd spotipi
 pip install -r requirements.txt
 ```
 
 2. **Set up Spotify credentials:**
 ```bash
-# Create .env file in ~/.spotify_wakeup/.env
+# Create .env file in ~/.spotipi/.env
 SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret  
 SPOTIFY_REFRESH_TOKEN=your_refresh_token
@@ -21,36 +21,37 @@ SPOTIFY_USERNAME=your_username
 
 3. **Load shell functions:**
 ```bash
-source spotipi.zsh
+# Optional: add the helper to your PATH (or call it directly via ./spoti)
+chmod +x ./spoti
 ```
 
 ## Usage
 
 ```bash
 # Start server (Port 5001, Auto-reload)
-spotipi start
+./spoti start
 
 # Check status
-spotipi status
+./spoti status
 
 # View logs
-spotipi logs
+./spoti logs
 
 # Stop server
-spotipi stop
+./spoti stop
 
 # Restart server
-spotipi restart
+./spoti restart
 ```
 
 ## Direct execution
 
 ```bash
 # With default settings
-python app.py --dev --port 5001
+python run.py
 
-# All options
-python app.py --dev --debug --port 5001 --host 0.0.0.0
+# Flask CLI alternative (debug + reload)
+FLASK_APP=src.app:get_app FLASK_DEBUG=1 flask run --port 5001 --host 0.0.0.0
 ```
 
 ## URLs
@@ -70,11 +71,11 @@ python app.py --dev --debug --port 5001 --host 0.0.0.0
 
 ```bash
 # In case of issues: kill processes
-pkill -f "python.*app.py"
-rm ~/.spotify_wakeup/dev_server.pid
+pkill -f "python.*run.py"
+rm -f scripts/server.pid
 
 # Check logs
-tail -f ~/.spotify_wakeup/logs/spotipi_$(date +%Y-%m-%d).log
+tail -f logs/server.log
 ```
 
 ````

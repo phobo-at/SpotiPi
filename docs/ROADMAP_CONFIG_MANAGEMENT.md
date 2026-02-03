@@ -26,16 +26,18 @@ Users should be able to set up SpotiPi completely through the web interface, wit
 
 ### Backend Components
 ```python
-# src/blueprints/config.py
-@app.route("/setup/spotify/oauth")
+# src/routes/config.py
+config_bp = Blueprint("config", __name__)
+
+@config_bp.route("/setup/spotify/oauth")
 def spotify_oauth_start():
     # Initialize OAuth flow
     
-@app.route("/setup/spotify/callback") 
+@config_bp.route("/setup/spotify/callback") 
 def spotify_oauth_callback():
     # Receive and save token
     
-@app.route("/setup/test-connection")
+@config_bp.route("/setup/test-connection")
 def test_spotify_connection():
     # Validate connection
 ```

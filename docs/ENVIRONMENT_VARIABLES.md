@@ -90,6 +90,34 @@ PORT=5001  # Custom port
   - Production: Port 5000
   - Development: Port 5001
 
+#### **SPOTIPI_APP_NAME** - App Namespace
+```bash
+SPOTIPI_APP_NAME=spotipi  # Changes ~/.spotipi and log names
+```
+- **Function:** Names the per-user config directory (e.g., `~/.spotipi`) and log prefixes.
+- **Use Cases:**
+  - Run multiple instances side-by-side
+  - Isolate config/credentials per deployment
+
+#### **SPOTIPI_CORS_ORIGINS** - CORS Allowlist
+```bash
+SPOTIPI_CORS_ORIGINS=http://spotipi.local,http://localhost:5001
+```
+- **Function:** Comma-separated list of allowed origins for CORS.
+- **Defaults:** If unset, requests from the default host are allowed.
+
+#### **SPOTIPI_DEFAULT_HOST** - CORS Fallback Host
+```bash
+SPOTIPI_DEFAULT_HOST=spotipi.local
+```
+- **Function:** Fallback host used to allow same-LAN UI access when no explicit CORS allowlist is set.
+
+#### **SPOTIPI_WARMUP** - Background Snapshot Warmup
+```bash
+SPOTIPI_WARMUP=0  # Disable background warmup (useful for tests)
+```
+- **Function:** Enables/disables background cache warmup at startup.
+
 ### 📊 **Logging Behavior Matrix**
 
 | System | SPOTIPI_DEV | SPOTIPI_JSON_LOGS | Environment | Logging Level | File Logging | Format |

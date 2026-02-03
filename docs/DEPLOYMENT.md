@@ -19,13 +19,13 @@ Umfassende Anleitung für die Einrichtung und Verwaltung des SpotiPi Deployments
 ```
 Mac Entwicklung              Raspberry Pi Produktion
 ├── /spotipi-dev/            ├── /home/pi/repo.git (bare repo)
-│   └── spotify_wakeup       ├── /home/pi/.spotify_wakeup (app)
-│                            └── systemd service (spotify-web.service)
+│   └── spotipi              ├── /home/pi/spotipi (app)
+│                            ├── systemd service (spotipi.service)
 │                            └── Waitress WSGI Server via `python run.py`
 ```
 
 ### Deployment Ablauf
-1. **Entwickeln** auf dem Mac in `/Users/michi/spotipi-dev/spotify_wakeup/`
+1. **Entwickeln** auf dem Mac in `/Users/michi/spotipi-dev/spotipi/`
 2. **Push** via `git push prod master`
 3. **Auto-Deploy** via Git post-receive hook
 4. **Auto-Neustart** systemd service
@@ -59,11 +59,11 @@ sudo usermod -aG sudo pi
 
 ```bash
 # Anwendungsverzeichnis erstellen
-sudo mkdir -p /home/pi/.spotify_wakeup
-sudo chown pi:pi /home/pi/.spotify_wakeup
+sudo mkdir -p /home/pi/spotipi
+sudo chown pi:pi /home/pi/spotipi
 
 # Virtuelle Umgebung erstellen
-cd /home/pi/.spotify_wakeup
+cd /home/pi/spotipi
 python3 -m venv venv
 source venv/bin/activate
 
@@ -90,7 +90,7 @@ Post-receive Hook erstellen:
 cat > /home/pi/repo.git/hooks/post-receive << 'EOF'
 #!/bin/bash
 
-DEPLOY_DIR="/home/pi/.spotify_wakeup"
+DEPLOY_DIR="/home/pi/spotipi"
 REPO_DIR="/home/pi/repo.git"
 LOGFILE="/home/pi/deploy.log"
 
@@ -108,14 +108,14 @@ GIT_DIR="$REPO_DIR" GIT_WORK_TREE="$DEPLOY_DIR" git checkout -f master >> "$LOGF
 # Prüfen ob requirements.txt geändert wurde
 if git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -q "requirements.txt"; then
     echo "[$(date)] 📦 requirements.txt geändert, Abhängigkeiten werden aktualisiert..." >> "$LOGFILE"
-    /home/pi/.spotify_wakeup/venv/bin/pip install -r requirements.txt >> "$LOGFILE" 2>&1
+    /home/pi/spotipi/venv/bin/pip install -r requirements.txt >> "$LOGFILE" 2>&1
 else
     echo "[$(date)] ⏭️  Keine Änderungen an Abhängigkeiten erkannt" >> "$LOGFILE"
 fi
 
 # App neustarten
-echo "[$(date)] 🔄 spotify-web.service wird neugestartet..." >> "$LOGFILE"
-sudo systemctl restart spotify-web.service >> "$LOGFILE" 2>&1
+echo "[$(date)] 🔄 spotipi.service wird neugestartet..." >> "$LOGFILE"
+sudo systemctl restart spotipi.service >> "$LOGFILE" 2>&1
 
 if [ $? -eq 0 ]; then
     echo "[$(date)] ✅ Deployment abgeschlossen! Service erfolgreich neugestartet." >> "$LOGFILE"
@@ -135,7 +135,7 @@ chmod +x /home/pi/repo.git/hooks/post-receive
 Service-Datei erstellen:
 
 ```bash
-sudo tee /etc/systemd/system/spotify-web.service << 'EOF'
+sudo tee /etc/systemd/system/spotipi.service << 'EOF'
 [Unit]
 Description=SpotiPi Web Anwendung
 After=network.target
@@ -144,9 +144,9 @@ After=network.target
 Type=simple
 User=pi
 Group=pi
-WorkingDirectory=/home/pi/.spotify_wakeup
-Environment=PATH=/home/pi/.spotify_wakeup/venv/bin
-ExecStart=/home/pi/.spotify_wakeup/venv/bin/python run.py
+WorkingDirectory=/home/pi/spotipi
+Environment=PATH=/home/pi/spotipi/venv/bin
+ExecStart=/home/pi/spotipi/venv/bin/python run.py
 Restart=always
 RestartSec=10
 
@@ -160,8 +160,8 @@ EOF
 
 # Service aktivieren und starten
 sudo systemctl daemon-reload
-sudo systemctl enable spotify-web.service
-sudo systemctl start spotify-web.service
+sudo systemctl enable spotipi.service
+sudo systemctl start spotipi.service
 ```
 
 ### 6. Alarm Timer Einrichtung (Robustheit)
@@ -194,11 +194,11 @@ SPOTIPI_ENABLE_ALARM_TIMER=0 ./scripts/deploy_to_pi.sh
 Pi User erlauben, Service ohne Passwort zu verwalten:
 
 ```bash
-sudo tee /etc/sudoers.d/spotify-web << 'EOF'
-pi ALL=(ALL) NOPASSWD: /bin/systemctl restart spotify-web.service
-pi ALL=(ALL) NOPASSWD: /bin/systemctl start spotify-web.service
-pi ALL=(ALL) NOPASSWD: /bin/systemctl stop spotify-web.service
-pi ALL=(ALL) NOPASSWD: /bin/systemctl status spotify-web.service
+sudo tee /etc/sudoers.d/spotipi << 'EOF'
+pi ALL=(ALL) NOPASSWD: /bin/systemctl restart spotipi.service
+pi ALL=(ALL) NOPASSWD: /bin/systemctl start spotipi.service
+pi ALL=(ALL) NOPASSWD: /bin/systemctl stop spotipi.service
+pi ALL=(ALL) NOPASSWD: /bin/systemctl status spotipi.service
 EOF
 ```
 
@@ -206,10 +206,10 @@ EOF
 
 ```bash
 # Umgebungsdatei erstellen
-touch /home/pi/.spotify_wakeup/.env
+touch /home/pi/.spotipi/.env
 
 # Spotify-Anmeldedaten hinzufügen (manuell bearbeiten)
-nano /home/pi/.spotify_wakeup/.env
+nano /home/pi/.spotipi/.env
 ```
 
 Inhalt der `.env`:
@@ -225,9 +225,9 @@ SPOTIFY_USERNAME=dein_username
 Praktische Aliase zur `.bashrc` hinzufügen:
 
 ```bash
-echo "alias restart-app='sudo systemctl restart spotify-web.service'" >> ~/.bashrc
-echo "alias status-app='sudo systemctl status spotify-web.service'" >> ~/.bashrc
-echo "alias logs-app='sudo journalctl -u spotify-web.service -f'" >> ~/.bashrc
+echo "alias restart-app='sudo systemctl restart spotipi.service'" >> ~/.bashrc
+echo "alias status-app='sudo systemctl status spotipi.service'" >> ~/.bashrc
+echo "alias logs-app='sudo journalctl -u spotipi.service -f'" >> ~/.bashrc
 echo "alias deploy-log='tail -f /home/pi/deploy.log'" >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -274,28 +274,28 @@ ssh pi@spotipi.local "tail -20 /home/pi/deploy.log"
 
 ```bash
 # Service starten
-sudo systemctl start spotify-web.service
+sudo systemctl start spotipi.service
 
 # Service stoppen
-sudo systemctl stop spotify-web.service
+sudo systemctl stop spotipi.service
 
 # Service neustarten (Hauptbefehl)
-sudo systemctl restart spotify-web.service
+sudo systemctl restart spotipi.service
 # oder Alias verwenden:
 restart-app
 
 # Status prüfen
-sudo systemctl status spotify-web.service
+sudo systemctl status spotipi.service
 # oder Alias verwenden:
 status-app
 
 # Logs anzeigen
-sudo journalctl -u spotify-web.service -f
+sudo journalctl -u spotipi.service -f
 # oder Alias verwenden:
 logs-app
 
 # Auto-Start beim Systemstart aktivieren
-sudo systemctl enable spotify-web.service
+sudo systemctl enable spotipi.service
 ```
 
 ### Log Dateien
@@ -304,7 +304,7 @@ sudo systemctl enable spotify-web.service
 |-------|-------|------|
 | `deploy.log` | Git Deployment Logs | `/home/pi/deploy.log` |
 | `web.log` | Anwendung stdout/stderr | `/home/pi/web.log` |
-| `systemd logs` | Service Verwaltung | `journalctl -u spotify-web.service` |
+| `systemd logs` | Service Verwaltung | `journalctl -u spotipi.service` |
 
 ---
 
@@ -315,13 +315,13 @@ sudo systemctl enable spotify-web.service
 #### Service startet nicht
 ```bash
 # Service Status prüfen
-sudo systemctl status spotify-web.service
+sudo systemctl status spotipi.service
 
 # Detaillierte Logs prüfen
-sudo journalctl -u spotify-web.service -f
+sudo journalctl -u spotipi.service -f
 
 # Python Umgebung überprüfen
-ls -la /home/pi/.spotify_wakeup/venv/bin/python
+ls -la /home/pi/spotipi/venv/bin/python
 ```
 
 #### Deployment schlägt fehl
@@ -333,20 +333,20 @@ tail -50 /home/pi/deploy.log
 ls -la /home/pi/repo.git/hooks/post-receive
 
 # Manuelles Deployment testen
-cd /home/pi/.spotify_wakeup
+cd /home/pi/spotipi
 git pull
 ```
 
 #### Umgebungsprobleme
 ```bash
 # .env Datei überprüfen
-cat /home/pi/.spotify_wakeup/.env
+cat /home/pi/.spotipi/.env
 
 # Dateiberechtigungen prüfen
-ls -la /home/pi/.spotify_wakeup/.env
+ls -la /home/pi/.spotipi/.env
 
 # Python Imports testen
-cd /home/pi/.spotify_wakeup
+cd /home/pi/spotipi
 venv/bin/python -c "import src.app"
 ```
 
@@ -354,7 +354,7 @@ venv/bin/python -c "import src.app"
 
 ```bash
 # Service Status Übersicht
-systemctl --user status spotify-web.service
+systemctl --user status spotipi.service
 
 # Festplattenspeicher prüfen
 df -h
@@ -384,7 +384,7 @@ sudo apt update && sudo apt upgrade -y
 du -sh /home/pi/*.log
 
 # Service-Gesundheit überprüfen
-sudo systemctl status spotify-web.service
+sudo systemctl status spotipi.service
 ```
 
 #### Monatlich
@@ -396,7 +396,7 @@ sudo logrotate -f /etc/logrotate.conf
 df -h
 
 # Konfiguration sichern
-cp /home/pi/.spotify_wakeup/.env /home/pi/.env.backup
+cp /home/pi/.spotipi/.env /home/pi/.env.backup
 ```
 
 ### Backup Strategie
@@ -409,8 +409,8 @@ BACKUP_DIR="/home/pi/backups/$(date +%Y%m%d)"
 mkdir -p "$BACKUP_DIR"
 
 # Kritische Dateien sichern
-cp /home/pi/.spotify_wakeup/.env "$BACKUP_DIR/"
-cp /etc/systemd/system/spotify-web.service "$BACKUP_DIR/"
+cp /home/pi/.spotipi/.env "$BACKUP_DIR/"
+cp /etc/systemd/system/spotipi.service "$BACKUP_DIR/"
 cp /home/pi/repo.git/hooks/post-receive "$BACKUP_DIR/"
 
 echo "Backup abgeschlossen: $BACKUP_DIR"
@@ -435,15 +435,15 @@ print(json.dumps(config, indent=2))
 git push prod master
 
 # Manuelles Update auf Pi
-cd /home/pi/.spotify_wakeup
+cd /home/pi/spotipi
 git pull origin master
 venv/bin/pip install -r requirements.txt
-sudo systemctl restart spotify-web.service
+sudo systemctl restart spotipi.service
 ```
 
 #### Python Abhängigkeiten aktualisieren
 ```bash
-cd /home/pi/.spotify_wakeup
+cd /home/pi/spotipi
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt --upgrade
@@ -457,16 +457,16 @@ pip install -r requirements.txt --upgrade
 
 ```bash
 # Schneller Deployment Status
-ssh pi@spotipi.local "systemctl is-active spotify-web.service && tail -5 /home/pi/deploy.log"
+ssh pi@spotipi.local "systemctl is-active spotipi.service && tail -5 /home/pi/deploy.log"
 
 # Remote Neustart
-ssh pi@spotipi.local "sudo systemctl restart spotify-web.service"
+ssh pi@spotipi.local "sudo systemctl restart spotipi.service"
 
 # App Erreichbarkeit prüfen
 curl -s -o /dev/null -w "%{http_code}" http://spotipi.local:5000
 
 # Git Repository Größe
-du -sh /home/pi/repo.git /home/pi/.spotify_wakeup
+du -sh /home/pi/repo.git /home/pi/spotipi
 ```
 
 ### Netzwerk Konfiguration
@@ -495,8 +495,8 @@ sudo apt install -y git python3 python3-pip python3-venv
 git init --bare /home/pi/repo.git
 
 # 2. Arbeitsverzeichnis erstellen
-mkdir -p /home/pi/.spotify_wakeup
-cd /home/pi/.spotify_wakeup
+mkdir -p /home/pi/spotipi
+cd /home/pi/spotipi
 python3 -m venv venv
 
 # 3. Post-receive Hook installieren (siehe Abschnitt 4)

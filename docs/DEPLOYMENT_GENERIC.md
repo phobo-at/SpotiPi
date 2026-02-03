@@ -20,7 +20,7 @@ Comprehensive guide for setting up and managing SpotiPi deployment on Raspberry 
 ```
 Development Machine         Raspberry Pi / Linux Server
 ├── /path/to/spotipi/       ├── /home/pi/spotipi-repo.git (bare repo)
-│   └── spotify_wakeup      ├── /home/pi/spotipi-app (app)
+│   └── spotipi             ├── /home/pi/spotipi-app (app)
 │                           └── systemd service (spotipi.service)
 ```
 
