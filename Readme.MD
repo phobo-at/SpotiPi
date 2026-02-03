@@ -47,7 +47,7 @@ python generate_token.py
 python run.py
 ```
 
-Access at `http://localhost:5001` (development) or `http://spotipi.local:5000` (Pi)
+Access at `http://localhost:5001` (development defaults) or `http://spotipi.local:5000` (Pi defaults). Both can be overridden via `PORT` or the environment config (`config/<env>.json`).
 
 ## 🖥️ Server Management (Development)
 
@@ -66,7 +66,7 @@ Server runs on **http://localhost:5001**, logs to `logs/server.log`.
 
 ## 🔧 Configuration
 
-Create `.env` file (either in the project root for local development or in `~/.spotipi/.env` for deployments):
+Create a `.env` file in the project root for local development (or in `~/.spotipi/.env` for deployments; the app loads both, with the project root overriding when present):
 ```env
 SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret  
