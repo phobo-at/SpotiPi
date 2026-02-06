@@ -40,10 +40,17 @@
 
 /* Hide all checkboxes */
 .toggle-switch input[type="checkbox"], .enable-container .enable-checkbox {
-  height: 0;
-  width: 0;
-  visibility: hidden;
   position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Switch for toggle-switch (grid layout) */
@@ -84,6 +91,12 @@
 .enable-container .switch:hover {
   background: var(--color-surface-hover);
   border-color: var(--color-text-muted);
+}
+
+.toggle-switch input[type="checkbox"]:focus-visible + .switch,
+.enable-container .enable-checkbox:focus-visible + .switch {
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+  border-color: var(--color-primary);
 }
 
 /* Uniform slider for ALL toggles */
