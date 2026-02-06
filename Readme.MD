@@ -207,6 +207,7 @@ SpotiPi automatically configures itself:
 
 ## 🤝 Contributing
 
+- Follow the canonical AI contributor guide in `AGENTS.md`.
 1. Fork the repository
 2. Create feature branch: `git checkout -b feature/name`
 3. Install tooling (`pip install pre-commit`) and run `pre-commit install`
