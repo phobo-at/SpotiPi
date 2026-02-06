@@ -1,7 +1,6 @@
 // /static/js/modules/playlistSelector.js
 import { fetchAPI } from './api.js';
 import { t } from './translation.js';
-import { saveAlarmSettings } from './settings.js';
 
 function getSafeImageUrl(candidate) {
   if (typeof candidate !== 'string' || !candidate.trim()) {
@@ -798,18 +797,15 @@ export class PlaylistSelector {
       this.updateModal();
     }
     
-    selectItem(item) {
-      this.selectedItem = item;
-      this.updatePreview();
-      this.updateHiddenInput();
-      this.close();
-      
-      // Trigger callback
-      if (this.options.onSelect) {
-        this.options.onSelect(item);
-      }
-      
-      // Jetzt MANUELL speichern, da wir das automatische Change-Event deaktiviert haben
-      saveAlarmSettings();
-    }
-  }
+	    selectItem(item) {
+	      this.selectedItem = item;
+	      this.updatePreview();
+	      this.updateHiddenInput();
+	      this.close();
+	      
+	      // Trigger callback
+	      if (this.options.onSelect) {
+	        this.options.onSelect(item);
+	      }
+	    }
+	  }

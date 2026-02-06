@@ -166,16 +166,16 @@ async function loadFromLocalStorageFirst(selectors) {
  */
 function loadSelectedPlaylists() {
     // Load alarm playlist selection
-    const alarmContainer = document.getElementById('alarm-playlist-selector');
-    const currentAlarmUri = alarmContainer?.dataset?.currentPlaylistUri;
+    const alarmForm = document.getElementById('alarm-form');
+    const currentAlarmUri = alarmForm?.dataset?.currentPlaylistUri;
     if (currentAlarmUri && window.playlistSelectors?.alarm) {
         console.log('🔄 Restoring alarm playlist selection:', currentAlarmUri);
         window.playlistSelectors.alarm.setSelected(currentAlarmUri);
     }
     
     // Load sleep playlist selection  
-    const sleepContainer = document.getElementById('sleep-playlist-selector');
-    const currentSleepUri = sleepContainer?.dataset?.currentSleepPlaylistUri;
+    const sleepForm = document.getElementById('sleep-form');
+    const currentSleepUri = sleepForm?.dataset?.currentSleepPlaylistUri;
     if (currentSleepUri && window.playlistSelectors?.sleep) {
         console.log('🔄 Restoring sleep playlist selection:', currentSleepUri);
         window.playlistSelectors.sleep.setSelected(currentSleepUri);
