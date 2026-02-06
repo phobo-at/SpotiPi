@@ -68,7 +68,6 @@
       class="form-input"
       required
       aria-describedby="duration-help"
-      onchange="handleDurationChange(this.value)"
     >
       <option value="15" {% if config.get('sleep_duration') == '15' %}selected{% endif %}>{{ t('duration_15min') }}</option>
       <option value="30" {% if config.get('sleep_duration') == '30' %}selected{% endif %}>{{ t('duration_30min') }}</option>

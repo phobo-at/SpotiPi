@@ -15,7 +15,7 @@
   align-items: center;
   padding: var(--spacing-sm);
   border: 2px solid var(--color-border);
-  border-radius: var(--border-radius);
+  border-radius: var(--border-radius-md);
   background: var(--color-surface);
   cursor: pointer;
   transition: all var(--transition-normal) var(--transition-easing);
@@ -86,7 +86,7 @@
   width: calc(100% - 4px);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius);
+  border-radius: var(--border-radius-md);
   box-shadow: var(--shadow-lg);
   z-index: 1000;
   height: 0;

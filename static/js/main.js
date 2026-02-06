@@ -2,7 +2,7 @@
 // Imports other modules and initializes the application logic
 
 import { initializeEventListeners } from './modules/eventListeners.js';
-import { initializeUI, updateSleepTimer, updateAlarmStatus, updatePlaybackInfo, updateVolumeSlider, hideCurrentTrack, updateCurrentTrack, updatePlayPauseButtonText, handleDurationChange, applyPlaybackStatus, tickSleepCountdown } from './modules/ui.js';
+import { initializeUI, updateSleepTimer, updateAlarmStatus, updatePlaybackInfo, updateVolumeSlider, hideCurrentTrack, updateCurrentTrack, updatePlayPauseButtonText, applyPlaybackStatus, tickSleepCountdown } from './modules/ui.js';
 import { DOM, CONFIG } from './modules/state.js';
 import { getPlaybackStatus, fetchAPI, playMusic, getDashboardStatus } from './modules/api.js';
 import { PlaylistSelector } from './modules/playlistSelector.js';
@@ -399,6 +399,3 @@ document.addEventListener('DOMContentLoaded', () => {
 
     console.log("SpotiPi Main Initialized successfully.");
 });
-
-// Make functions globally available for inline HTML event handlers
-window.handleDurationChange = handleDurationChange;
