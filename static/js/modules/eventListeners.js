@@ -128,6 +128,69 @@ export function initializeEventListeners() {
     if (elements.sleepTab) elements.sleepTab.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); showInterface('sleep'); });
     if (elements.libraryTab) elements.libraryTab.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); showInterface('library'); });
     if (elements.settingsTab) elements.settingsTab.addEventListener('click', () => { triggerHaptic(HAPTIC.TAP); showInterface('settings'); });
+
+    const tabButtons = [
+      elements.alarmTab,
+      elements.sleepTab,
+      elements.libraryTab,
+      elements.settingsTab
+    ].filter(Boolean);
+
+    const getVisibleTabs = () => tabButtons.filter(tab => {
+      if (!tab) return false;
+      if (tab.hidden) return false;
+      if (tab.style.display === 'none') return false;
+      return true;
+    });
+
+    const activateTabByElement = (tab) => {
+      if (!tab || !tab.id.endsWith('-tab')) return;
+      const mode = tab.id.replace('-tab', '');
+      showInterface(mode);
+    };
+
+    tabButtons.forEach(tab => {
+      tab.addEventListener('keydown', (event) => {
+        const visibleTabs = getVisibleTabs();
+        if (!visibleTabs.length) return;
+
+        const currentIndex = visibleTabs.indexOf(tab);
+        if (currentIndex < 0) return;
+
+        let nextIndex = null;
+        switch (event.key) {
+          case 'ArrowRight':
+          case 'ArrowDown':
+            nextIndex = (currentIndex + 1) % visibleTabs.length;
+            break;
+          case 'ArrowLeft':
+          case 'ArrowUp':
+            nextIndex = (currentIndex - 1 + visibleTabs.length) % visibleTabs.length;
+            break;
+          case 'Home':
+            nextIndex = 0;
+            break;
+          case 'End':
+            nextIndex = visibleTabs.length - 1;
+            break;
+          case 'Enter':
+          case ' ':
+            event.preventDefault();
+            triggerHaptic(HAPTIC.TAP);
+            activateTabByElement(tab);
+            return;
+          default:
+            return;
+        }
+
+        event.preventDefault();
+        const nextTab = visibleTabs[nextIndex];
+        if (!nextTab) return;
+        nextTab.focus();
+        triggerHaptic(HAPTIC.TAP);
+        activateTabByElement(nextTab);
+      });
+    });
     
     // Playback controls with haptic feedback
     const btnPlayPause = document.getElementById('btn-play-pause');

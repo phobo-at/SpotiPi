@@ -673,50 +673,58 @@ export function showInterface(mode) {
       libraryTab: '#library-tab',
       settingsTab: '#settings-tab'
     });
-    
-    const panels = [
-      elements.alarmInterface,
-      elements.sleepInterface,
-      elements.libraryInterface,
-      elements.settingsInterface
-    ].filter(Boolean);
-    
-    const targetPanel = {
-      'alarm': elements.alarmInterface,
-      'sleep': elements.sleepInterface,
-      'library': elements.libraryInterface,
-      'settings': elements.settingsInterface
-    }[mode];
+
+    const panelMap = {
+      alarm: elements.alarmInterface,
+      sleep: elements.sleepInterface,
+      library: elements.libraryInterface,
+      settings: elements.settingsInterface
+    };
+
+    const tabMap = {
+      alarm: elements.alarmTab,
+      sleep: elements.sleepTab,
+      library: elements.libraryTab,
+      settings: elements.settingsTab
+    };
+
+    const targetMode = panelMap[mode] ? mode : 'alarm';
+    const panels = Object.entries(panelMap).filter(([, panel]) => Boolean(panel));
+
+    const applyPanelVisibility = () => {
+      panels.forEach(([panelKey, panel]) => {
+        const isActive = panelKey === targetMode;
+        panel.hidden = !isActive;
+        panel.style.display = isActive ? 'block' : 'none';
+        panel.setAttribute('aria-hidden', String(!isActive));
+      });
+    };
     
     // Use View Transitions API if available and motion is allowed
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     
     if (document.startViewTransition && !prefersReducedMotion) {
-      document.startViewTransition(() => {
-        panels.forEach(p => { if (p) p.style.display = 'none'; });
-        if (targetPanel) targetPanel.style.display = 'block';
-      });
+      document.startViewTransition(applyPanelVisibility);
     } else {
       // Fallback for browsers without View Transitions API
-      panels.forEach(p => { if (p) p.style.display = 'none'; });
-      if (targetPanel) targetPanel.style.display = 'block';
+      applyPanelVisibility();
     }
+
+    Object.entries(tabMap).forEach(([tabKey, tab]) => {
+      if (!tab) return;
+      const isActive = tabKey === targetMode;
+      tab.setAttribute('aria-selected', String(isActive));
+      tab.tabIndex = isActive ? 0 : -1;
+    });
+
+    localStorage.setItem("activeTab", targetMode);
     
-    elements.alarmTab.setAttribute('aria-selected', String(mode === 'alarm'));
-    elements.sleepTab.setAttribute('aria-selected', String(mode === 'sleep'));
-    elements.libraryTab.setAttribute('aria-selected', String(mode === 'library'));
-    if (elements.settingsTab) {
-      elements.settingsTab.setAttribute('aria-selected', String(mode === 'settings'));
-    }
-    
-    localStorage.setItem("activeTab", mode);
-    
-    if (mode === 'alarm') {
+    if (targetMode === 'alarm') {
       setTimeout(updateAlarmStatus, 100);
     }
     
     // Load settings panel data when switching to settings tab
-    if (mode === 'settings') {
+    if (targetMode === 'settings') {
       import('./settings.js').then(module => {
         module.onSettingsTabActivated();
       });
