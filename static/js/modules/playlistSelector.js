@@ -3,6 +3,23 @@ import { fetchAPI } from './api.js';
 import { t } from './translation.js';
 import { saveAlarmSettings } from './settings.js';
 
+function getSafeImageUrl(candidate) {
+  if (typeof candidate !== 'string' || !candidate.trim()) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(candidate, window.location.origin);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.href;
+    }
+  } catch {
+    // Ignore malformed URLs and fall back to icon.
+  }
+
+  return '';
+}
+
 export class PlaylistSelector {
     constructor(containerId, options = {}) {
       this.container = document.getElementById(containerId);
@@ -23,13 +40,14 @@ export class PlaylistSelector {
       this.artists = [];
     // Track which sections have been loaded to support lazy loading per tab
     this.loadedSections = new Set();
-      this.currentTab = 'playlists';
-      this.selectedItem = null;
-      this.isOpen = false;
-      this.filteredItems = [];
-      
-      this.init();
-    }
+	      this.currentTab = 'playlists';
+	      this.selectedItem = null;
+	      this.isOpen = false;
+	      this.filteredItems = [];
+	      this.renderToken = 0;
+	      
+	      this.init();
+	    }
     
     init() {
       if (!this.container) {
@@ -88,19 +106,19 @@ export class PlaylistSelector {
         console.warn('⚠️ PlaylistSelector: Cannot set music library, container not found');
         return;
       }
-      if (data?.error) {
-          this.playlists = [];
-          this.albums = [];
-          this.tracks = [];
-          this.artists = [];
-          this.createTabs(); // Will show nothing
-          this.updateCurrentTab(); // Will show "no results"
-          const grid = this.container.querySelector('#playlist-grid');
-          if (grid) {
-              grid.innerHTML = `<div class="playlist-no-results">${t('error_loading_music') || 'Fehler beim Laden der Musik'}</div>`;
-          }
-          return;
-      }
+	      if (data?.error) {
+	          this.playlists = [];
+	          this.albums = [];
+	          this.tracks = [];
+	          this.artists = [];
+	          this.createTabs(); // Will show nothing
+	          this.updateCurrentTab(); // Will show "no results"
+	          const grid = this.container.querySelector('#playlist-grid');
+	          if (grid) {
+	              grid.replaceChildren(this.createMessageNode(t('error_loading_music') || 'Fehler beim Laden der Musik'));
+	          }
+	          return;
+	      }
 
       // Support merge mode for progressive loading
       if (options.merge) {
@@ -186,13 +204,18 @@ export class PlaylistSelector {
         this.currentTab = 'playlists';
       }
       
-      // Tabs HTML generieren - clean ohne Loading-Indikatoren
-      tabsContainer.innerHTML = tabs.map(tab => `
-        <button class="playlist-tab tab-button ${this.currentTab === tab.id ? 'active' : ''}" data-tab="${tab.id}">
-          ${tab.label}
-        </button>
-      `).join('');
-    }
+	      tabsContainer.replaceChildren();
+	      const fragment = document.createDocumentFragment();
+	      tabs.forEach(tab => {
+	        const button = document.createElement('button');
+	        button.className = `playlist-tab tab-button${this.currentTab === tab.id ? ' active' : ''}`;
+	        button.dataset.tab = tab.id;
+	        button.type = 'button';
+	        button.textContent = tab.label;
+	        fragment.appendChild(button);
+	      });
+	      tabsContainer.appendChild(fragment);
+	    }
     
     setSelected(itemUri) {
       // Find in playlists, albums, tracks, and artists
@@ -342,20 +365,21 @@ export class PlaylistSelector {
       this.updateCurrentTab();
     }
     
-    updatePreview() {
-      const previewImage = this.container.querySelector('#preview-image');
-      const previewName = this.container.querySelector('#preview-name');
-      const previewMeta = this.container.querySelector('#preview-meta');
-      
-      if (this.selectedItem) {
-        if (previewImage) {
-          if (this.selectedItem.image_url) {
-            previewImage.style.backgroundImage = `url(${this.selectedItem.image_url})`;
-            previewImage.textContent = '';
-          } else {
-            previewImage.style.backgroundImage = '';
-            previewImage.textContent = this.selectedItem.type === 'album' ? '💿' : '';
-          }
+	    updatePreview() {
+	      const previewImage = this.container.querySelector('#preview-image');
+	      const previewName = this.container.querySelector('#preview-name');
+	      const previewMeta = this.container.querySelector('#preview-meta');
+	      
+	      if (this.selectedItem) {
+	        if (previewImage) {
+	          const safeImageUrl = getSafeImageUrl(this.selectedItem.image_url);
+	          if (safeImageUrl) {
+	            previewImage.style.backgroundImage = `url("${safeImageUrl}")`;
+	            previewImage.textContent = '';
+	          } else {
+	            previewImage.style.backgroundImage = '';
+	            previewImage.textContent = this.selectedItem.type === 'album' ? '💿' : '';
+	          }
         }
         
         if (previewName) {
@@ -392,48 +416,126 @@ export class PlaylistSelector {
       }
     }
     
-    updateHiddenInput() {
-      const hiddenInput = this.container.querySelector('#playlist_uri');
-      if (hiddenInput) {
-        hiddenInput.value = this.selectedItem ? this.selectedItem.uri : '';
-      }
-    }
-    
-    updateModal() {
-      const grid = this.container.querySelector('#playlist-grid');
-      if (!grid) return;
+	    updateHiddenInput() {
+	      const hiddenInput = this.container.querySelector('#playlist_uri');
+	      if (hiddenInput) {
+	        hiddenInput.value = this.selectedItem ? this.selectedItem.uri : '';
+	      }
+	    }
+
+	    createLoaderNode(message) {
+	      const loader = document.createElement('div');
+	      loader.className = 'music-library-loader';
+
+	      const spinner = document.createElement('div');
+	      spinner.className = 'music-library-spinner';
+
+	      const text = document.createElement('div');
+	      text.className = 'music-library-loader-text';
+	      text.textContent = message;
+
+	      loader.appendChild(spinner);
+	      loader.appendChild(text);
+	      return loader;
+	    }
+
+	    createMessageNode(message) {
+	      const messageNode = document.createElement('div');
+	      messageNode.className = 'playlist-no-results';
+	      messageNode.textContent = message;
+	      return messageNode;
+	    }
+
+	    buildMetaText(item) {
+	      const trackCount = item.track_count || 0;
+	      const trackText = item.type === 'album' ? 'Tracks' : 'Songs';
+
+	      if (item.type === 'playlist') {
+	        const creator = item.artist || 'Spotify';
+	        return `${creator} · ${trackCount} Songs`;
+	      }
+	      if (item.type === 'album') {
+	        const artist = item.artist || 'Unknown Artist';
+	        return `${artist} · ${trackCount} Tracks`;
+	      }
+	      if (item.type === 'artist') {
+	        return item.artist || '';
+	      }
+	      if (item.type === 'track' && item.artist) {
+	        return item.artist;
+	      }
+	      if (item.type !== 'artist') {
+	        return `${trackCount} ${trackText}`;
+	      }
+
+	      return '';
+	    }
+
+	    createPlaylistItemElement(item, options = {}) {
+	      const { isSelected = false, classNames = [], fallbackIcon = null } = options;
+	      const root = document.createElement('div');
+	      root.className = `playlist-item${isSelected ? ' selected' : ''}${classNames.length ? ` ${classNames.join(' ')}` : ''}`;
+	      if (item?.uri) {
+	        root.dataset.uri = item.uri;
+	      }
+
+	      const image = document.createElement('div');
+	      image.className = 'playlist-item-image';
+	      const safeImageUrl = getSafeImageUrl(item?.image_url);
+	      if (safeImageUrl) {
+	        image.style.backgroundImage = `url("${safeImageUrl}")`;
+	      } else {
+	        const iconText = fallbackIcon ?? (item?.type === 'album' ? '💿' : item?.type === 'artist' ? '🎤' : '📋');
+	        image.textContent = iconText;
+	      }
+
+	      const info = document.createElement('div');
+	      info.className = 'playlist-item-info';
+
+	      const name = document.createElement('div');
+	      name.className = 'playlist-item-name';
+	      name.textContent = item?.name || '';
+
+	      const meta = document.createElement('div');
+	      meta.className = 'playlist-item-meta';
+	      meta.textContent = this.buildMetaText(item || {});
+
+	      info.appendChild(name);
+	      info.appendChild(meta);
+	      root.appendChild(image);
+	      root.appendChild(info);
+	      return root;
+	    }
+	    
+	    updateModal() {
+	      const grid = this.container.querySelector('#playlist-grid');
+	      if (!grid) return;
 
       // Check if current tab section is still loading
       const currentTabLoaded = this.loadedSections.has(this.currentTab);
       const hasItemsForCurrentTab = this.filteredItems.length > 0;
       
       // Show loading state for current tab if not loaded yet
-      if (!currentTabLoaded) {
-        const tabLabels = {
-          playlists: 'Playlists',
-          albums: 'Alben', 
-          tracks: 'Songs',
-          artists: 'Artists'
-        };
-        
-        grid.innerHTML = `
-          <div class="music-library-loader">
-            <div class="music-library-spinner"></div>
-            <div class="music-library-loader-text">${tabLabels[this.currentTab]} werden geladen...</div>
-          </div>
-        `;
-        return;
-      }
-      
-      // Show "no results" if tab is loaded but has no items
-      if (hasItemsForCurrentTab === 0 || this.filteredItems.length === 0) {
-        const emptyText = this.currentTab === 'playlists' ? 
-          (t('playlist_no_results') || 'Keine Playlists gefunden') : 
-          this.currentTab === 'albums' ? (t('no_music_found') || 'Keine Alben gefunden') : 
-          this.currentTab === 'artists' ? (t('no_music_found') || 'Keine Artists gefunden') : (t('no_music_found') || 'Keine Songs gefunden');
-        grid.innerHTML = `<div class="playlist-no-results">${emptyText}</div>`;
-        return;
-      }
+	      if (!currentTabLoaded) {
+	        const tabLabels = {
+	          playlists: 'Playlists',
+	          albums: 'Alben', 
+	          tracks: 'Songs',
+	          artists: 'Artists'
+	        };
+	        grid.replaceChildren(this.createLoaderNode(`${tabLabels[this.currentTab]} werden geladen...`));
+	        return;
+	      }
+	      
+	      // Show "no results" if tab is loaded but has no items
+	      if (hasItemsForCurrentTab === 0 || this.filteredItems.length === 0) {
+	        const emptyText = this.currentTab === 'playlists' ? 
+	          (t('playlist_no_results') || 'Keine Playlists gefunden') : 
+	          this.currentTab === 'albums' ? (t('no_music_found') || 'Keine Alben gefunden') : 
+	          this.currentTab === 'artists' ? (t('no_music_found') || 'Keine Artists gefunden') : (t('no_music_found') || 'Keine Songs gefunden');
+	        grid.replaceChildren(this.createMessageNode(emptyText));
+	        return;
+	      }
       
       // Performance-Optimierung: Bei vielen Items (>100) asynchron rendern
       if (this.filteredItems.length > 100) {
@@ -442,113 +544,65 @@ export class PlaylistSelector {
       }
       
       // Standard rendering for smaller lists
-      this.renderItemsSync(grid);
-    }
-    
-    renderItemsSync(grid) {
-      grid.innerHTML = this.filteredItems.map(item => {
-        const isSelected = this.selectedItem && this.selectedItem.uri === item.uri;
-        const imageStyle = item.image_url 
-          ? `background-image: url(${item.image_url})` 
-          : '';
-        const trackCount = item.track_count || 0;
-        const trackText = item.type === 'album' ? 'Tracks' : 'Songs';
-        
-        // Unterschiedliche Anzeige je nach Typ
-        let metaText = '';
-        if (item.type === 'playlist') {
-          const creator = item.artist || 'Spotify';
-          metaText = `${creator} · ${trackCount} Songs`;
-        } else if (item.type === 'album') {
-          const artist = item.artist || 'Unknown Artist';
-          metaText = `${artist} · ${trackCount} Tracks`;
-        } else if (item.type === 'artist') {
-          metaText = item.artist || ''; // Follower info from artist field, or empty
-        } else if (item.type === 'track' && item.artist) {
-          metaText = item.artist; // Artist for individual songs
-        } else if (item.type !== 'artist') {
-          metaText = `${trackCount} ${trackText}`;
-        }
-        
-        return `
-          <div class="playlist-item ${isSelected ? 'selected' : ''}" data-uri="${item.uri}">
-            <div class="playlist-item-image" style="${imageStyle}">
-              ${!item.image_url ? (item.type === 'album' ? '💿' : item.type === 'artist' ? '🎤' : '📋') : ''}
-            </div>
-            <div class="playlist-item-info">
-              <div class="playlist-item-name">${item.name}</div>
-              <div class="playlist-item-meta">${metaText}</div>
-            </div>
-          </div>
-        `;
-      }).join('');
-      
-      this.attachItemClickListeners(grid);
-    }
-    
-    renderItemsAsync(grid) {
-      // Show loading during async render
-      grid.innerHTML = `
-        <div class="music-library-loader">
-          <div class="music-library-spinner"></div>
-          <div class="music-library-loader-text">${t('rendering') || 'Rendering'} ${this.filteredItems.length} ${this.currentTab === 'tracks' ? (t('songs') || 'songs') : (t('entries') || 'entries')}...</div>
-        </div>
-      `;
-      
-      // Render in chunks um UI responsive zu halten
-      setTimeout(() => {
-        const chunkSize = 20;
-        let html = '';
-        
-        for (let i = 0; i < this.filteredItems.length; i += chunkSize) {
-          const chunk = this.filteredItems.slice(i, i + chunkSize);
-          chunk.forEach(item => {
-            const isSelected = this.selectedItem && this.selectedItem.uri === item.uri;
-            const imageStyle = item.image_url 
-              ? `background-image: url(${item.image_url})` 
-              : '';
-            const trackCount = item.track_count || 0;
-            const trackText = item.type === 'album' ? 'Tracks' : 'Songs';
-            
-            // Unterschiedliche Anzeige je nach Typ
-            let metaText = '';
-            if (item.type === 'playlist') {
-              const creator = item.artist || 'Spotify';
-              metaText = `${creator} · ${trackCount} Songs`;
-            } else if (item.type === 'album') {
-              const artist = item.artist || 'Unknown Artist';
-              metaText = `${artist} · ${trackCount} Tracks`;
-            } else if (item.type === 'artist') {
-              metaText = item.artist || ''; // Follower info from artist field, or empty
-            } else if (item.type === 'track' && item.artist) {
-              metaText = item.artist; // Artist for individual songs
-            } else if (item.type !== 'artist') {
-              metaText = `${trackCount} ${trackText}`;
-            }
-            
-            html += `
-              <div class="playlist-item ${isSelected ? 'selected' : ''}" data-uri="${item.uri}">
-                <div class="playlist-item-image" style="${imageStyle}">
-                  ${!item.image_url ? (item.type === 'album' ? '💿' : item.type === 'artist' ? '🎤' : '📋') : ''}
-                </div>
-                <div class="playlist-item-info">
-                  <div class="playlist-item-name">${item.name}</div>
-                  <div class="playlist-item-meta">${metaText}</div>
-                </div>
-              </div>
-            `;
-          });
-          
-          // Alle 100 Items UI update damit es responsive bleibt
-          if (i > 0 && i % 100 === 0) {
-            setTimeout(() => {}, 1); // Yield to browser
-          }
-        }
-        
-        grid.innerHTML = html;
-        this.attachItemClickListeners(grid);
-      }, 10);
-    }
+	      this.renderItemsSync(grid);
+	    }
+	    
+	    renderItemsSync(grid) {
+	      const renderToken = ++this.renderToken;
+	      const fragment = document.createDocumentFragment();
+	      this.filteredItems.forEach(item => {
+	        const isSelected = Boolean(this.selectedItem && this.selectedItem.uri === item.uri);
+	        fragment.appendChild(this.createPlaylistItemElement(item, { isSelected }));
+	      });
+
+	      if (renderToken !== this.renderToken) {
+	        return;
+	      }
+
+	      grid.replaceChildren(fragment);
+	      
+	      this.attachItemClickListeners(grid);
+	    }
+	    
+	    renderItemsAsync(grid) {
+	      const total = this.filteredItems.length;
+	      const itemLabel = this.currentTab === 'tracks' ? (t('songs') || 'songs') : (t('entries') || 'entries');
+	      grid.replaceChildren(this.createLoaderNode(`${t('rendering') || 'Rendering'} ${total} ${itemLabel}...`));
+
+	      const renderToken = ++this.renderToken;
+	      const items = [...this.filteredItems];
+	      const chunkSize = 30;
+	      let index = 0;
+
+	      const renderChunk = () => {
+	        if (renderToken !== this.renderToken) {
+	          return;
+	        }
+
+	        if (index === 0) {
+	          grid.replaceChildren();
+	        }
+
+	        const chunk = document.createDocumentFragment();
+	        const end = Math.min(index + chunkSize, items.length);
+	        for (let i = index; i < end; i += 1) {
+	          const item = items[i];
+	          const isSelected = Boolean(this.selectedItem && this.selectedItem.uri === item.uri);
+	          chunk.appendChild(this.createPlaylistItemElement(item, { isSelected }));
+	        }
+	        grid.appendChild(chunk);
+	        index = end;
+
+	        if (index < items.length) {
+	          requestAnimationFrame(renderChunk);
+	          return;
+	        }
+
+	        this.attachItemClickListeners(grid);
+	      };
+
+	      requestAnimationFrame(renderChunk);
+	    }
     
     attachItemClickListeners(grid) {
       grid.querySelectorAll('.playlist-item').forEach(item => {
@@ -566,25 +620,20 @@ export class PlaylistSelector {
       });
     }
     
-    async loadArtistTopTracks(artist) {
-      console.log('🎤 Loading top tracks for artist:', artist.name);
-      
-      // Show loading state
-      const grid = this.container.querySelector('#playlist-grid');
-      if (grid) {
-        grid.innerHTML = `
-          <div class="music-library-loader">
-            <div class="music-library-spinner"></div>
-            <div class="music-library-loader-text">Lade Top-Tracks von ${artist.name}...</div>
-          </div>
-        `;
-      }
+	    async loadArtistTopTracks(artist) {
+	      console.log('🎤 Loading top tracks for artist:', artist.name);
+	      
+	      // Show loading state
+	      const grid = this.container.querySelector('#playlist-grid');
+	      if (grid) {
+	        grid.replaceChildren(this.createLoaderNode(`Lade Top-Tracks von ${artist.name}...`));
+	      }
       
       try {
         const response = await fetchAPI(`/api/artist-top-tracks/${artist.artist_id}`);
         
     // Support unified + legacy response shapes
-    if (response?.tracks || (response?._meta?.success && response?.tracks)) {
+	        if (response?.tracks || (response?._meta?.success && response?.tracks)) {
           // Create a special "artist tracks" view
           this.currentArtistTracks = {
             artist: artist,
@@ -593,63 +642,67 @@ export class PlaylistSelector {
           
           // Switch to a special artist-tracks mode
           this.showArtistTracks(artist, response.tracks);
-        } else {
-          console.error('Failed to load artist top tracks:', response);
-          grid.innerHTML = `<div class="playlist-no-results">Fehler beim Laden der Songs von ${artist.name}</div>`;
-        }
-      } catch (error) {
-        console.error('Error loading artist top tracks:', error);
-        if (grid) {
-          grid.innerHTML = `<div class="playlist-no-results">Fehler beim Laden der Songs von ${artist.name}</div>`;
-        }
-      }
-    }
-    
-    showArtistTracks(artist, tracks) {
-      console.log(`🎵 Showing ${tracks.length} top tracks for ${artist.name}`);
+	        } else {
+	          console.error('Failed to load artist top tracks:', response);
+	          if (grid) {
+	            grid.replaceChildren(this.createMessageNode(`Fehler beim Laden der Songs von ${artist.name}`));
+	          }
+	        }
+	      } catch (error) {
+	        console.error('Error loading artist top tracks:', error);
+	        if (grid) {
+	          grid.replaceChildren(this.createMessageNode(`Fehler beim Laden der Songs von ${artist.name}`));
+	        }
+	      }
+	    }
+	    
+	    showArtistTracks(artist, tracks) {
+	      console.log(`🎵 Showing ${tracks.length} top tracks for ${artist.name}`);
       
-      // Update the grid with tracks
-      const grid = this.container.querySelector('#playlist-grid');
-      if (!grid) return;
-      
-      // Add a back button and title
-      const backButton = `
-        <div class="artist-tracks-header">
-          <button class="artist-back-button" onclick="window.playlistSelectors.library.returnToArtists()">
-            ← Zurück zu Künstlern
-          </button>
-          <div class="artist-tracks-title">
-            <h3>Top-Tracks: ${artist.name}</h3>
-            <p>${tracks.length} Songs</p>
-          </div>
-        </div>
-      `;
-      
-      // Render tracks similar to normal tracks
-      const tracksHtml = tracks.map((track, index) => {
-        const imageStyle = track.image_url ? `background-image: url(${track.image_url})` : '';
-        
-        return `
-          <div class="playlist-item track-item" data-uri="${track.uri}" data-track-index="${index}">
-            <div class="playlist-item-image" style="${imageStyle}">
-              ${!track.image_url ? '🎵' : ''}
-            </div>
-            <div class="playlist-item-info">
-              <div class="playlist-item-name">${track.name}</div>
-              <div class="playlist-item-meta">${track.artist}</div>
-            </div>
-          </div>
-        `;
-      }).join('');
-      
-      grid.innerHTML = backButton + `<div class="artist-tracks-grid">${tracksHtml}</div>`;
-      
-      // Add click listeners for tracks
-      grid.querySelectorAll('.track-item').forEach(item => {
-        item.addEventListener('click', () => {
-          const uri = item.dataset.uri;
-          const trackIndex = parseInt(item.dataset.trackIndex);
-          const track = tracks[trackIndex];
+	      // Update the grid with tracks
+	      const grid = this.container.querySelector('#playlist-grid');
+	      if (!grid) return;
+
+	      const header = document.createElement('div');
+	      header.className = 'artist-tracks-header';
+
+	      const backButton = document.createElement('button');
+	      backButton.className = 'artist-back-button';
+	      backButton.type = 'button';
+	      backButton.textContent = '← Zurück zu Künstlern';
+	      backButton.addEventListener('click', () => this.returnToArtists());
+
+	      const titleWrap = document.createElement('div');
+	      titleWrap.className = 'artist-tracks-title';
+	      const title = document.createElement('h3');
+	      title.textContent = `Top-Tracks: ${artist.name}`;
+	      const subtitle = document.createElement('p');
+	      subtitle.textContent = `${tracks.length} Songs`;
+	      titleWrap.appendChild(title);
+	      titleWrap.appendChild(subtitle);
+
+	      header.appendChild(backButton);
+	      header.appendChild(titleWrap);
+
+	      const tracksGrid = document.createElement('div');
+	      tracksGrid.className = 'artist-tracks-grid';
+	      tracks.forEach((track, index) => {
+	        const trackNode = this.createPlaylistItemElement(track, {
+	          classNames: ['track-item'],
+	          fallbackIcon: '🎵'
+	        });
+	        trackNode.dataset.trackIndex = String(index);
+	        tracksGrid.appendChild(trackNode);
+	      });
+
+	      grid.replaceChildren(header, tracksGrid);
+	      
+	      // Add click listeners for tracks
+	      grid.querySelectorAll('.track-item').forEach(item => {
+	        item.addEventListener('click', () => {
+	          const uri = item.dataset.uri;
+	          const trackIndex = parseInt(item.dataset.trackIndex, 10);
+	          const track = tracks[trackIndex];
           
           // Select the track for playback
           this.selectItem(track);
@@ -664,7 +717,7 @@ export class PlaylistSelector {
       this.updateCurrentTab();
     }
     
-    switchTab(tabName) {
+	    switchTab(tabName) {
       this.currentTab = tabName;
       
       // Update tab buttons
@@ -673,16 +726,18 @@ export class PlaylistSelector {
         tab.classList.toggle('active', tab.dataset.tab === tabName);
       });
       
-      // Show loading immediately for new tabs
-      const grid = this.container.querySelector('#playlist-grid');
-      if (grid) {
-        grid.innerHTML = `
-          <div class="music-library-loader">
-            <div class="music-library-spinner"></div>
-            <div class="music-library-loader-text">${t('loading') || 'Loading'} ${tabName === 'playlists' ? (t('playlists') || 'playlists') : tabName === 'albums' ? (t('albums') || 'albums') : tabName === 'artists' ? (t('artists') || 'artists') : (t('songs') || 'songs')}...</div>
-          </div>
-        `;
-      }
+	      // Show loading immediately for new tabs
+	      const grid = this.container.querySelector('#playlist-grid');
+	      if (grid) {
+	        const tabLabel = tabName === 'playlists'
+	          ? (t('playlists') || 'playlists')
+	          : tabName === 'albums'
+	            ? (t('albums') || 'albums')
+	            : tabName === 'artists'
+	              ? (t('artists') || 'artists')
+	              : (t('songs') || 'songs');
+	        grid.replaceChildren(this.createLoaderNode(`${t('loading') || 'Loading'} ${tabLabel}...`));
+	      }
       
       // Small delay for UI update
       setTimeout(() => {

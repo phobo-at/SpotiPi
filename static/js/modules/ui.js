@@ -4,7 +4,7 @@ import { DOM, CONFIG, userIsDragging, lastUserInteraction, setActiveDevice } fro
 import { t } from './translation.js';
 import { getPlaybackStatus, getSleepStatus, fetchAPI, unwrapResponse } from './api.js';
 import { setUserIsDragging } from './state.js';
-import { playIcon, pauseIcon, icon } from './icons.js';
+import { playIcon, pauseIcon } from './icons.js';
 
 let cachedSleepStatus = null;
 let cachedSleepTimestamp = 0;
@@ -81,6 +81,87 @@ function smoothShow(element) {
   
   // Remove hidden class and let CSS transition handle the rest
   element.classList.remove('hidden');
+}
+
+function isSafeMediaUrl(candidate) {
+  if (typeof candidate !== 'string' || !candidate.trim()) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(candidate, window.location.origin);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function renderAlbumFallback(albumCover) {
+  if (!albumCover) return;
+  albumCover.replaceChildren();
+
+  const fallback = document.createElement('div');
+  fallback.className = 'album-fallback';
+
+  const svgNs = 'http://www.w3.org/2000/svg';
+  const iconEl = document.createElementNS(svgNs, 'svg');
+  iconEl.setAttribute('class', 'icon icon-2x');
+  iconEl.setAttribute('viewBox', '0 0 24 24');
+  iconEl.setAttribute('fill', 'currentColor');
+  iconEl.setAttribute('aria-hidden', 'true');
+
+  const path = document.createElementNS(svgNs, 'path');
+  path.setAttribute('d', 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z');
+  iconEl.appendChild(path);
+  fallback.appendChild(iconEl);
+  albumCover.appendChild(fallback);
+}
+
+function renderAlarmTimerDetails(target, data) {
+  if (!target) return;
+
+  const baseLabel = t('alarm_set_for') || 'Alarm set for';
+  const noAlarmLabel = t('no_alarm_active') || 'No alarm active';
+  const volumeLabel = t('volume') || 'Volume';
+  const devicePrefix = t('alarm_device_label') || 'Device:';
+  const timeLabel = String(data?.time || '--:--');
+  const resolvedVolume = typeof data?.alarm_volume === 'number'
+    ? data.alarm_volume
+    : (typeof data?.volume === 'number' ? data.volume : 50);
+  const deviceLabel = data?.device_name && String(data.device_name).trim()
+    ? String(data.device_name)
+    : (t('alarm_device_unknown') || 'Unknown device');
+
+  if (!data?.enabled) {
+    target.textContent = noAlarmLabel;
+    return;
+  }
+
+  const volumeInfo = document.createElement('span');
+  volumeInfo.className = 'volume-info';
+  volumeInfo.textContent = `${volumeLabel}: ${resolvedVolume}%`;
+
+  const deviceInfo = document.createElement('span');
+  deviceInfo.className = 'device-info';
+  deviceInfo.textContent = `${devicePrefix} ${deviceLabel}`;
+
+  target.replaceChildren(
+    document.createTextNode(`${baseLabel} ${timeLabel}`),
+    document.createElement('br'),
+    volumeInfo,
+    document.createElement('br'),
+    deviceInfo
+  );
+}
+
+function setStatusContent(target, content, { allowHtml = false } = {}) {
+  if (!target) return;
+
+  if (allowHtml) {
+    target.innerHTML = String(content ?? '');
+  } else {
+    target.textContent = String(content ?? '');
+  }
 }
 
 function renderTrackSkeleton(statusKey = 'status_pending') {
@@ -348,10 +429,17 @@ export function updateCurrentTrack(trackData) {
   // Update album cover
   const albumCover = trackContainer.querySelector('.album-cover');
   if (albumCover) {
-    if (trackData.album_image) {
-      albumCover.innerHTML = `<img src="${trackData.album_image}" alt="Album Cover" class="album-image">`;
+    albumCover.replaceChildren();
+    if (isSafeMediaUrl(trackData.album_image)) {
+      const img = document.createElement('img');
+      img.className = 'album-image';
+      img.alt = 'Album Cover';
+      img.loading = 'lazy';
+      img.referrerPolicy = 'no-referrer';
+      img.src = trackData.album_image;
+      albumCover.appendChild(img);
     } else {
-      albumCover.innerHTML = `<div class="album-fallback">${icon('music', { size: '2x' })}</div>`;
+      renderAlbumFallback(albumCover);
     }
     albumCover.classList.remove('skeleton-tile');
   }
@@ -642,11 +730,11 @@ export function showInterface(mode) {
  * @param {boolean} addAnimation - Ob eine Speichern-Animation hinzugefügt werden soll
  * @param {string} resetMessage - Optional: Nachricht, auf die nach der Animation zurückgesetzt wird
  */
-export function updateStatus(elementId, message, addAnimation = false, resetMessage = null) {
+export function updateStatus(elementId, message, addAnimation = false, resetMessage = null, options = {}) {
     const statusElement = DOM.getElement(elementId);
     if (!statusElement) return;
     
-    statusElement.innerHTML = message;
+    setStatusContent(statusElement, message, options);
     
     if (addAnimation) {
       statusElement.classList.add('saved');
@@ -654,7 +742,7 @@ export function updateStatus(elementId, message, addAnimation = false, resetMess
         statusElement.classList.remove('saved');
         
         if (resetMessage) {
-          statusElement.innerHTML = resetMessage;
+          setStatusContent(statusElement, resetMessage, options);
         }
       }, 1000);
     }
@@ -693,25 +781,7 @@ export function applyAlarmStatus(data) {
       }
     }
 
-    if (elements.alarmTimer) {
-      const baseLabel = t('alarm_set_for') || 'Alarm set for';
-      const noAlarmLabel = t('no_alarm_active') || 'No alarm active';
-      const volumeLabel = t('volume') || 'Volume';
-      const devicePrefix = t('alarm_device_label') || 'Device:';
-
-      const resolvedVolume = typeof data.alarm_volume === 'number'
-        ? data.alarm_volume
-        : (typeof data.volume === 'number' ? data.volume : 50);
-
-      const deviceLabel = data.device_name && data.device_name.trim()
-        ? data.device_name
-        : (t('alarm_device_unknown') || 'Unknown device');
-
-      const statusMessage = data.enabled
-        ? `${baseLabel} ${data.time}<br><span class="volume-info">${volumeLabel}: ${resolvedVolume}%</span><br><span class="device-info">${devicePrefix} ${deviceLabel}</span>`
-        : noAlarmLabel;
-      elements.alarmTimer.innerHTML = statusMessage;
-    }
+    renderAlarmTimerDetails(elements.alarmTimer, data);
 }
 
 export async function updateAlarmStatus(providedData = null) {

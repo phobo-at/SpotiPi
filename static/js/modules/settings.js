@@ -4,6 +4,33 @@ import { updateStatus, updateSleepTimer, updateAlarmStatus } from './ui.js';
 import { t } from './translation.js';
 import { fetchAPI } from './api.js';
 
+function isSafeImageUrl(candidate) {
+  if (typeof candidate !== 'string' || !candidate.trim()) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(candidate, window.location.origin);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function createSvgIcon(pathData) {
+  const svgNs = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNs, 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'currentColor');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const path = document.createElementNS(svgNs, 'path');
+  path.setAttribute('d', pathData);
+  svg.appendChild(path);
+  return svg;
+}
+
 /**
  * Smoothly hide an element with animation
  */
@@ -99,7 +126,7 @@ export function saveAlarmSettings() {
         ? `${escapeHtml(t('alarm_set_for') || 'Alarm set for')} ${escapeHtml(timeValue)}<br><span class="volume-info">${escapeHtml(t('volume') || 'Volume')}: ${escapeHtml(volumeValue)}%</span><br><span class="device-info">${escapeHtml(devicePrefix)} ${escapeHtml(deviceValue)}</span>`
         : escapeHtml(t('no_alarm_active') || 'No alarm active');
         
-      updateStatus('alarm-timer', statusMessage, true);
+      updateStatus('alarm-timer', statusMessage, true, null, { allowHtml: true });
       console.log('✅ Alarm settings saved successfully');
       await updateAlarmStatus();
     } else {
@@ -316,30 +343,54 @@ export async function loadSpotifyProfile() {
     const response = await fetch('/api/spotify/profile');
     const result = await response.json();
     
-    if (result.success && result.data) {
-      const profile = result.data;
-      const isPremium = profile.product === 'premium';
-      const connectedText = t('connected_account') || 'Connected';
-      
-      container.innerHTML = `
-        <div class="account-avatar">
-          ${profile.avatar_url 
-            ? `<img src="${escapeHtml(profile.avatar_url)}" alt="${escapeHtml(profile.display_name)}">`
-            : `<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`
-          }
-        </div>
-        <div class="account-info">
-          <div class="account-name">
-            ${escapeHtml(profile.display_name)}
-            ${isPremium ? '<span class="badge">Premium</span>' : ''}
-          </div>
-          ${profile.email ? `<div class="account-email">${escapeHtml(profile.email)}</div>` : ''}
-          <div class="account-status">${connectedText}</div>
-        </div>
-      `;
-    } else {
-      showAccountError(container);
-    }
+	    if (result.success && result.data) {
+	      const profile = result.data;
+	      const isPremium = profile.product === 'premium';
+	      const connectedText = t('connected_account') || 'Connected';
+
+	      const avatar = document.createElement('div');
+	      avatar.className = 'account-avatar';
+	      if (isSafeImageUrl(profile.avatar_url)) {
+	        const img = document.createElement('img');
+	        img.src = profile.avatar_url;
+	        img.alt = profile.display_name || 'Spotify profile';
+	        img.loading = 'lazy';
+	        img.referrerPolicy = 'no-referrer';
+	        avatar.appendChild(img);
+	      } else {
+	        avatar.appendChild(createSvgIcon('M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'));
+	      }
+
+	      const accountInfo = document.createElement('div');
+	      accountInfo.className = 'account-info';
+
+	      const accountName = document.createElement('div');
+	      accountName.className = 'account-name';
+	      accountName.textContent = profile.display_name || 'Spotify';
+	      if (isPremium) {
+	        const badge = document.createElement('span');
+	        badge.className = 'badge';
+	        badge.textContent = 'Premium';
+	        accountName.appendChild(badge);
+	      }
+
+	      accountInfo.appendChild(accountName);
+	      if (profile.email) {
+	        const email = document.createElement('div');
+	        email.className = 'account-email';
+	        email.textContent = profile.email;
+	        accountInfo.appendChild(email);
+	      }
+
+	      const status = document.createElement('div');
+	      status.className = 'account-status';
+	      status.textContent = connectedText;
+	      accountInfo.appendChild(status);
+
+	      container.replaceChildren(avatar, accountInfo);
+	    } else {
+	      showAccountError(container);
+	    }
   } catch (error) {
     console.error('Failed to load Spotify profile:', error);
     showAccountError(container);
@@ -351,12 +402,15 @@ export async function loadSpotifyProfile() {
  */
 function showAccountError(container) {
   const errorText = t('account_error') || 'Error loading account';
-  container.innerHTML = `
-    <div class="account-error account-status">
-      <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-      <span>${errorText}</span>
-    </div>
-  `;
+  const root = document.createElement('div');
+  root.className = 'account-error account-status';
+  root.appendChild(createSvgIcon('M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z'));
+
+  const text = document.createElement('span');
+  text.textContent = errorText;
+  root.appendChild(text);
+
+  container.replaceChildren(root);
 }
 
 /**
@@ -554,4 +608,3 @@ export function onSettingsTabActivated() {
   loadSpotifyProfile();
   initSettingsPanel();
 }
-
