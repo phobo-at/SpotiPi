@@ -118,7 +118,7 @@ export function initializeEventListeners() {
         alarmEnabledActive: '#enabled_active',
         alarmTime: '#time',
         alarmVolumeSlider: '#alarm_volume_slider',
-        deviceSelect: '#device_name',
+        deviceSelect: '#alarm-device-name',
         fadeInSelect: '#fade_in',
         shuffleCheckbox: '#shuffle'
     });

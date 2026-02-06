@@ -366,9 +366,9 @@ export class PlaylistSelector {
     }
     
 	    updatePreview() {
-	      const previewImage = this.container.querySelector('#preview-image');
-	      const previewName = this.container.querySelector('#preview-name');
-	      const previewMeta = this.container.querySelector('#preview-meta');
+	      const previewImage = this.container.querySelector('.playlist-preview-image');
+	      const previewName = this.container.querySelector('.playlist-preview-name');
+	      const previewMeta = this.container.querySelector('.playlist-preview-meta');
 	      
 	      if (this.selectedItem) {
 	        if (previewImage) {
