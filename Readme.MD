@@ -54,15 +54,26 @@ Access at `http://localhost:5001` (development defaults) or `http://spotipi.loca
 Use the server manager script for background daemon control during local development:
 
 ```bash
-python scripts/server_manager.py start    # Start server in background
-python scripts/server_manager.py stop     # Stop the server  
-python scripts/server_manager.py restart  # Restart (stop + start)
-python scripts/server_manager.py status   # Show PID, uptime, memory usage
-python scripts/server_manager.py logs     # Last 50 lines of log
-python scripts/server_manager.py logs -f  # Follow logs (tail -f)
+# Preferred local test profile (safe defaults, separate PID/log files)
+./scripts/local_server.sh start
+./scripts/local_server.sh stop
+./scripts/local_server.sh status
+./scripts/local_server.sh logs -f
+
+# Generic manager (advanced / custom profiles)
+./.venv/bin/python scripts/server_manager.py start
+./.venv/bin/python scripts/server_manager.py stop
+./.venv/bin/python scripts/server_manager.py restart
+./.venv/bin/python scripts/server_manager.py status
+./.venv/bin/python scripts/server_manager.py logs -f
 ```
 
-Server runs on **http://localhost:5001**, logs to `logs/server.log`.
+The local test profile runs on **http://127.0.0.1:5001** and writes to:
+
+- `logs/server.local.log`
+- `logs/server.local.error.log`
+
+Production deployment on Raspberry Pi remains unchanged (`deploy/systemd/spotipi.service` still runs `run.py`).
 
 ## 🔧 Configuration
 

@@ -22,6 +22,24 @@ try:
 except ImportError:  # pragma: no cover - waitress installed in deployment
     serve = None
 
+
+def _env_bool(name: str, default: bool | None = None) -> bool | None:
+    """Parse boolean environment variables.
+
+    Accepted truthy values: 1, true, yes, on
+    Accepted falsy values: 0, false, no, off
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
 if __name__ == "__main__":
     logger = setup_logger("runner")
     app = create_app()
@@ -35,9 +53,15 @@ if __name__ == "__main__":
         default_port = 5001  # Development port
     
     port = int(os.environ.get("PORT", default_port))
-    debug_mode = config.get("debug", False)
-    
-    host = config.get("host", "0.0.0.0")
+    debug_mode = bool(config.get("debug", False))
+
+    debug_override = _env_bool("SPOTIPI_DEBUG")
+    if debug_override is not None:
+        debug_mode = debug_override
+
+    host = os.environ.get("HOST", config.get("host", "0.0.0.0"))
+    disable_reloader = _env_bool("SPOTIPI_DISABLE_RELOADER", False) is True
+    force_waitress = _env_bool("SPOTIPI_FORCE_WAITRESS", False) is True
 
     print(f"🚀 Starting SpotiPi on {host}:{port} with new modular structure")
     print(f"🌍 Environment: {config.get('environment', 'unknown')}")
@@ -50,11 +74,12 @@ if __name__ == "__main__":
     except Exception as exc:
         logger.exception("Failed to start alarm scheduler via run.py", exc_info=exc)
 
-    if debug_mode or serve is None:
+    if (debug_mode and not force_waitress) or serve is None:
         app.run(
             host=host,
             port=port,
             debug=debug_mode,
+            use_reloader=debug_mode and not disable_reloader,
             request_handler=TidyRequestHandler,
         )
     else:
