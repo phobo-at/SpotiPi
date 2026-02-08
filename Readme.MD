@@ -1,240 +1,143 @@
-# 🎵 SpotiPi (v1.5.1)
+# SpotiPi (v1.5.1)
 
-**Smart Spotify alarm clock and sleep timer for Raspberry Pi**
+Smart Spotify alarm clock and sleep timer for Raspberry Pi.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Raspberry Pi](https://img.shields.io/badge/platform-Raspberry%20Pi-red.svg)](https://www.raspberrypi.org/)
 
-Wake up to your favorite Spotify music with this elegant web-based alarm system. Features automatic environment detection, mobile-optimized interface, and seamless Raspberry Pi integration.
+## Features
 
-## ✨ Features
+- Spotify playback for alarms and sleep timer
+- Mobile-friendly web UI with playback controls
+- Local server profile for safe development testing
+- Raspberry Pi optimized defaults and low-power toggles
+- Resilient alarm scheduler with catch-up behavior
+- Encrypted token storage and restricted token file permissions
 
-- 🎵 **Spotify Integration** - Wake up to any playlist, album, or track
-- ⏰ **Smart Alarms** - Single-use alarms that automatically disable after ringing
-- 😴 **Sleep Timer** - Peaceful fade-out for better sleep
-- ▶️ **Playback Controls** - Skip tracks, play/pause directly from the web UI
-- 📱 **Mobile First** - Responsive web interface, PWA support
-- 🍓 **Pi Optimized** - Auto-detection and SD-card protection
-- ⚡ **Instant First Paint** - Lightweight HTML shell with async hydration
-- 🚀 **Fast Dashboard** - Aggregated status updates over a single request
-- 🔒 **Secure** - Token encryption at rest, environment variables for credentials
-- 📈 **Resilient Alarms** - Monotonic scheduler with catch-up & structured diagnostics
-- 🎨 **Modern UI** - Glassmorphism effects, shimmer loading, OLED black mode
-- 📳 **Haptic Feedback** - Native-feeling touch interactions on mobile
-
-## 🧱 Architecture
-
-- Flask controllers stay thin—they validate HTTP specifics and delegate business logic to the service layer (`src/services/*`) for shared validation, caching, and state changes.
-- HTTP routes live in `src/routes/` (blueprints). `src/app.py` wires the app + middleware, and `src/app_factory.py` provides a clean `create_app()` entrypoint for WSGI.
-- Spotify music-library endpoints now hydrate through a single cache & hashing pipeline (`utils.library_utils`), so `/api/music-library` and `/api/music-library/sections` expose identical headers and payload semantics.
-
-## 🚀 Quick Start
+## Quick Start (Local)
 
 ```bash
-# Clone and setup
 git clone https://github.com/phobo-at/SpotiPi.git
 cd SpotiPi
-python3 -m venv venv && source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
-# Configure Spotify (get credentials from developer.spotify.com)
 cp .env.example .env
-# Edit .env with your Spotify Client ID and Secret
+# Fill in SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_USERNAME
 
-# Generate token and run
 python generate_token.py
-python run.py
+./scripts/local_server.sh start
 ```
 
-Access at `http://localhost:5001` (development defaults) or `http://spotipi.local:5000` (Pi defaults). Both can be overridden via `PORT` or the environment config (`config/<env>.json`).
+Open: [http://127.0.0.1:5001](http://127.0.0.1:5001)
 
-## 🖥️ Server Management (Development)
-
-Use the server manager script for background daemon control during local development:
+## Local Server Commands
 
 ```bash
-# Preferred local test profile (safe defaults, separate PID/log files)
 ./scripts/local_server.sh start
 ./scripts/local_server.sh stop
 ./scripts/local_server.sh status
 ./scripts/local_server.sh logs -f
-
-# Generic manager (advanced / custom profiles)
-./.venv/bin/python scripts/server_manager.py start
-./.venv/bin/python scripts/server_manager.py stop
-./.venv/bin/python scripts/server_manager.py restart
-./.venv/bin/python scripts/server_manager.py status
-./.venv/bin/python scripts/server_manager.py logs -f
 ```
 
-The local test profile runs on **http://127.0.0.1:5001** and writes to:
+Advanced manager (custom profile/flags):
+
+```bash
+./.venv/bin/python scripts/server_manager.py start --profile local
+./.venv/bin/python scripts/server_manager.py status --profile local
+./.venv/bin/python scripts/server_manager.py logs --profile local -f
+```
+
+Local profile log files:
 
 - `logs/server.local.log`
 - `logs/server.local.error.log`
 
-Production deployment on Raspberry Pi remains unchanged (`deploy/systemd/spotipi.service` still runs `run.py`).
+## Raspberry Pi Setup
 
-## 🔧 Configuration
+On the Pi:
 
-Create a `.env` file in the project root for local development (or in `~/.spotipi/.env` for deployments; the app loads both, with the project root overriding when present):
+```bash
+git clone https://github.com/phobo-at/SpotiPi.git /home/pi/spotipi
+cd /home/pi/spotipi
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python generate_token.py
+./deploy/install.sh
+```
+
+From your dev machine (sync + restart service):
+
+```bash
+./scripts/deploy_to_pi.sh
+```
+
+Useful deploy flags:
+
+- `SPOTIPI_FORCE_SYSTEMD=1` forces systemd unit refresh
+- `SPOTIPI_PURGE_UNUSED=1` removes old/unneeded files on the Pi once
+
+## Configuration
+
+Minimum `.env` values:
+
 ```env
 SPOTIFY_CLIENT_ID=your_client_id
-SPOTIFY_CLIENT_SECRET=your_client_secret  
+SPOTIFY_CLIENT_SECRET=your_client_secret
 SPOTIFY_USERNAME=your_username
-
-# Optional: Pi Zero / low-power mode optimizations
-SPOTIPI_LOW_POWER=1
-SPOTIPI_TIMEZONE=Europe/Vienna                 # Override detected timezone for alarms & scheduler
-SPOTIPI_DEFAULT_HOST=spotipi.local            # CORS fallback host for LAN UI
-SPOTIPI_CORS_ORIGINS=http://spotipi.local     # Comma-separated allowlist for CORS (optional)
-SPOTIPI_PLAYBACK_CACHE_TTL=3.0                # Seconds to cache /me/player snapshot
-SPOTIPI_DEVICE_TTL=10                         # Device cache TTL in seconds (5-15 on Pi Zero)
-SPOTIPI_LIBRARY_TTL_MINUTES=60                # Library cache TTL in minutes (30-120)
-SPOTIPI_MAX_CONCURRENCY=2                     # Global HTTP concurrency limit on low-power devices
-SPOTIPI_CATCHUP_GRACE_SECONDS=600             # Catch-up window in seconds for missed alarms
-SPOTIPI_NETWORK_PROBE_HOST=api.spotify.com    # TCP probe host for readiness checks
-SPOTIPI_NETWORK_PROBE_TIMEOUT=1.5             # Probe timeout in seconds
-SPOTIPI_DNS_PROBE_HOST=api.spotify.com        # DNS probe host for readiness checks
-SPOTIPI_WARMUP=0                              # Disable background snapshot warmup (e.g., tests)
 ```
 
-Everything else is auto-configured with smart defaults.
-
-### Pi Zero W Tuning
-
-For stable playback on the Pi Zero W, these environment variables work well:
+Common optional overrides:
 
 ```env
-SPOTIPI_HTTP_TIMEOUTS=5,18                 # Generous network/connect + read timeouts
-SPOTIPI_STATUS_CACHE_SECONDS=0.8           # Server-side dashboard cache to lighten load
-SPOTIPI_PLAYBACK_STATUS_CACHE_SECONDS=0.6  # Server-side playback cache (< 1 second)
-SPOTIPI_PREWARM_SECONDS=150                # Token prewarm window ahead of alarm trigger
-SPOTIPI_PLAYER_RETRIES=3                   # Playback attempts including exponential backoff
-SPOTIPI_PLAYER_BACKOFF=1.0                 # Initial backoff delay in seconds
-SPOTIPI_PLAYER_JITTER=0.4                  # Random jitter factor for backoff
-SPOTIPI_DEVICE_TTL=10                      # Spotify device cache TTL in seconds
-SPOTIPI_CATCHUP_GRACE_SECONDS=600          # Allow alarms to recover within 10 minutes
-SPOTIPI_NETWORK_PROBE_HOST=api.spotify.com # Override network probe host if needed
-SPOTIPI_DNS_PROBE_HOST=api.spotify.com     # Override DNS probe target
+SPOTIPI_LOW_POWER=1
+SPOTIPI_TIMEZONE=Europe/Vienna
+SPOTIPI_MAX_CONCURRENCY=2
+SPOTIPI_DEVICE_TTL=10
+SPOTIPI_LIBRARY_TTL_MINUTES=60
 ```
 
-Adjust them freely without touching the code—set the values in `.env`, restart the service, and you’re done.
+Full environment variable reference: [`docs/ENVIRONMENT_VARIABLES.md`](docs/ENVIRONMENT_VARIABLES.md)
 
-## 🔁 Alarm Reliability
+## Architecture
 
-- The alarm scheduler now runs on a monotonic clock, so NTP/DST jumps no longer shrink the trigger window.
-- Missed alarms within `SPOTIPI_CATCHUP_GRACE_SECONDS` (default 10 min) are retried automatically after reboots or clock adjustments.
-- Readiness probes (network, DNS, Spotify token, device availability) gate each playback attempt with exponential backoff + jitter.
-- A lightweight state file (`cache/alarm_scheduler_state.json`) records the next scheduled UTC time and the last successful execution.
-- Structured JSON logs are emitted via the `alarm_probe` logger to make journalctl/file log correlation trivial.
-- Inspect alarm telemetry on the Pi with `journalctl -u spotipi.service --since "2025-10-20 06:20:00" | rg alarm_probe`, or run the manual probe via `sudo systemctl start spotipi-alarm.service`.
+- Flask app entrypoint: `run.py` -> `src/app.py`
+- Routes via blueprints in `src/routes/`
+- Business logic in `src/services/`, alarm/scheduler in `src/core/`
+- Shared config/thread safety helpers in `src/config.py` and `src/utils/thread_safety.py`
 
-## 🍓 Raspberry Pi Setup
+## Testing
 
 ```bash
-# On your Pi
-git clone https://github.com/phobo-at/SpotiPi.git /home/pi/spotipi
-cd /home/pi/spotipi && python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt && python generate_token.py
-
-# Install/refresh systemd units (service + alarm timer, enabled by default since v1.3.8)
-./deploy/install.sh
-
-# Disable the alarm readiness timer if desired (not recommended)
-SPOTIPI_ENABLE_ALARM_TIMER=0 ./deploy/install.sh
+pytest
 ```
-If you clone to a different path, use the guided installer below (it sets systemd overrides for the current path).
 
-### Guided Fresh Pi Install (interactive)
+Optional local quality checks:
 
 ```bash
-cd /path/to/spotipi
-./deploy/install_fresh_pi.sh
+pre-commit run --all-files
 ```
-Der Installer setzt systemd-Overrides auf den aktuellen Pfad (kein Symlink nötig).
 
-## 🧠 Performance Setup (Pi Zero W)
+## Documentation
 
-- **HTTP pooling & limits:** a shared `requests.Session` keeps TLS warm and caps concurrent Spotify API calls (`SPOTIPI_MAX_CONCURRENCY`, default `2`).
-- **Two-tier caching:** devices persist to `./cache/spotify_devices_<hash>.json` (default TTL `SPOTIPI_DEVICE_TTL=10s`), the music library uses an in-memory LRU backed by disk (`SPOTIPI_LIBRARY_TTL_MINUTES=60`).
-- **Global ThreadPoolExecutor:** library loading reuses a singleton executor (`_get_library_executor()`) to minimize thread creation overhead on resource-constrained devices.
-- **Instrumentation:** high-resolution timings for every Flask route plus per-endpoint P50/P95 logs; inspect via `/api/perf/metrics`.
-- **Benchmark helpers:** run `scripts/bench.sh` for Spotify API/caching latency and `scripts/bench_first_load.sh` to capture cold/warm TTFB plus first paint metrics (details in `docs/benchmark.md`).
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+- [`docs/ENVIRONMENT_VARIABLES.md`](docs/ENVIRONMENT_VARIABLES.md)
+- [`docs/SPOTIFY_API_RETRY.md`](docs/SPOTIFY_API_RETRY.md)
+- [`docs/CONFIG_SCHEMA_VALIDATION.md`](docs/CONFIG_SCHEMA_VALIDATION.md)
+- [`docs/JSON_LOGGING.md`](docs/JSON_LOGGING.md)
 
-## 🔐 Security
+## Screenshot
 
-- **Token Encryption at Rest:** Spotify tokens are encrypted using Fernet (from `cryptography` library) or XOR obfuscation fallback. Machine-derived keys ensure tokens can't be transferred between devices.
-- **File Permissions:** Token files are created with restricted permissions (0o600 - owner read/write only).
-- **Backward Compatible:** Automatically reads legacy plain JSON tokens and re-encrypts on next save.
-- **Environment Variables:** All credentials stored in `.env` files, never committed to version control.
-
-## 🚀 Deployment Workflow
-
-```bash
-# Sync runtime files to the Pi and restart the systemd service
-./scripts/deploy_to_pi.sh
-
-# Optional one-time cleanup of previously deployed unused files
-SPOTIPI_PURGE_UNUSED=1 ./scripts/deploy_to_pi.sh
-
-# Install/refresh systemd units on the Pi (after rsync completes)
-ssh pi@spotipi.local 'cd /home/pi/spotipi && ./deploy/install.sh'
-# Disable the alarm timer during install if desired (not recommended)
-ssh pi@spotipi.local 'cd /home/pi/spotipi && SPOTIPI_ENABLE_ALARM_TIMER=0 ./deploy/install.sh'
-```
-> **Since v1.3.8:** The alarm readiness timer (`spotipi-alarm.timer`) is **enabled by default** for robustness. It provides catch-up after reboot/downtime and runs daily at 05:30 as a backup layer to the in-process scheduler.
-
-> `scripts/deploy_to_pi.sh` now skips copying systemd units when they are unchanged; export `SPOTIPI_FORCE_SYSTEMD=1` to force a refresh.
-The deploy script uses an allowlist `rsync` (run.py, requirements, `src/`, `static/`, `templates/`, `config/`), keeping the Raspberry Pi installation minimal.
-
-## 📸 Screenshots
 <img src="docs/images/spotipi.png" alt="SpotiPi Interface" width="100%">
 
-## 🏗️ Architecture
+## Contributing
 
-- **Backend**: Flask with modular service architecture
-- **Frontend**: Responsive vanilla JS with PWA support
-- **Integration**: Spotify Web API with token caching
-- **Deployment**: Auto-detection (development vs. Raspberry Pi)
+- Follow [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Follow AI assistant rules in [`AGENTS.md`](AGENTS.md)
 
-## 📝 Environment Detection
+## License
 
-SpotiPi automatically configures itself:
-- **macOS/Windows**: Development mode (port 5001, verbose logging)
-- **Raspberry Pi**: Production mode (port 5000, minimal logging)
-- **Override**: Use environment variables to force specific behavior
-
-## 🤝 Contributing
-
-- Follow the canonical AI contributor guide in `AGENTS.md`.
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/name`
-3. Install tooling (`pip install pre-commit`) and run `pre-commit install`
-4. Run the formatter/linter locally: `pre-commit run --all-files`
-5. Execute the test suite: `pytest`
-6. Follow the [Contributing Guide](CONTRIBUTING.md)
-7. Submit pull request
-
-## 🧪 Development Workflow
-
-- **Tooling**: Formatting and linting are managed via `pre-commit` (Black, Ruff, Prettier). Install once with `pre-commit install`.
-- **Tests**: Run `pytest` to execute the in-process API/service suites—no external server required.
-- **CI**: GitHub Actions runs the same checks (pre-commit + pytest) on every push/PR.
-
-## 📄 License
-
-MIT License - feel free to use and modify!
-
-## 🤖 Development Story
-
-This app was 100% vibe-coded with GitHub Copilot and an unhealthy amount of ☕ coffee. 
-If you find any bugs, blame the caffeine dependency, not the AI! 😄
-
-## 🙏 Credits
-
-Built with Flask, Spotify Web API, and lots of ❤️ for better mornings.
-
----
-
-**🌅 Made for music lovers who want to wake up right!**
+MIT
