@@ -1,4 +1,4 @@
-# SpotiPi Agent Guidelines (v1.6.0)
+# SpotiPi Agent Guidelines (v1.6.1)
 
 This file is the canonical source of AI coding instructions for this repository.
 
@@ -20,6 +20,7 @@ This file is the canonical source of AI coding instructions for this repository.
 ## Core Engineering Rules
 
 - Keep Python compatible with 3.10+ syntax.
+- Preserve the snapshot contract: `/api/dashboard/status` and `/playback_status` may return `202` while data is `pending` or `auth_required`.
 - Never mutate config or shared cache directly. Use:
   - `load_config()`
   - `save_config()`
@@ -50,6 +51,7 @@ This file is the canonical source of AI coding instructions for this repository.
 
 - Keep Spotify token handling within `src/utils/token_encryption.py` patterns.
 - Maintain restricted token file permissions (`0o600`).
+- Treat `~/.spotipi/.env` as the canonical runtime secret path; repo-root `.env` is only a local dev override.
 - Escape user-controlled strings in JS template literals.
 - Preserve input sanitization rules, including device-name validation constraints.
 

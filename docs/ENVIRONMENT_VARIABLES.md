@@ -1,7 +1,10 @@
-````markdown
 # 🌍 ENVIRONMENT VARIABLES DOCUMENTATION
 
 ## 📋 **SpotiPi Environment Configuration**
+
+Current release: **v1.5.2**  
+Supported runtime: **Python 3.10+**  
+Canonical runtime secrets path: `~/.spotipi/.env`
 
 ### 🎯 **Auto-Detection System**
 
@@ -251,7 +254,5 @@ PORT=8080              # Custom port
 
 ---
 *Documented on: September 5, 2025*  
-*Updated on: November 4, 2025 (v1.3.8 - Alarm Timer)*  
+*Updated on: March 17, 2026 (v1.5.2)*  
 *SpotiPi Auto-Detection System v1.0.0*
-
-````

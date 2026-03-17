@@ -1,7 +1,10 @@
 # Code Review - Kritische Lücken behoben (v1.3.8)
 
+> Historische Referenz: Dieses Dokument beschreibt den Review-Stand des Releases `v1.3.8`.
+> Für die aktuelle Release-Version und Test-Baseline siehe [CHANGELOG.md](../CHANGELOG.md) und [Readme.MD](../Readme.MD).
+
 **Status:** ✅ Alle 4 kritischen Gaps erfolgreich behoben  
-**Tests:** 116 Tests (2 skipped), alle bestehen ✅  
+**Tests (damals):** 116 Tests (2 skipped), alle bestehen ✅  
 **Deployment:** Bereit für `scripts/deploy_to_pi.sh`
 
 ---

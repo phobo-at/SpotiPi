@@ -1,7 +1,9 @@
 # 🚀 SpotiPi Deployment Quick Start (Pi Zero W)
 
-**Datum:** 4. November 2025  
-**Version:** 1.3.8 mit Performance-Optimierungen
+**Datum:** 17. März 2026  
+**Version:** 1.5.2  
+**Python:** 3.10+  
+**Verifizierte Test-Baseline:** `pytest -q` → `121 passed, 2 skipped`
 
 ---
 
@@ -44,7 +46,7 @@ SPOTIPI_ENV=production
 # SPOTIPI_JSON_LOGS=1
 ```
 
-**Wichtig:** Die neuen Performance-Flags werden automatisch durch `deploy/systemd/spotipi.service` gesetzt!
+**Wichtig:** Die Runtime-Secrets liegen kanonisch unter `/home/pi/.spotipi/.env`. Ein Repo-Root-`.env` ist nur für lokale Dev-Overrides gedacht.
 
 ---
 
@@ -265,7 +267,7 @@ sudo systemctl restart spotipi.service
 
 ---
 
-## 📈 **Erwartete Performance (v1.3.8)**
+## 📈 **Historische Performance-Referenz (v1.3.8)**
 
 ### **Before (v1.3.7):**
 - Library Load: **~8.2s**
@@ -302,5 +304,5 @@ sudo systemctl restart spotipi.service
 ---
 
 **Status:** ✅ Ready for Production Deployment  
-**Tested:** Pi Zero W (ARMv6, 512MB RAM, Raspbian Lite)  
-**Risk Level:** 🟢 Low (alle Änderungen backward-compatible, adaptive defaults)
+**Tested:** Pi Zero W (ARMv6, 512MB RAM, Raspbian Lite) und aktuelle Test-Baseline vom 17. März 2026  
+**Risk Level:** 🟢 Low (aktueller Patch-Release, Verträge auf Doku und Tests abgestimmt)

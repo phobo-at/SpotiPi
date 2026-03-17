@@ -1,5 +1,8 @@
 # 🎟️ Token Caching Implementation - Completed ✅
 
+> Historische Implementierungsnotiz: Dieses Dokument beschreibt die Einführung des Token-Cachings.
+> Aktueller Runtime-Vertrag: Status- und Health-Endpunkte sollen cache-basiert bleiben und keine blockierenden Spotify-Retries auf Request-Threads auslösen.
+
 ## Overview
 Successfully implemented intelligent Spotify token caching to dramatically reduce API calls and improve performance.
 

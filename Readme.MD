@@ -1,4 +1,4 @@
-# SpotiPi (v1.5.1)
+# SpotiPi (v1.5.2)
 
 Smart Spotify alarm clock and sleep timer for Raspberry Pi.
 
@@ -14,6 +14,13 @@ Smart Spotify alarm clock and sleep timer for Raspberry Pi.
 - Raspberry Pi optimized defaults and low-power toggles
 - Resilient alarm scheduler with catch-up behavior
 - Encrypted token storage and restricted token file permissions
+
+## Current Runtime Contract
+
+- Supported Python runtime: `3.10+`
+- Canonical runtime secrets path: `~/.spotipi/.env`
+- `GET /api/dashboard/status` and `GET /playback_status` return `202 Accepted` while snapshot data is still `pending` or `auth_required`
+- Health/auth status endpoints stay cache-based and must not block on live Spotify retries
 
 ## Quick Start (Local)
 
@@ -118,6 +125,8 @@ Full environment variable reference: [`docs/ENVIRONMENT_VARIABLES.md`](docs/ENVI
 ```bash
 pytest
 ```
+
+Current baseline as of 2026-03-17: `121 passed, 2 skipped`
 
 Optional local quality checks:
 

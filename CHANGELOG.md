@@ -5,6 +5,23 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-03-17
+
+### 🐛 Bug Fixes
+- Fixed optimistic playback toggles so the UI rolls back correctly on normal HTTP failures instead of staying visually flipped.
+- Fixed playback/dashboard snapshot rendering so `pending`, `auth_required`, error, and real playback states are handled explicitly.
+- Fixed thread-safe config snapshots to return isolated deep copies, preventing nested mutation leaks through cached config objects.
+- Fixed token bootstrap on clean installs by adding the missing `spotipy` dependency.
+
+### ⚡ Runtime & Contracts
+- Moved Spotify auth/health status checks onto cache-only code paths so health endpoints no longer trigger blocking token refreshes or device discovery.
+- Formalized the async snapshot contract: `/api/dashboard/status` and `/playback_status` return `202 Accepted` while hydration is still pending or auth is required.
+- Standardized runtime secrets on `~/.spotipi/.env` with stricter generator output and systemd alignment.
+- Raised the documented runtime baseline to Python 3.10+.
+
+### 🧪 Tests
+- `pytest -q` → `121 passed, 2 skipped`
+
 ## [1.5.1] - 2025-01-25
 
 ### ✨ New Features
