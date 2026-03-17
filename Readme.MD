@@ -24,8 +24,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env
+mkdir -p ~/.spotipi
+cp .env.example ~/.spotipi/.env
 # Fill in SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_USERNAME
+# Optional dev-only overrides can still live in ./ .env, but runtime secrets belong in ~/.spotipi/.env
 
 python generate_token.py
 ./scripts/local_server.sh start
@@ -89,6 +91,8 @@ SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret
 SPOTIFY_USERNAME=your_username
 ```
+
+Canonical runtime path: `~/.spotipi/.env`
 
 Common optional overrides:
 

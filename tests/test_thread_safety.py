@@ -34,3 +34,34 @@ def test_config_transaction_rolls_back_nested_mutations():
 
     current = manager.load_config()
     assert current["last_known_devices"]["device"]["id"] == 1
+
+
+def test_load_config_returns_isolated_nested_copy():
+    manager = ThreadSafeConfigManager(
+        _InMemoryConfigManager(
+            {"last_known_devices": {"device": {"id": 1}}, "foo": "bar"}
+        )
+    )
+
+    loaded = manager.load_config()
+    loaded["last_known_devices"]["device"]["id"] = 99
+
+    current = manager.load_config()
+    assert current["last_known_devices"]["device"]["id"] == 1
+
+
+def test_change_listener_receives_isolated_copy():
+    manager = ThreadSafeConfigManager(
+        _InMemoryConfigManager(
+            {"last_known_devices": {"device": {"id": 1}}, "foo": "bar"}
+        )
+    )
+
+    def _listener(config):
+        config["last_known_devices"]["device"]["id"] = 77
+
+    manager.add_change_listener(_listener)
+    manager.save_config({"last_known_devices": {"device": {"id": 2}}, "foo": "baz"})
+
+    current = manager.load_config()
+    assert current["last_known_devices"]["device"]["id"] == 2

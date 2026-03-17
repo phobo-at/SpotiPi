@@ -445,7 +445,7 @@ def api_spotify_auth_status():
             return api_response(
                 False,
                 message=result.message,
-                status=401 if result.error_code == "AUTH_REQUIRED" else 500,
+                status=401 if result.error_code in {"AUTH_REQUIRED", "auth_required"} else 500,
                 error_code=result.error_code or "spotify_auth_error"
             )
             

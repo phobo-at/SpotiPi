@@ -60,17 +60,14 @@ def test_music_library_sections_contract(client):
                 assert set(item.keys()).issubset({'uri', 'name', 'image_url', 'track_count', 'type', 'artist'})
 
 
-def test_playback_status_no_token(client):
+def test_playback_status_no_token(client, monkeypatch):
+    monkeypatch.setattr('src.routes.health.get_access_token', lambda: None)
     resp = client.get('/playback_status')
-    data = resp.get_json()
-    # Accept either unauthorized (no token) or no playback scenario
-    assert 'success' in data
-    if data['success'] is False:
-        # Could be auth required or simply no active playback
-        assert data.get('error_code') in {'auth_required', 'no_playback'}
-    else:
-        # Active playback path
-        assert 'data' in data and isinstance(data['data'], dict)
+    assert resp.status_code == 202
+    data = assert_api_envelope(resp, expect_success=True)
+    assert 'data' in data and isinstance(data['data'], dict)
+    assert data['data'].get('status') in {'pending', 'auth_required'}
+    assert data['data'].get('hydration', {}).get('pending') in {True, False}
 
 
 def test_save_alarm_validation_error(client):

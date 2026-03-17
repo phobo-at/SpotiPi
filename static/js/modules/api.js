@@ -3,7 +3,6 @@
 import { t } from './translation.js';
 import { getActiveDevice, setLastUserInteraction } from './state.js';
 import { showToast, showErrorToast, showConnectionStatus } from './ui.js';
-import { playIcon, pauseIcon } from './icons.js';
 
 // Track connection state to avoid spam
 let lastConnectionState = true;
@@ -31,11 +30,6 @@ export async function fetchAPI(url, options = {}) {
     }
     lastConnectionState = true;
 
-    // If it's a POST request, return the response directly
-    if (options.method === 'POST') {
-      return response;
-    }
-
     // For non-successful responses, return a structured error object instead of throwing an error
     if (!response.ok) {
       // Only log to console in debug mode
@@ -52,10 +46,19 @@ export async function fetchAPI(url, options = {}) {
         }
       }
       // Return structured error response
+      if (options.method === 'POST') {
+        return response;
+      }
       return { 
         error: `${response.status}`, 
         success: false 
       };
+    }
+
+    // POST requests should be handled via postAPI so callers can inspect
+    // both the status code and parsed JSON payload.
+    if (options.method === 'POST') {
+      return response;
     }
 
     // Try to parse the response as JSON
@@ -93,6 +96,44 @@ export async function fetchAPI(url, options = {}) {
       offline: true
     };
   }
+}
+
+async function parseResponseJson(response) {
+  try {
+    return await response.json();
+  } catch (parseError) {
+    if (window.location.href.includes('debug=true')) {
+      console.warn('Parse error:', parseError);
+    }
+    return null;
+  }
+}
+
+export async function postAPI(url, options = {}) {
+  const response = await fetchAPI(url, {
+    ...options,
+    method: options.method || 'POST'
+  });
+
+  if (!(response instanceof Response)) {
+    return {
+      ok: false,
+      status: response?.error === 'Backoff' ? 503 : 0,
+      data: response,
+      error: response?.error || 'network_error',
+      offline: Boolean(response?.offline)
+    };
+  }
+
+  const data = await parseResponseJson(response);
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    error: response.ok ? null : (data?.error_code || data?.message || `${response.status}`),
+    offline: false
+  };
 }
 
 // Unified API unwrap helper (tolerates legacy top-level fields)
@@ -135,11 +176,14 @@ export async function getDashboardStatus() {
 export async function setVolumeAndSave(value) {
   try {
     // Use unified volume endpoint with save_config=true
-    await fetchAPI("/volume", {
+    const result = await postAPI("/volume", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: `volume=${value}&save_config=true`
     });
+    if (!result.ok && window.location.href.includes('debug=true')) {
+      console.warn('Failed to set and save volume:', result);
+    }
   } catch (error) {
     console.error('Failed to set and save volume:', error);
   }
@@ -160,11 +204,14 @@ export async function setVolumeImmediate(value) {
       params.set('device_id', activeDevice.id);
     }
 
-    await fetchAPI("/volume", {
+    const result = await postAPI("/volume", {
       method: "POST", 
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params.toString()
     });
+    if (!result.ok && window.location.href.includes('debug=true')) {
+      console.warn('Failed to set immediate volume:', result);
+    }
   } catch (error) {
     console.error('Failed to set immediate volume:', error);
   }
@@ -257,6 +304,33 @@ export async function togglePlayPause() {
       const wasPlaying = pauseIcon && !pauseIcon.classList.contains('hidden') ||
                          playPauseBtn.classList.contains('playing') || 
                          playPauseBtn.innerHTML?.includes('pause');
+
+      const revertOptimisticUpdate = () => {
+        const playIconEl = playPauseBtn.querySelector('.icon-play');
+        const pauseIconEl = playPauseBtn.querySelector('.icon-pause');
+
+        if (playIconEl && pauseIconEl) {
+          if (wasPlaying) {
+            playIconEl.classList.add('hidden');
+            pauseIconEl.classList.remove('hidden');
+            playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
+          } else {
+            playIconEl.classList.remove('hidden');
+            pauseIconEl.classList.add('hidden');
+            playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
+          }
+        } else {
+          if (wasPlaying) {
+            playPauseBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
+            playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
+            playPauseBtn.classList.add('playing');
+          } else {
+            playPauseBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
+            playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
+            playPauseBtn.classList.remove('playing');
+          }
+        }
+      };
       
       // Immediate UI feedback
       if (playIcon && pauseIcon) {
@@ -283,38 +357,19 @@ export async function togglePlayPause() {
         }
       }
       
-      // Fire and forget API call - don't wait for response
-      fetchAPI("/toggle_play_pause", { method: "POST" }).catch(error => {
-        console.error('Failed to toggle play/pause:', error);
-        showErrorToast(t('playback_error') || 'Wiedergabe-Fehler');
-        
-        // Revert UI change on error
-        const playIconEl = playPauseBtn.querySelector('.icon-play');
-        const pauseIconEl = playPauseBtn.querySelector('.icon-pause');
-        
-        if (playIconEl && pauseIconEl) {
-          // New controls - revert icon visibility
-          if (wasPlaying) {
-            playIconEl.classList.add('hidden');
-            pauseIconEl.classList.remove('hidden');
-            playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
-          } else {
-            playIconEl.classList.remove('hidden');
-            pauseIconEl.classList.add('hidden');
-            playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
-          }
-        } else {
-          // Legacy button
-          if (wasPlaying) {
-            playPauseBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
-            playPauseBtn.setAttribute('aria-label', t('pause') || 'Pause');
-            playPauseBtn.classList.add('playing');
-          } else {
-            playPauseBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
-            playPauseBtn.setAttribute('aria-label', t('play') || 'Play');
-            playPauseBtn.classList.remove('playing');
-          }
+      // Fire and forget API call - resolve normal HTTP failures explicitly.
+      postAPI("/toggle_play_pause").then(result => {
+        if (result.ok && result.data?.success !== false) {
+          return;
         }
+
+        console.error('Failed to toggle play/pause:', result);
+        revertOptimisticUpdate();
+        showErrorToast(result.data?.message || t('playback_error') || 'Wiedergabe-Fehler');
+      }).catch(error => {
+        console.error('Failed to toggle play/pause:', error);
+        revertOptimisticUpdate();
+        showErrorToast(t('playback_error') || 'Wiedergabe-Fehler');
       });
       
     } catch (error) {
@@ -330,10 +385,10 @@ export async function skipToNext() {
     setLastUserInteraction(Date.now());
     
     try {
-      const response = await fetchAPI("/api/playback/next", { method: "POST" });
-      if (!response.ok) {
+      const response = await postAPI("/api/playback/next");
+      if (!response.ok || response.data?.success === false) {
         console.error('Failed to skip to next track');
-        showErrorToast(t('skip_error') || 'Konnte nicht zum nächsten Track springen');
+        showErrorToast(response.data?.message || t('skip_error') || 'Konnte nicht zum nächsten Track springen');
       }
     } catch (error) {
       console.error('Failed to skip to next:', error);
@@ -349,10 +404,10 @@ export async function skipToPrevious() {
     setLastUserInteraction(Date.now());
     
     try {
-      const response = await fetchAPI("/api/playback/previous", { method: "POST" });
-      if (!response.ok) {
+      const response = await postAPI("/api/playback/previous");
+      if (!response.ok || response.data?.success === false) {
         console.error('Failed to skip to previous track');
-        showErrorToast(t('skip_error') || 'Konnte nicht zum vorherigen Track springen');
+        showErrorToast(response.data?.message || t('skip_error') || 'Konnte nicht zum vorherigen Track springen');
       }
     } catch (error) {
       console.error('Failed to skip to previous:', error);
@@ -372,25 +427,17 @@ export async function playMusic(uri, deviceName) {
     }
     
     try {
-      const response = await fetchAPI('/play', {
+      const response = await postAPI('/play', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `device_name=${encodeURIComponent(deviceName)}&uri=${encodeURIComponent(uri)}`
       });
       
-      // fetchAPI returns raw response for POST requests, need to parse JSON
-      if (response.ok) {
-        const data = await response.json();
-        if (data?.success) {
-          showToast(t('playback_started') || 'Wiedergabe gestartet!');
-        } else {
-          console.error('Playback failed:', data);
-          alert(t('playback_failed') || 'Wiedergabe fehlgeschlagen.');
-        }
+      if (response.ok && response.data?.success !== false) {
+        showToast(t('playback_started') || 'Wiedergabe gestartet!');
       } else {
-        const errorData = await response.json();
-        console.error('Playback failed:', errorData);
-        alert(t('playback_failed') || 'Wiedergabe fehlgeschlagen.');
+        console.error('Playback failed:', response);
+        alert(response.data?.message || t('playback_failed') || 'Wiedergabe fehlgeschlagen.');
       }
     } catch (error) {
       console.error('Failed to start playback:', error);

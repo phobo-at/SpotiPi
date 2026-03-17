@@ -4,7 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_DIR="$PROJECT_ROOT"
-ENV_FILE="$APP_DIR/.env"
+ENV_DIR="${HOME}/.spotipi"
+ENV_FILE="$ENV_DIR/.env"
 VENV_DIR="$APP_DIR/venv"
 VENV_PY="$VENV_DIR/bin/python"
 VENV_PIP="$VENV_DIR/bin/pip"
@@ -95,6 +96,7 @@ prompt_value() {
 
 install_systemd_overrides() {
   local app_dir="$1"
+  local env_file="$2"
   local service_override_dir="/etc/systemd/system/spotipi.service.d"
   local alarm_override_dir="/etc/systemd/system/spotipi-alarm.service.d"
 
@@ -102,7 +104,7 @@ install_systemd_overrides() {
   cat <<EOF | sudo tee "$service_override_dir/override.conf" >/dev/null
 [Service]
 WorkingDirectory=$app_dir
-EnvironmentFile=-$app_dir/.env
+EnvironmentFile=-$env_file
 ExecStart=
 ExecStart=$app_dir/venv/bin/python run.py
 EOF
@@ -111,7 +113,7 @@ EOF
   cat <<EOF | sudo tee "$alarm_override_dir/override.conf" >/dev/null
 [Service]
 WorkingDirectory=$app_dir
-EnvironmentFile=-$app_dir/.env
+EnvironmentFile=-$env_file
 ExecStart=
 ExecStart=/usr/bin/env bash -lc '$app_dir/scripts/run_alarm.sh'
 EOF
@@ -153,6 +155,7 @@ info "Python-Abhängigkeiten installieren..."
 "$VENV_PIP" install -r "$PROJECT_ROOT/requirements.txt"
 
 if [ ! -f "$ENV_FILE" ]; then
+  mkdir -p "$ENV_DIR"
   info "Erstelle $ENV_FILE"
   touch "$ENV_FILE"
 fi
@@ -203,7 +206,7 @@ if command -v systemctl >/dev/null 2>&1; then
     else
       (cd "$PROJECT_ROOT" && SPOTIPI_ENABLE_ALARM_TIMER=0 bash ./deploy/install.sh)
     fi
-    install_systemd_overrides "$APP_DIR"
+    install_systemd_overrides "$APP_DIR" "$ENV_FILE"
     sudo systemctl daemon-reload
     sudo systemctl restart spotipi.service
     success "Systemd Override gesetzt für $APP_DIR"

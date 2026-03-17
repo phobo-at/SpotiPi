@@ -26,34 +26,60 @@ class SpotifyService(BaseService):
         super().__init__("spotify")
         self._last_token_check = None
         self._token_valid = False
-    
-    def get_authentication_status(self) -> ServiceResult:
-        """Check Spotify authentication status."""
+
+    def _build_cached_auth_payload(self) -> dict[str, Any]:
+        """Build authentication details from the local token cache only."""
+        cache_info = get_token_cache_info()
+        token_info = cache_info.get("token_info", {}) if isinstance(cache_info, dict) else {}
+        has_cached_token = bool(cache_info.get("has_cached_token")) if isinstance(cache_info, dict) else False
+        expires_in = token_info.get("time_until_expiry_seconds")
+        authenticated = has_cached_token and (expires_in is None or float(expires_in) > 0)
+
+        checked_at = datetime.now()
+        self._last_token_check = checked_at
+        self._token_valid = authenticated
+
+        return {
+            "authenticated": authenticated,
+            "token_available": authenticated,
+            "token_cache": cache_info,
+            "last_check": checked_at.isoformat()
+        }
+
+    def _require_token(self) -> tuple[Optional[str], Optional[ServiceResult]]:
+        """Fetch a live token for Spotify API operations."""
         try:
             token = get_access_token()
-            
-            if token:
-                self._token_valid = True
-                self._last_token_check = datetime.now()
-                
-                # Get token cache information
-                cache_info = get_token_cache_info()
-                
+        except Exception as exc:
+            self._token_valid = False
+            return None, self._handle_error(exc, "_require_token")
+
+        if token:
+            self._token_valid = True
+            self._last_token_check = datetime.now()
+            return token, None
+
+        self._token_valid = False
+        return None, self._error_result(
+            "Spotify authentication required. Please configure your credentials.",
+            error_code="auth_required"
+        )
+    
+    def get_authentication_status(self) -> ServiceResult:
+        """Check Spotify authentication status from the local cache only."""
+        try:
+            auth_payload = self._build_cached_auth_payload()
+
+            if auth_payload["authenticated"]:
                 return self._success_result(
-                    data={
-                        "authenticated": True,
-                        "token_available": True,
-                        "token_cache": cache_info,
-                        "last_check": self._last_token_check.isoformat()
-                    },
+                    data=auth_payload,
                     message="Spotify authentication successful"
                 )
-            else:
-                self._token_valid = False
-                return self._error_result(
-                    "Spotify authentication required. Please configure your credentials.",
-                    error_code="AUTH_REQUIRED"
-                )
+
+            return self._error_result(
+                "Spotify authentication required. Please configure your credentials.",
+                error_code="AUTH_REQUIRED"
+            )
                 
         except Exception as e:
             self._token_valid = False
@@ -62,11 +88,10 @@ class SpotifyService(BaseService):
     def get_available_devices(self) -> ServiceResult:
         """Get list of available Spotify devices."""
         try:
-            auth_result = self.get_authentication_status()
-            if not auth_result.success:
-                return auth_result
-            
-            token = get_access_token()
+            token, error = self._require_token()
+            if error:
+                return error
+
             devices = get_devices(token)
             
             if devices is None:
@@ -99,11 +124,10 @@ class SpotifyService(BaseService):
     def get_user_playlists(self) -> ServiceResult:
         """Get user's Spotify playlists."""
         try:
-            auth_result = self.get_authentication_status()
-            if not auth_result.success:
-                return auth_result
-            
-            token = get_access_token()
+            token, error = self._require_token()
+            if error:
+                return error
+
             playlists = get_playlists(token)
             
             if playlists is None:
@@ -135,11 +159,9 @@ class SpotifyService(BaseService):
     def get_music_library(self) -> ServiceResult:
         """Get complete music library including playlists and saved music."""
         try:
-            auth_result = self.get_authentication_status()
-            if not auth_result.success:
-                return auth_result
-            
-            token = get_access_token()
+            token, error = self._require_token()
+            if error:
+                return error
             
             # Get playlists and user library
             playlists = get_playlists(token)
@@ -167,11 +189,9 @@ class SpotifyService(BaseService):
     def get_playback_status(self) -> ServiceResult:
         """Get current playback status and track information."""
         try:
-            auth_result = self.get_authentication_status()
-            if not auth_result.success:
-                return auth_result
-            
-            token = get_access_token()
+            token, error = self._require_token()
+            if error:
+                return error
             
             combined = get_combined_playback(token)
             if not combined:
@@ -198,11 +218,9 @@ class SpotifyService(BaseService):
     def control_playback(self, action: str, **kwargs) -> ServiceResult:
         """Control Spotify playback (start, stop, resume, toggle)."""
         try:
-            auth_result = self.get_authentication_status()
-            if not auth_result.success:
-                return auth_result
-            
-            token = get_access_token()
+            token, error = self._require_token()
+            if error:
+                return error
             
             if action == "start":
                 device_id = kwargs.get("device_id")
@@ -247,16 +265,9 @@ class SpotifyService(BaseService):
     def toggle_playback_fast(self) -> ServiceResult:
         """Toggle playback state using the fast toggle endpoint."""
         try:
-            auth_result = self.get_authentication_status()
-            if not auth_result.success:
-                return auth_result
-
-            token = get_access_token()
-            if not token:
-                return self._error_result(
-                    "Spotify authentication required. Please configure your credentials.",
-                    error_code="auth_required"
-                )
+            token, error = self._require_token()
+            if error:
+                return error
 
             result = toggle_playback_fast(token)
             if isinstance(result, dict):
@@ -282,16 +293,9 @@ class SpotifyService(BaseService):
     def skip_to_next(self) -> ServiceResult:
         """Skip to next track."""
         try:
-            auth_result = self.get_authentication_status()
-            if not auth_result.success:
-                return auth_result
-
-            token = get_access_token()
-            if not token:
-                return self._error_result(
-                    "Spotify authentication required.",
-                    error_code="auth_required"
-                )
+            token, error = self._require_token()
+            if error:
+                return error
 
             result = skip_to_next(token)
             if result.get("success"):
@@ -313,16 +317,9 @@ class SpotifyService(BaseService):
     def skip_to_previous(self) -> ServiceResult:
         """Skip to previous track."""
         try:
-            auth_result = self.get_authentication_status()
-            if not auth_result.success:
-                return auth_result
-
-            token = get_access_token()
-            if not token:
-                return self._error_result(
-                    "Spotify authentication required.",
-                    error_code="auth_required"
-                )
+            token, error = self._require_token()
+            if error:
+                return error
 
             result = skip_to_previous(token)
             if result.get("success"):
@@ -350,11 +347,10 @@ class SpotifyService(BaseService):
                     error_code="volume"
                 )
             
-            auth_result = self.get_authentication_status()
-            if not auth_result.success:
-                return auth_result
-            
-            token = get_access_token()
+            token, error = self._require_token()
+            if error:
+                return error
+
             success = set_volume(token, volume, device_id)
             
             if success:
@@ -387,16 +383,9 @@ class SpotifyService(BaseService):
     def start_playback_from_payload(self, payload: Mapping[str, Any], *, payload_type: str) -> ServiceResult:
         """Start playback based on JSON or form payloads."""
         try:
-            auth_result = self.get_authentication_status()
-            if not auth_result.success:
-                return auth_result
-
-            token = get_access_token()
-            if not token:
-                return self._error_result(
-                    "Spotify authentication required. Please configure your credentials.",
-                    error_code="auth_required"
-                )
+            token, error = self._require_token()
+            if error:
+                return error
 
             if payload_type == "json":
                 context_uri = payload.get("context_uri")
@@ -503,24 +492,17 @@ class SpotifyService(BaseService):
             base_health = super().health_check()
             if not base_health.success:
                 return base_health
-            
-            # Check authentication
-            auth_status = self.get_authentication_status()
-            auth_ok = auth_status.success
-            
-            # Quick API test
-            api_ok = False
-            if auth_ok:
-                devices_result = self.get_available_devices()
-                api_ok = devices_result.success
-            
+
+            auth_payload = self._build_cached_auth_payload()
+            auth_ok = bool(auth_payload["authenticated"])
+
             health_data = {
                 "service": "spotify",
-                "status": "healthy" if all([auth_ok, api_ok]) else "degraded",
+                "status": "healthy" if auth_ok else "degraded",
                 "components": {
-                    "authentication": "ok" if auth_ok else "error",
-                    "api_access": "ok" if api_ok else "error",
-                    "token_cache": "ok" if self._token_valid else "unknown"
+                    "authentication": "ok" if auth_ok else "missing",
+                    "api_access": "skipped",
+                    "token_cache": "ok" if auth_ok else "missing"
                 },
                 "last_token_check": self._last_token_check.isoformat() if self._last_token_check else None
             }

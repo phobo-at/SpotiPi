@@ -51,7 +51,7 @@ class ThreadSafeConfigManager:
     # Internal helpers
     # ------------------------------------------------------------------
     def _snapshot(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        return dict(config)
+        return copy.deepcopy(config)
 
     def _deep_snapshot(self, config: Dict[str, Any]) -> Dict[str, Any]:
         return copy.deepcopy(config)

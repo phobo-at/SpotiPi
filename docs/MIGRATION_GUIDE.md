@@ -106,7 +106,7 @@ After=network.target
 [Service]
 User=pi
 WorkingDirectory=/home/pi/spotipi
-EnvironmentFile=/home/pi/spotipi/.env
+EnvironmentFile=/home/pi/.spotipi/.env
 Environment=\"SPOTIPI_APP_NAME=spotipi\"
 ExecStart=/home/pi/spotipi/venv/bin/python run.py
 Restart=always
@@ -140,13 +140,16 @@ pip install -r requirements.txt
 ssh pi@spotipi.local "
 # Copy .env from old directory if available
 if [ -f /home/pi/spotify_wakeup/.env ]; then
-  cp /home/pi/spotify_wakeup/.env /home/pi/spotipi/.env
+  mkdir -p /home/pi/.spotipi
+  cp /home/pi/spotify_wakeup/.env /home/pi/.spotipi/.env
 fi
 
 # Copy .env from config directory if available  
 if [ -f ~/.spotipi/.env ]; then
-  cp ~/.spotipi/.env /home/pi/spotipi/.env
+  cp ~/.spotipi/.env /home/pi/.spotipi/.env
 fi
+
+chmod 600 /home/pi/.spotipi/.env
 "
 ```
 

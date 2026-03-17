@@ -8,7 +8,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/home/pi/spotipi
-EnvironmentFile=-/home/pi/spotipi/.env
+EnvironmentFile=-/home/pi/.spotipi/.env
 ExecStart=/usr/bin/env bash -lc './scripts/run_alarm.sh'
 
 [Install]

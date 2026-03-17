@@ -21,7 +21,7 @@ ssh pi@spotipi.local
 
 Prüfe `.env` Datei:
 ```bash
-cat /home/pi/spotipi/.env
+cat /home/pi/.spotipi/.env
 ```
 
 **Minimale `.env` für Production:**

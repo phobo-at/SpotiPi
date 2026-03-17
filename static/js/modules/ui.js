@@ -195,6 +195,19 @@ function renderTrackSkeleton(statusKey = 'status_pending') {
   }
 }
 
+function hasRenderablePlayback(playback) {
+  if (!playback || typeof playback !== 'object') {
+    return false;
+  }
+
+  return (
+    playback.current_track ||
+    playback.device ||
+    playback.is_playing !== undefined ||
+    playback.error
+  );
+}
+
 /**
  * Updates playback info and track display
  * @param {boolean} updateVolume - Whether to update the volume as well
@@ -237,25 +250,63 @@ export function applyPlaybackStatus(data, { updateVolume = true } = {}) {
       updateVolumeSlider(playbackData.device.volume_percent);
     }
 
-    if (playbackData?.current_track) {
-      updateCurrentTrack(playbackData.current_track);
-    } else {
+	    if (playbackData?.current_track) {
+	      updateCurrentTrack(playbackData.current_track);
+	    } else {
       // No current track = set button to inactive
       updatePlayPauseButtonText(false, false);
       hideCurrentTrack('no_active_playback');
+	    }
+}
+
+export function renderPlaybackSnapshot(snapshot, { updateVolume = true } = {}) {
+    if (!snapshot || typeof snapshot !== 'object') {
+      updatePlayPauseButtonText(false, false);
+      hideCurrentTrack('status_pending');
+      return;
     }
+
+    const hydration = snapshot?.hydration || {};
+    const status = snapshot?.status || snapshot?.playback_status || 'pending';
+    const playback = snapshot?.playback && typeof snapshot.playback === 'object'
+      ? snapshot.playback
+      : {};
+
+    if (hydration.pending || status === 'pending') {
+      updatePlayPauseButtonText(false, false);
+      hideCurrentTrack('status_pending');
+      return;
+    }
+
+    if (status === 'auth_required') {
+      updatePlayPauseButtonText(false, false);
+      hideCurrentTrack('status_auth_required');
+      return;
+    }
+
+    if (status === 'error') {
+      updatePlayPauseButtonText(false, false);
+      hideCurrentTrack('spotify_error');
+      return;
+    }
+
+    if (hasRenderablePlayback(playback)) {
+      applyPlaybackStatus(playback, { updateVolume });
+      return;
+    }
+
+    updatePlayPauseButtonText(false, false);
+    hideCurrentTrack('no_active_playback');
 }
 
 export async function updatePlaybackInfo(updateVolume = true) {
-    if (document.visibilityState !== 'visible') return;
-    try {
-      const raw = await getPlaybackStatus();
-      const data = unwrapResponse(raw);
-
-      applyPlaybackStatus(data, { updateVolume });
-    } catch {
-      // Errors already handled in fetchAPI
-      // Set play/pause button to inactive and hide current track
+	    if (document.visibilityState !== 'visible') return;
+	    try {
+	      const snapshot = await getPlaybackStatus();
+	      renderPlaybackSnapshot(snapshot, { updateVolume });
+	    } catch {
+	      // Errors already handled in fetchAPI
+	      // Set play/pause button to inactive and hide current track
       updatePlayPauseButtonText(false, false);
       hideCurrentTrack('network_error');
     }

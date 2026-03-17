@@ -2,7 +2,7 @@
 // Imports other modules and initializes the application logic
 
 import { initializeEventListeners } from './modules/eventListeners.js';
-import { initializeUI, updateSleepTimer, updateAlarmStatus, updatePlaybackInfo, updateVolumeSlider, hideCurrentTrack, updateCurrentTrack, updatePlayPauseButtonText, applyPlaybackStatus, tickSleepCountdown } from './modules/ui.js';
+import { initializeUI, updateSleepTimer, updateAlarmStatus, updatePlaybackInfo, updateVolumeSlider, hideCurrentTrack, renderPlaybackSnapshot, tickSleepCountdown } from './modules/ui.js';
 import { DOM, CONFIG } from './modules/state.js';
 import { getPlaybackStatus, fetchAPI, playMusic, getDashboardStatus } from './modules/api.js';
 import { PlaylistSelector } from './modules/playlistSelector.js';
@@ -22,7 +22,7 @@ async function syncVolumeFromSpotify() {
     
     try {
       const data = await getPlaybackStatus();
-      const payload = data?.playback || data;
+      const payload = data?.playback && typeof data.playback === 'object' ? data.playback : data;
       if (payload?.device?.volume_percent !== undefined) {
         updateVolumeSlider(payload.device.volume_percent);
       }
@@ -35,14 +35,19 @@ function hydrateFromInitialState() {
     const initial = window.__INITIAL_STATE__;
     if (!initial) return;
 
-    const initialPlayback = initial.playback?.playback || initial.dashboard?.playback?.playback;
-    if (initialPlayback) {
-        applyPlaybackStatus(initialPlayback, { updateVolume: false });
-        if (initialPlayback.device?.volume_percent !== undefined) {
-            updateVolumeSlider(initialPlayback.device.volume_percent);
-        }
+    const initialPlaybackSnapshot = initial.playback || initial.dashboard?.playback || null;
+    const playbackHydration = initial.playback_meta || initial.dashboard_meta?.playback || {};
+
+    if (initialPlaybackSnapshot) {
+        renderPlaybackSnapshot(
+            {
+                ...initialPlaybackSnapshot,
+                hydration: initialPlaybackSnapshot.hydration || playbackHydration
+            },
+            { updateVolume: false }
+        );
     } else {
-        hideCurrentTrack('status_pending');
+        hideCurrentTrack(playbackHydration.pending ? 'status_pending' : 'no_active_playback');
     }
 
     if (initial.devices) {
@@ -66,11 +71,12 @@ async function loadInitialData() {
         if (dashboard.sleep) {
           await updateSleepTimer(dashboard.sleep);
         }
-        if (dashboard.playback) {
-          applyPlaybackStatus(dashboard.playback, { updateVolume: true });
-        } else if (dashboard.playback_status === 'auth_required') {
-          hideCurrentTrack('status_auth_required');
-        }
+        renderPlaybackSnapshot({
+          playback: dashboard.playback,
+          status: dashboard.playback_status,
+          hydration: dashboard.hydration?.playback || {},
+          error: dashboard.playback_error
+        }, { updateVolume: true });
 
         if (dashboard.devices_meta) {
           window.__INITIAL_DEVICE_SNAPSHOT__ = {
@@ -84,26 +90,7 @@ async function loadInitialData() {
 
       // Get initial playback status (devices are now handled by DeviceManager)
       const playbackResponse = await getPlaybackStatus();
-      const playbackData = playbackResponse?.playback || playbackResponse;
-
-      if (playbackResponse?.status === 'error') {
-          console.warn('⚠️ Could not get playback status:', playbackResponse.error);
-          hideCurrentTrack('spotify_error');
-      } else if (playbackData) {
-          if (playbackData.current_track) {
-              updateCurrentTrack(playbackData.current_track);
-          } else {
-              hideCurrentTrack('no_active_playback');
-          }
-
-          if (playbackData.is_playing !== undefined) {
-              updatePlayPauseButtonText(playbackData.is_playing);
-          }
-
-          if (playbackData.device?.volume_percent !== undefined) {
-              updateVolumeSlider(playbackData.device.volume_percent);
-          }
-      }
+      renderPlaybackSnapshot(playbackResponse, { updateVolume: true });
 
       // This function already exists and fetches the music library for the selectors
       loadPlaylistsForSelectors();
@@ -244,11 +231,12 @@ async function refreshDashboard() {
             await updateSleepTimer(data.sleep);
         }
 
-        if (data.playback) {
-            applyPlaybackStatus(data.playback, { updateVolume: true });
-        } else if (data.playback_status === 'auth_required') {
-            hideCurrentTrack('status_auth_required');
-        }
+        renderPlaybackSnapshot({
+            playback: data.playback,
+            status: data.playback_status,
+            hydration: data.hydration?.playback || {},
+            error: data.playback_error
+        }, { updateVolume: true });
 
         if (data.devices_meta) {
             window.__INITIAL_DEVICE_SNAPSHOT__ = {

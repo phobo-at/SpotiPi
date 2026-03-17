@@ -2,7 +2,7 @@
 import { DOM } from './state.js';
 import { updateStatus, updateSleepTimer, updateAlarmStatus } from './ui.js';
 import { t } from './translation.js';
-import { fetchAPI } from './api.js';
+import { postAPI } from './api.js';
 
 function isSafeImageUrl(candidate) {
   if (typeof candidate !== 'string' || !candidate.trim()) {
@@ -82,22 +82,16 @@ export function saveAlarmSettings() {
   });
   
   // Use fetchAPI instead of direct fetch for proper rate limiting
-  fetchAPI('/save_alarm', {
+  postAPI('/save_alarm', {
     method: 'POST',
     body: formData
   })
   .then(async response => {
     console.log('DEBUG: Received response:', response);
-    
-    // fetchAPI returns Response object for POST requests, need to parse JSON
-    if (!response.ok) {
-      throw new Error(t('save_failed') || 'Save failed');
-    }
-    
-    const data = await response.json();
+    const data = response.data;
     console.log('DEBUG: Parsed data:', data);
     
-    if (data && data.success) {
+    if (response.ok && data && data.success) {
       const payload = data.data || {};
       const alarmData = payload.alarm || payload;
 
@@ -132,7 +126,7 @@ export function saveAlarmSettings() {
     } else {
       console.error('Error saving settings:', data ? data.message : 'No data received');
       statusElement.innerHTML = originalStatus;
-      const errorMessage = String((data && data.message) || t('unknown_error') || 'Unknown error');
+      const errorMessage = String((data && data.message) || t('save_failed') || t('unknown_error') || 'Unknown error');
       const saveErrorMsg = String(t('save_error') || 'Save error');
       alert(`${saveErrorMsg}: ${errorMessage}`);
     }
@@ -171,7 +165,7 @@ function activateSleepTimer(formData) {
     urlParams.append(key, value);
   }
   
-  fetchAPI('/sleep', {
+  postAPI('/sleep', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -181,12 +175,8 @@ function activateSleepTimer(formData) {
     body: urlParams
   })
   .then(async response => {
-    if (!response.ok) {
-      throw new Error(t('activation_failed') || 'Activation failed');
-    }
-    
-    const data = await response.json();
-    if (data && data.success) {
+    const data = response.data;
+    if (response.ok && data && data.success) {
       console.log('✅ Sleep timer activated successfully');
       // UI already switched, now just update timer display
       updateSleepTimer();
@@ -199,7 +189,7 @@ function activateSleepTimer(formData) {
         const configCheckbox = DOM.getElement('sleep_enabled');
         if (configCheckbox) configCheckbox.checked = false;
       }
-      alert(`${t('activation_error') || 'Activation error'}: ${(data && data.message) || t('unknown_error') || 'Unknown error'}`);
+      alert(`${t('activation_error') || 'Activation error'}: ${(data && data.message) || t('activation_failed') || t('unknown_error') || 'Unknown error'}`);
     }
   })
   .catch(error => {
@@ -235,7 +225,7 @@ function deactivateSleepTimer() {
   }
 
   // Then API call
-  fetchAPI('/stop_sleep', {
+  postAPI('/stop_sleep', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -244,12 +234,8 @@ function deactivateSleepTimer() {
     }
   })
   .then(async response => {
-    if (!response.ok) {
-      throw new Error(t('deactivation_failed') || 'Deactivation failed');
-    }
-    
-    const data = await response.json();
-    if (data && data.success) {
+    const data = response.data;
+    if (response.ok && data && data.success) {
       console.log('✅ Sleep timer deactivated successfully');
       // UI already switched, now just update timer display
       updateSleepTimer();
@@ -262,7 +248,7 @@ function deactivateSleepTimer() {
         const activeCheckbox = DOM.getElement('sleep_enabled_active');
         if (activeCheckbox) activeCheckbox.checked = true;
       }
-      alert(`${t('deactivation_error') || 'Deactivation error'}: ${(data && data.message) || t('unknown_error') || 'Unknown error'}`);
+      alert(`${t('deactivation_error') || 'Deactivation error'}: ${(data && data.message) || t('deactivation_failed') || t('unknown_error') || 'Unknown error'}`);
     }
   })
   .catch(error => {

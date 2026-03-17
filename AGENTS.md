@@ -19,7 +19,7 @@ This file is the canonical source of AI coding instructions for this repository.
 
 ## Core Engineering Rules
 
-- Keep Python compatible with 3.9 syntax. Avoid `A | B` union syntax.
+- Keep Python compatible with 3.10+ syntax.
 - Never mutate config or shared cache directly. Use:
   - `load_config()`
   - `save_config()`

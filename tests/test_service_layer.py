@@ -10,6 +10,7 @@ run without an external server.
 import time
 
 from src.services import ServiceResult
+from src.utils.async_snapshot import AsyncSnapshot
 
 
 def test_service_health(client):
@@ -151,7 +152,7 @@ def test_dashboard_status_endpoint(client, monkeypatch):
     monkeypatch.setattr('src.routes.health.get_access_token', lambda: None)
 
     response = client.get('/api/dashboard/status')
-    assert response.status_code == 200
+    assert response.status_code == 202
 
     payload = response.get_json()
     assert payload['success'] is True
@@ -161,3 +162,55 @@ def test_dashboard_status_endpoint(client, monkeypatch):
     assert 'alarm' in data
     assert 'sleep' in data
     assert 'playback' in data
+    assert data['playback_status'] in {'pending', 'auth_required'}
+    if data['playback_status'] == 'pending':
+        assert data['hydration']['playback']['pending'] is True
+    else:
+        assert data['hydration']['playback']['pending'] is False
+
+
+def test_dashboard_status_endpoint_ready_snapshot_returns_200(client, monkeypatch):
+    dashboard_snapshot = AsyncSnapshot("dashboard-test", 60.0)
+    playback_snapshot = AsyncSnapshot("playback-test", 60.0)
+    devices_snapshot = AsyncSnapshot("devices-test", 60.0)
+
+    dashboard_snapshot.set({
+        "playback": {
+            "status": "ok",
+            "playback": {
+                "is_playing": True,
+                "current_track": {"name": "Track", "artist": "Artist"},
+                "device": {"id": "device-1", "volume_percent": 35}
+            }
+        },
+        "devices": {
+            "status": "ok",
+            "devices": [{"id": "device-1", "name": "Kitchen"}],
+            "cache": {}
+        }
+    })
+    playback_snapshot.set({
+        "status": "ok",
+        "playback": {
+            "is_playing": True,
+            "current_track": {"name": "Track", "artist": "Artist"},
+            "device": {"id": "device-1", "volume_percent": 35}
+        }
+    })
+    devices_snapshot.set({
+        "status": "ok",
+        "devices": [{"id": "device-1", "name": "Kitchen"}],
+        "cache": {}
+    })
+
+    monkeypatch.setattr('src.routes.health._dashboard_snapshot', dashboard_snapshot)
+    monkeypatch.setattr('src.routes.health._playback_snapshot', playback_snapshot)
+    monkeypatch.setattr('src.routes.health._devices_snapshot', devices_snapshot)
+
+    response = client.get('/api/dashboard/status')
+    assert response.status_code == 200
+
+    payload = response.get_json()
+    assert payload['success'] is True
+    assert payload['data']['playback_status'] == 'ok'
+    assert payload['data']['hydration']['playback']['pending'] is False

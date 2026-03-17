@@ -205,8 +205,10 @@ EOF
 ### 7. Umgebungskonfiguration
 
 ```bash
-# Umgebungsdatei erstellen
+# Umgebungsverzeichnis und Datei erstellen
+mkdir -p /home/pi/.spotipi
 touch /home/pi/.spotipi/.env
+chmod 600 /home/pi/.spotipi/.env
 
 # Spotify-Anmeldedaten hinzufügen (manuell bearbeiten)
 nano /home/pi/.spotipi/.env

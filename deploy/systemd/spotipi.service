@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/pi/spotipi
-EnvironmentFile=-/home/pi/spotipi/.env
+EnvironmentFile=-/home/pi/.spotipi/.env
 Environment=PYTHONUNBUFFERED=1
 # Performance optimizations for Pi Zero W
 Environment=SPOTIPI_LOW_POWER=1
