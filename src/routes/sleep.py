@@ -63,7 +63,7 @@ def start_sleep():
     
     if request.is_json or is_ajax:
         if result.success:
-            return api_response(True, message=result.message or "Sleep timer started")
+            return api_response(True, data=result.data, message=result.message or "Sleep timer started")
 
         error_code = (result.error_code or "sleep_start_failed")
         status = 400 if error_code in {"duration", "sleep_volume", "playlist_uri", "device_name"} else 500
@@ -95,6 +95,7 @@ def stop_sleep():
         message = t_api("sleep_stopped", request) if success else (result.message or "Failed to stop sleep timer")
         return api_response(
             success,
+            data={"active": False} if success else None,
             message=message,
             status=200 if success else 500,
             error_code=None if success else (result.error_code or "sleep_stop_failed")

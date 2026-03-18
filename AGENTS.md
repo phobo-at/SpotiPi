@@ -1,4 +1,4 @@
-# SpotiPi Agent Guidelines (v1.6.1)
+# SpotiPi Agent Guidelines (v1.7.0)
 
 This file is the canonical source of AI coding instructions for this repository.
 
@@ -16,6 +16,9 @@ This file is the canonical source of AI coding instructions for this repository.
 - Alarm/scheduler flows are in `src/core/`.
 - Spotify integration lives in `src/api/spotify.py` and shared HTTP helpers in `src/api/http.py`.
 - Config is centralized via `src/config.py` plus thread-safe helpers in `src/utils/thread_safety.py`.
+- Frontend shell lives in `frontend/src/` and is bundled into `static/dist/`.
+- `templates/index.html` is the shell entrypoint, not the place for new feature markup.
+- Initial frontend bootstrap data is assembled in `src/routes/main.py`.
 
 ## Core Engineering Rules
 
@@ -29,6 +32,7 @@ This file is the canonical source of AI coding instructions for this repository.
 - Use centralized validation in `src/utils/validation.py` and handle `ValidationError`.
 - Reuse existing Spotify API helpers; do not create ad-hoc `requests.Session` instances.
 - Use shared caching via `get_cache_migration_layer()` and honor configured TTLs.
+- Keep read APIs additive; do not break the existing envelope or the `202` snapshot semantics.
 
 ## Logging and Observability
 
@@ -46,6 +50,7 @@ This file is the canonical source of AI coding instructions for this repository.
   - `SPOTIPI_LIBRARY_TTL_MINUTES`
 - Minimize disk writes and only persist when TTL/robustness justify it.
 - Do not break production systemd behavior under `deploy/systemd/`.
+- Treat the committed `static/dist/` bundle as production runtime input; Raspberry Pi deployments must not require an on-device frontend build.
 
 ## Security and Data Safety
 
@@ -57,16 +62,25 @@ This file is the canonical source of AI coding instructions for this repository.
 
 ## Frontend and UX Baseline
 
+- The primary experience is the dashboard-first home surface with persistent playback.
+- Keep the three primary actions obvious and fast: set alarm, start sleep, play now.
 - Keep UI responsive and reliable across mobile and desktop breakpoints.
 - Respect `prefers-reduced-motion`.
 - Preserve accessibility primitives (`aria-*`, roles, labels) for interactive and dynamic UI.
+- Use the `frontend/src/` Preact shell for new frontend behavior; do not add new feature logic to legacy `static/js/modules/`.
+- Keep raw API shapes behind frontend adapters/view models instead of spreading transport logic across components.
 - Reuse established UI patterns before adding new variants (loading skeletons, empty states, transitions).
+- Keep `/settings` as a surface of the same app shell unless a change explicitly requires otherwise.
 
 ## Testing and Quality Gates
 
 - Add or update tests for any behavioral change in routes, services, or Spotify integration.
 - Use deterministic tests with Flask test client (no live Spotify calls).
 - Run `pytest` before finishing changes.
+- If frontend code changes, also run:
+  - `npm run typecheck`
+  - `npm run build`
+  - `npm run test:e2e`
 - If deployment behavior is touched, verify `scripts/deploy_to_pi.sh` output format assumptions remain valid.
 
 ## Change Checklist
@@ -75,3 +89,4 @@ This file is the canonical source of AI coding instructions for this repository.
 - Add new config fields to schema/defaults/documentation together.
 - Document new environment variables in `config/default_config.json` and `Readme.MD`.
 - Prefer extending existing modules over creating parallel abstractions.
+- If frontend code changes, commit rebuilt `static/dist/` assets together with the source changes.

@@ -26,6 +26,7 @@ main_bp = Blueprint("main", __name__)
 logger = logging.getLogger(__name__)
 
 LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+_VALID_INITIAL_SURFACES = {"home", "settings"}
 
 _dashboard_snapshot = None
 _playback_snapshot = None
@@ -40,48 +41,144 @@ def init_snapshots(dashboard_snapshot, playback_snapshot, devices_snapshot) -> N
     _devices_snapshot = devices_snapshot
 
 
-@main_bp.route("/")
-@api_error_handler
-def index():
-    """Main page with alarm and sleep interface."""
-    config = load_config()
+def _resolve_initial_surface(raw_value: str | None) -> str:
+    """Return a valid initial surface name for the frontend shell."""
+    value = (raw_value or "home").strip().lower()
+    return value if value in _VALID_INITIAL_SURFACES else "home"
 
-    initial_volume = config.get('volume', 50)
+
+def _build_settings_payload(config: dict) -> dict:
+    """Create the initial settings payload used by the frontend shell."""
+    return {
+        "feature_flags": {
+            "sleep_timer": config.get("feature_sleep", False),
+            "music_library": config.get("feature_library", True),
+        },
+        "app": {
+            "language": config.get("language", "de"),
+            "default_volume": config.get("alarm_volume", 50),
+            "debug": config.get("debug", False),
+        },
+        "environment": config.get("_runtime", {}).get("environment", "unknown"),
+    }
+
+
+def _build_sleep_defaults(config: dict) -> dict:
+    """Return persisted sleep defaults for first render hydration."""
+    duration = config.get("sleep_default_duration", 30)
+    volume = config.get("sleep_volume", 30)
+
     try:
-        initial_volume = max(0, min(100, int(initial_volume)))
+        duration = max(1, min(480, int(duration)))
     except (TypeError, ValueError):
-        initial_volume = 50
+        duration = 30
 
-    devices = []
-    playlists = []
-    current_track = None
+    try:
+        volume = max(0, min(100, int(volume)))
+    except (TypeError, ValueError):
+        volume = 30
 
-    next_alarm_info = ""
-    if config.get('enabled') and config.get('time'):
+    return {
+        "duration": duration,
+        "volume": volume,
+        "playlist_uri": config.get("sleep_playlist_uri", ""),
+        "device_name": config.get("sleep_device_name", ""),
+        "shuffle": bool(config.get("shuffle", False)),
+    }
+
+
+def _build_dashboard_payload(
+    config: dict,
+    sleep_status_payload: dict,
+    dashboard_snapshot: dict | None,
+    dashboard_meta: dict,
+    playback_snapshot: dict | None,
+    playback_meta: dict,
+    devices_snapshot: dict | None,
+    devices_meta: dict,
+) -> dict:
+    """Build the same dashboard shape used by /api/dashboard/status for hydration."""
+    next_alarm_time = ""
+    if config.get("enabled") and config.get("time"):
         try:
-            next_alarm_info = AlarmTimeValidator.format_time_until_alarm(config['time'])
+            next_alarm_time = AlarmTimeValidator.format_time_until_alarm(config["time"])
         except Exception:
-            next_alarm_info = "Next alarm calculation error"
+            next_alarm_time = "Next alarm calculation error"
+
+    alarm_payload = {
+        "enabled": config.get("enabled", False),
+        "time": config.get("time", "07:00"),
+        "alarm_volume": config.get("alarm_volume", 50),
+        "next_alarm": next_alarm_time,
+        "playlist_uri": config.get("playlist_uri", ""),
+        "device_name": config.get("device_name", ""),
+        "fade_in": config.get("fade_in", False),
+        "shuffle": config.get("shuffle", False),
+    }
+
+    playback_payload: dict = {}
+    playback_status = "pending"
+    playback_error = None
+    if playback_snapshot:
+        playback_payload = playback_snapshot.get("playback") or {}
+        playback_status = playback_snapshot.get("status", "unknown")
+        playback_error = playback_snapshot.get("error")
+    elif dashboard_snapshot:
+        dash_playback = dashboard_snapshot.get("playback", {})
+        if isinstance(dash_playback, dict):
+            playback_payload = dash_playback.get("playback") or {}
+            playback_status = dash_playback.get("status", playback_status)
+            playback_error = dash_playback.get("error")
+
+    devices_payload = []
+    devices_status = "pending"
+    devices_cache = {}
+    if devices_snapshot:
+        devices_payload = devices_snapshot.get("devices") or []
+        devices_status = devices_snapshot.get("status", "unknown")
+        devices_cache = devices_snapshot.get("cache") or {}
+    elif dashboard_snapshot:
+        dash_devices = dashboard_snapshot.get("devices", {})
+        if isinstance(dash_devices, dict):
+            devices_payload = dash_devices.get("devices") or []
+            devices_status = dash_devices.get("status", devices_status)
+            devices_cache = dash_devices.get("cache") or {}
+
+    payload = {
+        "timestamp": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "alarm": alarm_payload,
+        "sleep": sleep_status_payload,
+        "playback": playback_payload or {},
+        "playback_status": playback_status,
+        "devices": devices_payload,
+        "devices_meta": {
+            "status": devices_status,
+            "cache": devices_cache,
+            "fetched_at": devices_snapshot.get("fetched_at") if devices_snapshot else None,
+        },
+        "hydration": {
+            "dashboard": normalise_snapshot_meta(dashboard_meta),
+            "playback": normalise_snapshot_meta(playback_meta),
+            "devices": normalise_snapshot_meta(devices_meta),
+        },
+    }
+
+    if playback_error:
+        payload["playback_error"] = playback_error
+
+    return payload
+
+
+def _build_index_template_data(*, initial_surface: str = "home") -> dict:
+    """Build the shared template payload for the new frontend shell."""
+    config = load_config()
 
     user_language = get_user_language(request)
     translations = get_translations(user_language)
 
-    def template_t(key, **kwargs):
-        from ..utils.translations import t
-        return t(key, user_language, **kwargs)
-
     dashboard_snapshot, dashboard_meta = (None, {}) if _dashboard_snapshot is None else _dashboard_snapshot.snapshot()
     playback_snapshot, playback_meta = (None, {}) if _playback_snapshot is None else _playback_snapshot.snapshot()
     devices_snapshot, devices_meta = (None, {}) if _devices_snapshot is None else _devices_snapshot.snapshot()
-
-    initial_state = {
-        'dashboard': dashboard_snapshot,
-        'dashboard_meta': normalise_snapshot_meta(dashboard_meta) if dashboard_meta else {},
-        'playback': playback_snapshot,
-        'playback_meta': normalise_snapshot_meta(playback_meta) if playback_meta else {},
-        'devices': devices_snapshot,
-        'devices_meta': normalise_snapshot_meta(devices_meta) if devices_meta else {}
-    }
 
     sleep_service_index = get_service("sleep")
     sleep_status_result_index = sleep_service_index.get_sleep_status()
@@ -91,34 +188,56 @@ def index():
         sleep_status_initial = {
             "active": False,
             "error": sleep_status_result_index.message,
-            "error_code": sleep_status_result_index.error_code or "sleep_status_error"
+            "error_code": sleep_status_result_index.error_code or "sleep_status_error",
         }
 
-    template_data = {
-        'config': config,
-        'devices': devices,
-        'playlists': playlists,
-        'current_track': current_track,
-        'next_alarm_info': next_alarm_info,
-        'initial_volume': initial_volume,
-        'error_message': session.pop('error_message', None),
-        'success_message': session.pop('success_message', None),
-        'sleep_status': sleep_status_initial,
-        'now': datetime.datetime.now(),
-        't': template_t,
-        'lang': user_language,
-        'translations': translations,
-        'initial_state': initial_state,
-        'low_power': LOW_POWER_MODE,
-        'feature_flags': {
-            'sleep_timer': config.get('feature_sleep', False),
-            'music_library': config.get('feature_library', True),
+    notifications = []
+    success_message = session.pop("success_message", None)
+    error_message = session.pop("error_message", None)
+    if success_message:
+        notifications.append({"type": "success", "message": success_message})
+    if error_message:
+        notifications.append({"type": "error", "message": error_message})
+
+    bootstrap = {
+        "language": user_language,
+        "translations": translations,
+        "low_power": LOW_POWER_MODE,
+        "app": {
+            "version": VERSION,
+            "info": get_app_info(),
+            "initial_surface": _resolve_initial_surface(initial_surface),
+            "now_iso": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         },
-        'app_info': get_app_info(),
-        'version': VERSION
+        "dashboard": _build_dashboard_payload(
+            config,
+            sleep_status_initial,
+            dashboard_snapshot,
+            dashboard_meta,
+            playback_snapshot,
+            playback_meta,
+            devices_snapshot,
+            devices_meta,
+        ),
+        "settings": _build_settings_payload(config),
+        "sleep_defaults": _build_sleep_defaults(config),
+        "notifications": notifications,
     }
 
-    return render_template('index.html', **template_data)
+    return {
+        "lang": user_language,
+        "bootstrap": bootstrap,
+        "app_info": get_app_info(),
+        "version": VERSION,
+    }
+
+
+@main_bp.route("/")
+@api_error_handler
+def index():
+    """Main page with alarm and sleep interface."""
+    initial_surface = _resolve_initial_surface(request.args.get("surface"))
+    return render_template("index.html", **_build_index_template_data(initial_surface=initial_surface))
 
 
 @main_bp.route("/debug/language")
@@ -138,22 +257,8 @@ def debug_language():
 @main_bp.route("/settings")
 @api_error_handler
 def settings_page():
-    """Settings page with feature flags and app configuration."""
-    config = load_config()
-    user_language = get_user_language(request)
-    translations = get_translations(user_language)
-
-    def template_t(key, **kwargs):
-        from ..utils.translations import t
-        return t(key, user_language, **kwargs)
-
-    return render_template(
-        "settings.html",
-        config=config,
-        version=VERSION,
-        translations=translations,
-        t=template_t,
-    )
+    """Render the main app shell with the settings surface opened."""
+    return render_template("index.html", **_build_index_template_data(initial_surface="settings"))
 
 
 @main_bp.route("/api/settings", methods=["GET"])

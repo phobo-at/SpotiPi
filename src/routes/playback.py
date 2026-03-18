@@ -73,7 +73,7 @@ def play_endpoint():
         result = spotify_service.start_playback_from_payload(request.form, payload_type="form")
 
     if result.success:
-        return api_response(True, message=t_api("playback_started", request))
+        return api_response(True, data=result.data, message=t_api("playback_started", request))
 
     error_code = (result.error_code or "playback_start_failed")
     message = result.message or t_api("failed_start_playback", request)

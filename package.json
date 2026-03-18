@@ -1,0 +1,22 @@
+{
+  "name": "spotipi-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build_frontend.mjs",
+    "build:dev": "node scripts/build_frontend.mjs --dev",
+    "watch": "node scripts/build_frontend.mjs --watch --dev",
+    "typecheck": "tsc --noEmit",
+    "test:frontend": "npm run typecheck && npm run build",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "preact": "^10.26.6"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.52.0",
+    "esbuild": "^0.25.1",
+    "typescript": "^5.8.2"
+  }
+}

@@ -305,6 +305,18 @@ def _register_request_hooks(app: Flask) -> None:
             from .utils.translations import t
             return t(key, user_language, **kwargs)
 
+        dist_assets = [
+            static_dir / "dist" / "app.js",
+            static_dir / "dist" / "app.css",
+        ]
+        existing_dist_assets = [asset for asset in dist_assets if asset.exists()]
+        if existing_dist_assets:
+            frontend_asset_version = str(
+                int(max(asset.stat().st_mtime for asset in existing_dist_assets))
+            )
+        else:
+            frontend_asset_version = str(VERSION)
+
         return {
             'app_version': VERSION,
             'app_info': get_app_info(),
@@ -316,7 +328,8 @@ def _register_request_hooks(app: Flask) -> None:
             'static_css_path': '/static/css/',
             'static_js_path': '/static/js/',
             'static_icons_path': '/static/icons/',
-            'now': datetime.datetime.now()
+            'now': datetime.datetime.now(),
+            'frontend_asset_version': frontend_asset_version,
         }
 
 

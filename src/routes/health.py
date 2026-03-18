@@ -232,7 +232,9 @@ def api_dashboard_status():
         "alarm_volume": config.get("alarm_volume", 50),
         "next_alarm": next_alarm_time,
         "playlist_uri": config.get("playlist_uri", ""),
-        "device_name": config.get("device_name", "")
+        "device_name": config.get("device_name", ""),
+        "fade_in": config.get("fade_in", False),
+        "shuffle": config.get("shuffle", False),
     }
 
     sleep_service = get_service("sleep")

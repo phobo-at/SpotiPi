@@ -80,6 +80,8 @@ class AlarmService(BaseService):
                 **alarm_info.__dict__,
                 "next_alarm": next_alarm_text,
                 "alarm_volume": alarm_info.volume,
+                "fade_in": config.get("fade_in", False),
+                "shuffle": config.get("shuffle", False),
             }
 
             return self._success_result(
@@ -137,7 +139,9 @@ class AlarmService(BaseService):
                 "alarm_volume": config.get("alarm_volume", 50),
                 "next_alarm": next_alarm_text,
                 "playlist_uri": config.get("playlist_uri", ""),
-                "device_name": config.get("device_name", "")
+                "device_name": config.get("device_name", ""),
+                "fade_in": config.get("fade_in", False),
+                "shuffle": config.get("shuffle", False),
             }
 
             return self._success_result(

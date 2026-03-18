@@ -8,8 +8,9 @@ Smart Spotify alarm clock and sleep timer for Raspberry Pi.
 
 ## Features
 
-- Spotify playback for alarms and sleep timer
-- Mobile-friendly web UI with playback controls
+- Dashboard-first web UI with persistent player and three primary actions
+- Spotify playback for alarms, sleep timer, and direct "play now"
+- Touch-friendly mobile sheets for music and device selection
 - Local server profile for safe development testing
 - Raspberry Pi optimized defaults and low-power toggles
 - Resilient alarm scheduler with catch-up behavior
@@ -30,6 +31,7 @@ cd SpotiPi
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+npm install
 
 mkdir -p ~/.spotipi
 cp .env.example ~/.spotipi/.env
@@ -37,10 +39,30 @@ cp .env.example ~/.spotipi/.env
 # Optional dev-only overrides can still live in ./ .env, but runtime secrets belong in ~/.spotipi/.env
 
 python generate_token.py
+npm run build
 ./scripts/local_server.sh start
 ```
 
 Open: [http://127.0.0.1:5001](http://127.0.0.1:5001)
+
+## Frontend Development
+
+The app shell is now built with `TypeScript + Preact` and served by Flask as static assets.
+
+- Source: `frontend/src/`
+- Built assets committed for runtime: `static/dist/app.js`, `static/dist/app.css`
+- Shell mount point: `templates/index.html`
+- Initial bootstrap payload: `src/routes/main.py`
+
+Common frontend commands:
+
+```bash
+npm run build
+npm run watch
+npm run typecheck
+```
+
+If you change frontend code, rebuild before running the app or deploying to the Pi.
 
 ## Local Server Commands
 
@@ -111,6 +133,14 @@ SPOTIPI_DEVICE_TTL=10
 SPOTIPI_LIBRARY_TTL_MINUTES=60
 ```
 
+Recommended for shared low-power Pi workloads such as `Pi-hole + SpotiPi`:
+
+```env
+SPOTIPI_LOW_POWER=1
+SPOTIPI_MAX_CONCURRENCY=2
+SPOTIPI_LIBRARY_TTL_MINUTES=60
+```
+
 Full environment variable reference: [`docs/ENVIRONMENT_VARIABLES.md`](docs/ENVIRONMENT_VARIABLES.md)
 
 ## Architecture
@@ -119,14 +149,23 @@ Full environment variable reference: [`docs/ENVIRONMENT_VARIABLES.md`](docs/ENVI
 - Routes via blueprints in `src/routes/`
 - Business logic in `src/services/`, alarm/scheduler in `src/core/`
 - Shared config/thread safety helpers in `src/config.py` and `src/utils/thread_safety.py`
+- Frontend app shell in `frontend/src/`, bundled into `static/dist/`
+- `templates/index.html` now contains only the shell root and bootstrap JSON
+- Home screen is dashboard-first; settings open as a secondary surface instead of a separate legacy page
 
 ## Testing
 
 ```bash
 pytest
+npm run typecheck
+npm run build
+npm run test:e2e
 ```
 
-Current baseline as of 2026-03-17: `121 passed, 2 skipped`
+Current baseline as of 2026-03-18:
+
+- `pytest`: `123 passed, 2 skipped`
+- `npm run test:e2e`: `9 passed`
 
 Optional local quality checks:
 

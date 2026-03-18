@@ -83,6 +83,8 @@ def alarm_status():
         "next_alarm": alarm_data.get("next_alarm", ""),
         "playlist_uri": alarm_data.get("playlist_uri", ""),
         "device_name": alarm_data.get("device_name", ""),
+        "fade_in": bool(alarm_data.get("fade_in", False)),
+        "shuffle": bool(alarm_data.get("shuffle", False)),
         "mode": "basic"
     }
     return api_response(True, data=payload)
