@@ -185,6 +185,12 @@ pre-commit run --all-files
 
 <img src="docs/images/spotipi.png" alt="SpotiPi Interface" width="100%">
 
+Regenerate the screenshot and keep README in sync:
+
+```bash
+npm run screenshot:readme
+```
+
 ## Contributing
 
 - Follow [`CONTRIBUTING.md`](CONTRIBUTING.md)

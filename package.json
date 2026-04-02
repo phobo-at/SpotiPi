@@ -8,7 +8,8 @@
     "watch": "node scripts/build_frontend.mjs --watch --dev",
     "typecheck": "tsc --noEmit",
     "test:frontend": "npm run typecheck && npm run build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "screenshot:readme": "bash scripts/update_readme_screenshot.sh"
   },
   "dependencies": {
     "preact": "^10.26.6"
