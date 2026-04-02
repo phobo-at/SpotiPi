@@ -149,6 +149,13 @@ def test_toggle_play_pause_failure_propagates(client, monkeypatch):
 
 def test_dashboard_status_endpoint(client, monkeypatch):
     # Force predictable responses
+    dashboard_snapshot = AsyncSnapshot("dashboard-pending-test", 60.0)
+    playback_snapshot = AsyncSnapshot("playback-pending-test", 60.0)
+    devices_snapshot = AsyncSnapshot("devices-pending-test", 60.0)
+
+    monkeypatch.setattr('src.routes.health._dashboard_snapshot', dashboard_snapshot)
+    monkeypatch.setattr('src.routes.health._playback_snapshot', playback_snapshot)
+    monkeypatch.setattr('src.routes.health._devices_snapshot', devices_snapshot)
     monkeypatch.setattr('src.routes.health.get_access_token', lambda: None)
 
     response = client.get('/api/dashboard/status')
@@ -162,11 +169,8 @@ def test_dashboard_status_endpoint(client, monkeypatch):
     assert 'alarm' in data
     assert 'sleep' in data
     assert 'playback' in data
-    assert data['playback_status'] in {'pending', 'auth_required'}
-    if data['playback_status'] == 'pending':
-        assert data['hydration']['playback']['pending'] is True
-    else:
-        assert data['hydration']['playback']['pending'] is False
+    assert data['playback_status'] == 'pending'
+    assert data['hydration']['playback']['pending'] is True
 
 
 def test_dashboard_status_endpoint_ready_snapshot_returns_200(client, monkeypatch):

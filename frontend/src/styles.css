@@ -342,8 +342,19 @@ button:disabled {
 }
 
 .player-copy h2 {
-  font-size: clamp(2rem, 3.2vw, 3.25rem);
-  line-height: 1;
+  max-width: 14ch;
+  font-size: clamp(1.95rem, 2.5vw, 3.1rem);
+  line-height: 0.96;
+  text-wrap: balance;
+}
+
+.player-title-placeholder {
+  max-width: 11ch;
+  font-size: clamp(1.7rem, 1.3vw + 1.2rem, 2.4rem);
+}
+
+.player-subtitle-placeholder {
+  max-width: 34ch;
 }
 
 .player-copy p,
@@ -645,22 +656,29 @@ input[type="range"] {
   inset: 0;
   z-index: 40;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  padding: 20px;
+  overflow: auto;
+  padding: 28px;
   background: rgba(3, 7, 12, 0.68);
 }
 
 .sheet {
-  width: min(980px, 100%);
-  max-height: min(92vh, 920px);
+  display: flex;
+  flex-direction: column;
+  width: min(920px, calc(100vw - 56px));
+  max-height: min(88vh, 920px);
   overflow: hidden;
-  border-radius: 30px 30px 22px 22px;
+  border-radius: 30px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
     radial-gradient(circle at top right, rgba(76, 217, 100, 0.12), transparent 26%),
     linear-gradient(180deg, rgba(12, 20, 30, 0.98), rgba(8, 13, 20, 0.96));
   box-shadow: 0 34px 80px rgba(0, 0, 0, 0.44);
+}
+
+.sheet-settings {
+  width: min(1120px, calc(100vw - 72px));
 }
 
 .sheet-header {
@@ -673,9 +691,9 @@ input[type="range"] {
 }
 
 .sheet-body {
-  max-height: calc(92vh - 112px);
+  max-height: calc(88vh - 112px);
   overflow: auto;
-  padding: 24px;
+  padding: 24px 24px 28px;
 }
 
 .sheet-stack {
@@ -882,6 +900,17 @@ input[type="range"] {
   background: rgba(255, 255, 255, 0.03);
 }
 
+@media (min-width: 940px) {
+  .sheet-settings .sheet-stack {
+    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+    align-items: start;
+  }
+
+  .sheet-settings .settings-group {
+    min-height: 100%;
+  }
+}
+
 .account-card {
   display: flex;
   align-items: center;
@@ -963,12 +992,18 @@ input[type="range"] {
   }
 
   .sheet-backdrop {
+    align-items: flex-end;
     padding: 10px;
   }
 
   .sheet {
+    width: 100%;
     max-height: 94vh;
     border-radius: 24px 24px 18px 18px;
+  }
+
+  .sheet-settings {
+    width: 100%;
   }
 
   .sheet-body {

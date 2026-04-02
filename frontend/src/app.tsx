@@ -318,10 +318,11 @@ interface SheetProps {
   subtitle?: string;
   open: boolean;
   onClose: () => void;
+  variant?: "default" | "settings";
   children: JSX.Element;
 }
 
-function Sheet({ id, title, subtitle, open, onClose, children }: SheetProps) {
+function Sheet({ id, title, subtitle, open, onClose, variant = "default", children }: SheetProps) {
   if (!open) {
     return null;
   }
@@ -330,7 +331,7 @@ function Sheet({ id, title, subtitle, open, onClose, children }: SheetProps) {
     <div class="sheet-backdrop" onClick={onClose}>
       <section
         id={id}
-        class="sheet"
+        class={`sheet sheet-${variant}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${id}-title`}
@@ -1388,6 +1389,49 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const clockLabel = formatDateTime(clock, bootstrap.language);
   const currentTrack = dashboard.playback.current_track;
   const playerReady = isPlaybackReady(dashboard, networkStatus);
+  const playerTitle = currentTrack?.name
+    ? currentTrack.name
+    : networkStatus === "offline"
+      ? localized(bootstrap.language, "Offline, still usable", "Offline, aber bedienbar")
+      : dashboard.playback_status === "auth_required"
+        ? localized(bootstrap.language, "Spotify sign-in needed", "Spotify-Anmeldung nötig")
+        : dashboard.playback_status === "error"
+          ? localized(bootstrap.language, "Spotify is unavailable", "Spotify ist gerade nicht erreichbar")
+          : dashboard.hydration.playback.pending || dashboard.playback_status === "pending"
+            ? localized(bootstrap.language, "Spotify is waking up", "Spotify wacht auf")
+            : localized(bootstrap.language, "Ready to play", "Bereit zum Abspielen");
+  const playerSubtitle = currentTrack?.artist
+    ? currentTrack.artist
+    : networkStatus === "offline"
+      ? localized(
+          bootstrap.language,
+          "Your last snapshot stays visible while the next connection check runs.",
+          "Der letzte Snapshot bleibt sichtbar, während die nächste Verbindungsprüfung läuft."
+        )
+      : dashboard.playback_status === "auth_required"
+        ? localized(
+            bootstrap.language,
+            "Connect Spotify in Settings, then playback controls become active here.",
+            "Verbinde Spotify in den Einstellungen, dann wird die Wiedergabe hier aktiv."
+          )
+        : dashboard.playback_status === "error"
+          ? localized(
+              bootstrap.language,
+              "Try syncing again or switch devices once Spotify responds.",
+              "Synchronisiere erneut oder wechsle das Gerät, sobald Spotify wieder antwortet."
+            )
+          : dashboard.hydration.playback.pending || dashboard.playback_status === "pending"
+            ? localized(
+                bootstrap.language,
+                "Playback controls appear here as soon as the next Spotify snapshot lands.",
+                "Die Wiedergabe erscheint hier, sobald der nächste Spotify-Snapshot angekommen ist."
+              )
+            : localized(
+                bootstrap.language,
+                "Use Alarm, Sleep or Play now to start music from the home surface.",
+                "Starte Musik direkt über Alarm, Sleep oder Jetzt abspielen auf der Startseite."
+              );
+  const playerHasPlaceholderCopy = !currentTrack?.name;
   const devicesStatus = dashboard.devices_meta.status || "pending";
   const alarmSummary = dashboard.alarm.enabled
     ? `${formatTimeLabel(dashboard.alarm.time, bootstrap.language)} · ${dashboard.alarm.device_name || localized(bootstrap.language, "No speaker", "Kein Lautsprecher")}`
@@ -1472,8 +1516,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 </button>
               </div>
 
-              <h2>{currentTrack?.name || localized(bootstrap.language, "Ready when Spotify is", "Bereit, sobald Spotify bereit ist")}</h2>
-              <p>{currentTrack?.artist || localized(bootstrap.language, "Persistent playback lives here", "Hier lebt die permanente Wiedergabe")}</p>
+              <h2 class={playerHasPlaceholderCopy ? "player-title-placeholder" : undefined}>{playerTitle}</h2>
+              <p class={playerHasPlaceholderCopy ? "player-subtitle-placeholder" : undefined}>{playerSubtitle}</p>
 
               <div class="player-controls" role="group" aria-label={t("playback_controls", localized(bootstrap.language, "Playback controls", "Wiedergabe-Steuerung"))}>
                 <button
@@ -1996,6 +2040,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         id="settings-sheet"
         open={surface === "settings"}
         onClose={closeSurface}
+        variant="settings"
         title={localized(bootstrap.language, "Settings", "Einstellungen")}
         subtitle={localized(
           bootstrap.language,
@@ -2004,7 +2049,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         )}
       >
         <div class="sheet-stack" data-testid="settings-sheet">
-          <section class="settings-group">
+          <section class="settings-group settings-group-account">
             <h3>{t("spotify_account", localized(bootstrap.language, "Spotify account", "Spotify-Konto"))}</h3>
             {account.status === "loading" ? (
               <div class="state-card state-card-muted">
@@ -2041,7 +2086,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             ) : null}
           </section>
 
-          <section class="settings-group">
+          <section class="settings-group settings-group-features">
             <h3>{t("feature_flags", localized(bootstrap.language, "Features", "Funktionen"))}</h3>
             <ToggleField
               label={localized(bootstrap.language, "Sleep timer surface", "Sleep-Timer Oberfläche")}
@@ -2065,7 +2110,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             />
           </section>
 
-          <section class="settings-group">
+          <section class="settings-group settings-group-preferences">
             <h3>{localized(bootstrap.language, "Preferences", "Präferenzen")}</h3>
             <div class="field-group">
               <label class="field-label" for="settings-language">
@@ -2127,7 +2172,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             />
           </section>
 
-          <section class="settings-group">
+          <section class="settings-group settings-group-maintenance">
             <h3>{localized(bootstrap.language, "Maintenance", "Wartung")}</h3>
             <button
               type="button"

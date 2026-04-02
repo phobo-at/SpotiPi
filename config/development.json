@@ -1,9 +1,9 @@
 {
-  "enabled": false,
+  "enabled": true,
   "time": "07:00",
   "playlist_uri": "",
-  "device_name": "Radio",
-  "alarm_volume": 17,
+  "device_name": "",
+  "alarm_volume": 50,
   "fade_in": false,
   "shuffle": false,
   "weekdays": null,
