@@ -299,7 +299,7 @@ class DeviceManager {
 }
 
 // Global device manager instance
-let deviceManager = null;
+export let deviceManager = null;
 
 /**
  * Initialize global device manager

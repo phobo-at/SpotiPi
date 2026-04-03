@@ -218,3 +218,41 @@ def test_dashboard_status_endpoint_ready_snapshot_returns_200(client, monkeypatc
     assert payload['success'] is True
     assert payload['data']['playback_status'] == 'ok'
     assert payload['data']['hydration']['playback']['pending'] is False
+
+
+def test_dashboard_status_auth_required_returns_202(client, monkeypatch):
+    dashboard_snapshot = AsyncSnapshot("dashboard-auth-required-test", 60.0)
+    playback_snapshot = AsyncSnapshot("playback-auth-required-test", 60.0)
+    devices_snapshot = AsyncSnapshot("devices-auth-required-test", 60.0)
+
+    dashboard_snapshot.set({
+        "playback": {
+            "status": "auth_required",
+            "playback": None
+        },
+        "devices": {
+            "status": "auth_required",
+            "devices": [],
+            "cache": {}
+        }
+    })
+    playback_snapshot.set({
+        "status": "auth_required",
+        "playback": None
+    })
+    devices_snapshot.set({
+        "status": "auth_required",
+        "devices": [],
+        "cache": {}
+    })
+
+    monkeypatch.setattr('src.routes.health._dashboard_snapshot', dashboard_snapshot)
+    monkeypatch.setattr('src.routes.health._playback_snapshot', playback_snapshot)
+    monkeypatch.setattr('src.routes.health._devices_snapshot', devices_snapshot)
+
+    response = client.get('/api/dashboard/status')
+    assert response.status_code == 202
+
+    payload = response.get_json()
+    assert payload['success'] is True
+    assert payload['data']['playback_status'] == 'auth_required'

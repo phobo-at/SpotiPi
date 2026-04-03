@@ -7,7 +7,7 @@ import datetime
 import logging
 from typing import Any, Dict, Optional
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
 
 from ..api.spotify import get_access_token
 from ..config import load_config
@@ -136,7 +136,7 @@ def _refresh_dashboard_snapshot() -> Dict[str, Any]:
 @health_bp.route("/healthz")
 def healthz():
     """Basic health check endpoint."""
-    return jsonify({"ok": True, "version": str(VERSION)})
+    return api_response(True, data={"ok": True, "version": str(VERSION)})
 
 
 @health_bp.route("/readyz")
@@ -147,12 +147,12 @@ def readyz():
         _ = load_config()
         rate_limiter = get_rate_limiter()
         stats = rate_limiter.get_statistics()
-        return jsonify({
+        return api_response(True, data={
             "ok": True,
             "rate_limiter": {"total_requests": stats.get('global_stats', {}).get('total_requests', 0)}
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 503
+        return api_response(False, message=str(e), status=503, error_code="readiness_failed")
 
 
 @health_bp.route("/metrics")
@@ -302,7 +302,12 @@ def api_dashboard_status():
 
     # Determine a meaningful HTTP status: pending requests should return 202 to indicate work in progress.
     status_code = 200
-    if hydration_meta["playback"]["pending"] or hydration_meta["devices"]["pending"]:
+    if (
+        hydration_meta["playback"]["pending"]
+        or hydration_meta["devices"]["pending"]
+        or playback_status in {"pending", "auth_required"}
+        or devices_status in {"pending", "auth_required"}
+    ):
         status_code = 202
     elif playback_status == "error":
         status_code = 503
@@ -380,16 +385,10 @@ def invalidate_thread_safe_cache():
     """🗑️ Force invalidation of thread-safe config cache."""
     try:
         invalidate_config_cache()
-        return jsonify({
-            "success": True,
-            "message": "Config cache invalidated successfully"
-        })
+        return api_response(True, message="Config cache invalidated successfully")
     except Exception as e:
         logger.error(f"❌ Error invalidating cache: {e}")
-        return jsonify({
-            "success": False,
-            "message": f"Error invalidating cache: {str(e)}"
-        }), 500
+        return api_response(False, message=f"Error invalidating cache: {str(e)}", status=500, error_code="cache_invalidate_error")
 
 
 @health_bp.route("/api/token-cache/performance")
@@ -397,16 +396,10 @@ def log_token_performance():
     """📈 Log token cache performance summary."""
     try:
         log_token_cache_performance()
-        return jsonify({
-            "success": True,
-            "message": "Performance summary logged to console"
-        })
+        return api_response(True, message="Performance summary logged to console")
     except Exception as e:
         logger.error(f"❌ Error logging token performance: {e}")
-        return jsonify({
-            "success": False,
-            "message": f"Error logging performance: {str(e)}"
-        }), 500
+        return api_response(False, message=f"Error logging performance: {str(e)}", status=500, error_code="token_perf_error")
 
 
 @health_bp.route("/api/spotify/health")
@@ -426,11 +419,7 @@ def api_spotify_health():
         )
     except Exception as e:
         logger.exception("Error running Spotify health check")
-        return jsonify({
-            "ok": False,
-            "error": "HEALTH_CHECK_FAILED",
-            "message": str(e)
-        }), 500
+        return api_response(False, message=str(e), status=500, error_code="HEALTH_CHECK_FAILED")
 
 
 @health_bp.route("/api/spotify/auth-status")

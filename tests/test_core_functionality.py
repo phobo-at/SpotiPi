@@ -192,6 +192,27 @@ class TestSleepTimer:
         # TTL should be reasonable (between 1 and 60 seconds)
         assert 1 <= _STATUS_CACHE_TTL <= 60
 
+    @patch('src.core.sleep.stop_playback')
+    @patch('src.core.sleep.set_volume')
+    @patch('src.core.sleep.get_access_token')
+    @patch('src.core.sleep.get_sleep_status')
+    def test_stop_sleep_music_uses_spotify_helper(
+        self,
+        mock_sleep_status: MagicMock,
+        mock_token: MagicMock,
+        mock_set_volume: MagicMock,
+        mock_stop_playback: MagicMock
+    ):
+        mock_sleep_status.return_value = {"active": True, "device_id": "device-123"}
+        mock_token.return_value = "token-abc"
+        mock_set_volume.return_value = True
+        mock_stop_playback.return_value = True
+
+        from src.core.sleep import _stop_sleep_music
+
+        assert _stop_sleep_music() is True
+        mock_stop_playback.assert_called_once_with("token-abc", device_id="device-123")
+
 
 # ============================================================================
 # Alarm Scheduler Tests  

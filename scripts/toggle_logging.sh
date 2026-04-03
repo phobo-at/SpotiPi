@@ -3,7 +3,7 @@
 # toggle_logging.sh – Enable or disable detailed SpotiPi logging on the Raspberry Pi - Path-Agnostic Version
 #
 # Features:
-#   * Creates / removes a systemd override for spotify-web.service
+#   * Creates / removes a systemd override for spotipi.service
 #   * Sets environment variables understood by our logger (see src/utils/logger.py)
 #   * Ensures log directory exists when enabling
 #   * Provides status output
@@ -20,7 +20,7 @@ set -euo pipefail
 
 # 🔧 Path-agnostic configuration
 APP_NAME="${SPOTIPI_APP_NAME:-spotipi}"
-SERVICE_NAME="${SPOTIPI_SERVICE_NAME:-spotify-web.service}"
+SERVICE_NAME="${SPOTIPI_SERVICE_NAME:-spotipi.service}"
 APP_PATH="${SPOTIPI_APP_PATH:-/home/pi/$APP_NAME}"
 CONFIG_FILE="$APP_PATH/config/production.json"
 LOG_DIR="${SPOTIPI_LOG_DIR:-/home/pi/${APP_NAME}_logs}"

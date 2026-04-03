@@ -237,6 +237,31 @@ PORT=8080              # Custom port
 - **Fast network:** Reduce `RETRY_TOTAL=3` and `BACKOFF_FACTOR=0.3` for quicker failures
 - **Frequent rate limits:** Increase `BACKOFF_FACTOR=1.5` to respect Spotify's limits
 
+### 🎵 **Spotify Control & Recovery Flags**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SPOTIPI_TOKEN_REFRESH_ATTEMPTS` | `3` | Max attempts to refresh Spotify tokens before failing. |
+| `SPOTIPI_TOKEN_REFRESH_BACKOFF` | `0.5` | Base exponential backoff (seconds) between token refresh retries. |
+| `SPOTIPI_TOKEN_REFRESH_JITTER` | `0.4` | Randomized jitter factor for token refresh retry delays. |
+| `SPOTIPI_PLAYER_RETRIES` | `3` | Max retries for playback-start control flows. |
+| `SPOTIPI_PLAYER_BACKOFF` | `1.0` | Base exponential backoff (seconds) for player retries. |
+| `SPOTIPI_PLAYER_JITTER` | `0.35` | Randomized jitter factor for player retry delays. |
+| `SPOTIPI_PLAYBACK_VERIFY_ATTEMPTS` | `6` | Number of polling checks to verify playback actually started. |
+| `SPOTIPI_PLAYBACK_VERIFY_WAIT` | `1.0` | Delay (seconds) between playback verification checks. |
+| `SPOTIPI_SHUFFLE_RETRY_ATTEMPTS` | `2` | Retry count for shuffle mode activation. |
+| `SPOTIPI_SHUFFLE_RETRY_DELAY` | `0.75` | Delay (seconds) between shuffle retries. |
+| `SPOTIPI_BREAKER_THRESHOLD` | `3` | Circuit-breaker failure threshold before opening breaker state. |
+| `SPOTIPI_BREAKER_COOLDOWN` | `30` | Circuit-breaker cooldown duration (seconds) before retrying. |
+| `SPOTIPI_ENABLE_DEBUG_ROUTES` | `0` | Enable debug-only routes such as `/debug/language` (disabled by default). |
+
+### 🖥️ **Server Runtime Flags**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SPOTIPI_WAITRESS_THREADS` | `4` | Number of Waitress worker threads in production server mode. |
+| `SPOTIPI_WAITRESS_BACKLOG` | `128` | Socket backlog for incoming Waitress connections. |
+
 ### ⏰ **Deployment & Alarm Flags**
 
 | Variable | Default | Purpose |

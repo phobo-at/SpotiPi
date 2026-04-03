@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ThreadPoolExecutor
 
 from src.utils.thread_safety import ThreadSafeConfigManager
 
@@ -65,3 +66,21 @@ def test_change_listener_receives_isolated_copy():
 
     current = manager.load_config()
     assert current["last_known_devices"]["device"]["id"] == 2
+
+
+def test_update_config_atomic_prevents_lost_updates():
+    manager = ThreadSafeConfigManager(_InMemoryConfigManager({"counter": 0}))
+
+    def increment_many() -> None:
+        for _ in range(50):
+            assert manager.update_config_atomic(
+                lambda config: {**config, "counter": int(config.get("counter", 0)) + 1}
+            )
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(increment_many) for _ in range(8)]
+        for future in futures:
+            future.result()
+
+    current = manager.load_config()
+    assert current["counter"] == 400

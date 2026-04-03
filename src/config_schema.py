@@ -111,6 +111,9 @@ class SpotiPiConfig(BaseModel):
     
     # Device cache
     last_known_devices: Dict[str, Any] = Field(default_factory=dict, description="Cached Spotify devices")
+
+    # Environment defaults documentation (kept in config for deploy visibility)
+    env_defaults: Dict[str, str] = Field(default_factory=dict, description="Reference defaults for SPOTIPI_* environment variables")
     
     # Runtime metadata (not saved to file)
     _runtime: Optional[Dict[str, Any]] = None

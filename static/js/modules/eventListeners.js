@@ -455,9 +455,14 @@ async function triggerPullRefresh() {
   
   // Dynamically import deviceManager and refresh devices
   try {
-    const { deviceManager } = await import('./deviceManager.js');
-    if (deviceManager?.refreshDevices) {
-      await deviceManager.refreshDevices();
+    const { forceRefreshDevices, getDeviceManager } = await import('./deviceManager.js');
+    if (typeof forceRefreshDevices === 'function') {
+      await forceRefreshDevices();
+    } else {
+      const manager = typeof getDeviceManager === 'function' ? getDeviceManager() : null;
+      if (manager?.forceRefresh) {
+        await manager.forceRefresh();
+      }
     }
     
     // Also refresh playback status

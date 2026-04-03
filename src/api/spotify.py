@@ -64,10 +64,10 @@ def _get_env_path():
 ENV_PATH = _get_env_path()
 
 # 🌍 Load environment variables
-if os.path.exists(ENV_PATH):
-    load_dotenv(dotenv_path=ENV_PATH)
-# Also allow project-root .env to supply overrides (common in dev setups)
+# Load local project defaults first, then let canonical runtime secrets win.
 load_dotenv()
+if os.path.exists(ENV_PATH):
+    load_dotenv(dotenv_path=ENV_PATH, override=True)
 CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("SPOTIFY_REFRESH_TOKEN")
@@ -75,6 +75,14 @@ USERNAME = os.getenv("SPOTIFY_USERNAME")
 _LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
 
 TOKEN_STATE_PATH = Path(_get_app_config_dir()) / "spotify_token.json"
+
+
+def _enforce_token_permissions() -> None:
+    """Ensure token state file permissions are owner read/write only."""
+    try:
+        os.chmod(TOKEN_STATE_PATH, 0o600)
+    except OSError:
+        pass
 
 
 def _coerce_float(value: Optional[str], default: float) -> float:
@@ -209,6 +217,7 @@ def _save_token_atomically(payload: Dict[str, Any]) -> None:
             with tmp_path.open("w", encoding="utf-8") as handle:
                 json.dump(payload, handle, indent=2, sort_keys=True)
             os.replace(tmp_path, TOKEN_STATE_PATH)
+            _enforce_token_permissions()
             return
         except Exception as exc:
             logging.getLogger('spotify').warning("Failed to persist token payload: %s", exc)
@@ -226,12 +235,7 @@ def _save_token_atomically(payload: Dict[str, Any]) -> None:
         with tmp_path.open("w", encoding="utf-8") as handle:
             handle.write(encrypted_data)
         os.replace(tmp_path, TOKEN_STATE_PATH)
-        
-        # Restrict file permissions (owner read/write only)
-        try:
-            os.chmod(TOKEN_STATE_PATH, 0o600)
-        except OSError:
-            pass  # May fail on some platforms
+        _enforce_token_permissions()
             
         encryption_type = "encrypted" if is_encryption_available() else "obfuscated"
         logging.getLogger('spotify').debug(f"Token saved ({encryption_type})")
@@ -243,6 +247,7 @@ def _save_token_atomically(payload: Dict[str, Any]) -> None:
             with tmp_path.open("w", encoding="utf-8") as handle:
                 json.dump(payload, handle, indent=2, sort_keys=True)
             os.replace(tmp_path, TOKEN_STATE_PATH)
+            _enforce_token_permissions()
         except Exception as exc:
             logging.getLogger('spotify').warning("Failed to persist token payload: %s", exc)
     except Exception as exc:

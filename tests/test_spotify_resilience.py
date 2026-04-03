@@ -1,4 +1,6 @@
+import builtins
 import json
+import time
 
 import pytest
 import requests
@@ -103,3 +105,58 @@ def test_play_with_retry_uses_fallback_device(monkeypatch):
 
     assert success is True
     assert attempts == ["primary", "fallback"]
+
+
+def test_save_token_atomically_sets_permissions_in_plaintext_mode(monkeypatch, temp_token_path):
+    chmod_calls = []
+    monkeypatch.setenv("SPOTIPI_TOKEN_PLAINTEXT", "1")
+    monkeypatch.setattr(spotify.os, "chmod", lambda path, mode: chmod_calls.append((path, mode)))
+
+    spotify._save_token_atomically({
+        "access_token": "token",
+        "expires_at": int(time.time()) + 60
+    })
+
+    assert temp_token_path.exists()
+    assert chmod_calls
+    assert chmod_calls[-1][1] == 0o600
+
+
+def test_save_token_atomically_sets_permissions_in_encrypted_mode(monkeypatch, temp_token_path):
+    chmod_calls = []
+    monkeypatch.delenv("SPOTIPI_TOKEN_PLAINTEXT", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(spotify.os, "chmod", lambda path, mode: chmod_calls.append((path, mode)))
+
+    spotify._save_token_atomically({
+        "access_token": "token",
+        "expires_at": int(time.time()) + 60
+    })
+
+    assert temp_token_path.exists()
+    assert chmod_calls
+    assert chmod_calls[-1][1] == 0o600
+
+
+def test_save_token_atomically_sets_permissions_on_importerror_fallback(monkeypatch, temp_token_path):
+    chmod_calls = []
+    real_import = builtins.__import__
+
+    def _import_with_forced_failure(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.endswith("token_encryption"):
+            raise ImportError("forced import error")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.delenv("SPOTIPI_TOKEN_PLAINTEXT", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(builtins, "__import__", _import_with_forced_failure)
+    monkeypatch.setattr(spotify.os, "chmod", lambda path, mode: chmod_calls.append((path, mode)))
+
+    spotify._save_token_atomically({
+        "access_token": "token",
+        "expires_at": int(time.time()) + 60
+    })
+
+    assert temp_token_path.exists()
+    assert chmod_calls
+    assert chmod_calls[-1][1] == 0o600

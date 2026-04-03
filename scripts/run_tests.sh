@@ -29,6 +29,9 @@ fi
 # Ensure src is on PYTHONPATH
 export PYTHONPATH="$ROOT_DIR/src:${PYTHONPATH:-}"
 
+echo "[info] Running AGENTS.md compliance checks..."
+python scripts/check_agents_compliance.py
+
 # Default pytest options
 PYTEST_OPTS="-ra"
 

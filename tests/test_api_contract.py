@@ -70,6 +70,36 @@ def test_playback_status_no_token(client, monkeypatch):
     assert data['data'].get('hydration', {}).get('pending') in {True, False}
 
 
+def test_debug_language_route_disabled_by_default(client, monkeypatch):
+    monkeypatch.setattr('src.routes.main.DEBUG_ROUTES_ENABLED', False)
+    resp = client.get('/debug/language')
+    assert resp.status_code == 404
+    data = assert_api_envelope(resp, expect_success=False)
+    assert data.get('error_code') == 'not_found'
+
+
+def test_debug_language_route_whitelists_headers(client, monkeypatch):
+    monkeypatch.setattr('src.routes.main.DEBUG_ROUTES_ENABLED', True)
+    resp = client.get(
+        '/debug/language',
+        headers={
+            'Accept-Language': 'de-AT,de;q=0.9',
+            'Authorization': 'Bearer secret-token',
+            'Cookie': 'session=secret-cookie',
+            'User-Agent': 'pytest-agent'
+        }
+    )
+    assert resp.status_code == 200
+    data = assert_api_envelope(resp, expect_success=True)
+    payload = data['data']
+    assert 'all_headers' not in payload
+    headers = payload.get('request_headers', {})
+    assert headers.get('Accept-Language') == 'de-AT,de;q=0.9'
+    assert headers.get('User-Agent') == 'pytest-agent'
+    assert 'Authorization' not in headers
+    assert 'Cookie' not in headers
+
+
 def test_save_alarm_validation_error(client):
     # Missing time field should raise validation error
     resp = client.post('/save_alarm', data={

@@ -10,9 +10,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from ..config import load_config, save_config
+from ..config import load_config
 from ..core.alarm import execute_alarm
 from ..core.scheduler import AlarmTimeValidator
+from ..utils.thread_safety import update_config_atomic
 from ..utils.validation import ValidationError, validate_alarm_config
 from . import BaseService, ServiceResult
 
@@ -106,17 +107,22 @@ class AlarmService(BaseService):
                     error_code="time_format"
                 )
 
-            # Load current config and update
-            config = load_config()
-            config.update(validated_data)
+            persisted_config: Dict[str, Any] = {}
+
+            def _apply_alarm_update(config: Dict[str, Any]) -> Dict[str, Any]:
+                config.update(validated_data)
+                persisted_config.clear()
+                persisted_config.update(config)
+                return config
 
             # Persist configuration atomically
-            if not save_config(config):
+            if not update_config_atomic(_apply_alarm_update):
                 return self._error_result(
                     "Failed to save alarm configuration",
                     error_code="save_failed"
                 )
 
+            config = persisted_config
             self.logger.info(
                 "Alarm settings saved: Active=%s Time=%s Volume=%s%% Device=%s",
                 config.get("enabled"),
@@ -215,9 +221,11 @@ class AlarmService(BaseService):
     def disable_alarm(self) -> ServiceResult:
         """Disable the alarm system."""
         try:
-            config = load_config()
-            config["enabled"] = False
-            save_config(config)
+            if not update_config_atomic(lambda config: {**config, "enabled": False}):
+                return self._error_result(
+                    "Failed to disable alarm",
+                    error_code="SAVE_FAILED"
+                )
             
             return self._success_result(
                 message="Alarm disabled successfully"
@@ -244,8 +252,11 @@ class AlarmService(BaseService):
                     error_code="MISSING_DEVICE"
                 )
             
-            config["enabled"] = True
-            save_config(config)
+            if not update_config_atomic(lambda current: {**current, "enabled": True}):
+                return self._error_result(
+                    "Failed to enable alarm",
+                    error_code="SAVE_FAILED"
+                )
             
             # Get next alarm info
             status_result = self.get_alarm_status()

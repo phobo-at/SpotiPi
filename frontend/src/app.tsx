@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import { getJson, NetworkRequestError, patchJson, postForm, postJson } from "./lib/api";
 import type {
+  AlarmFormState,
   AlarmSummary,
   AppBootstrap,
   ArtistDrilldown,
@@ -15,45 +16,30 @@ import type {
   LibraryItem,
   LibraryPayload,
   LibrarySection,
+  PlayFormState,
+  PrimaryFlowSnapshot,
   SettingsData,
-  SleepDefaults,
+  SleepFormState,
   SpotifyDevice,
   SpotifyProfile,
   SurfaceName
 } from "./lib/types";
+import {
+  createAlarmFormModel,
+  createPlayFormModel,
+  createSleepFormModel,
+  getPreferredDevice,
+  SLEEP_DURATION_PRESETS,
+  toPrimaryFlowSnapshot
+} from "./lib/view_models";
 
 const LIBRARY_SECTIONS: LibrarySection[] = ["playlists", "albums", "tracks", "artists"];
-const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120] as const;
+const DURATION_OPTIONS = SLEEP_DURATION_PRESETS;
 
 interface ToastItem {
   id: number;
   type: "success" | "error" | "info";
   message: string;
-}
-
-interface AlarmFormState {
-  enabled: boolean;
-  time: string;
-  deviceName: string;
-  playlistUri: string;
-  alarmVolume: number;
-  fadeIn: boolean;
-  shuffle: boolean;
-}
-
-interface SleepFormState {
-  duration: string;
-  customDuration: string;
-  deviceName: string;
-  playlistUri: string;
-  volume: number;
-  shuffle: boolean;
-}
-
-interface PlayFormState {
-  deviceId: string;
-  deviceName: string;
-  contextUri: string;
 }
 
 interface AccountLoadState {
@@ -168,57 +154,6 @@ function createCollectionMap(): Record<LibrarySection, CollectionState> {
     albums: { status: "idle", items: [] },
     tracks: { status: "idle", items: [] },
     artists: { status: "idle", items: [] }
-  };
-}
-
-function createAlarmFormState(
-  dashboard: DashboardData,
-  settings: SettingsData
-): AlarmFormState {
-  return {
-    enabled: dashboard.alarm.enabled,
-    time: dashboard.alarm.time || "07:00",
-    deviceName: dashboard.alarm.device_name || "",
-    playlistUri: dashboard.alarm.playlist_uri || "",
-    alarmVolume: clamp(
-      Number(dashboard.alarm.alarm_volume || settings.app.default_volume || 50),
-      0,
-      100
-    ),
-    fadeIn: Boolean(dashboard.alarm.fade_in),
-    shuffle: Boolean(dashboard.alarm.shuffle)
-  };
-}
-
-function createSleepFormState(
-  dashboard: DashboardData,
-  defaults: SleepDefaults
-): SleepFormState {
-  const savedDuration =
-    dashboard.sleep.total_duration_minutes ||
-    (defaults.duration ? Number(defaults.duration) : 30);
-  const isPresetDuration = DURATION_OPTIONS.includes(savedDuration as (typeof DURATION_OPTIONS)[number]);
-
-  return {
-    duration: isPresetDuration ? String(savedDuration) : "custom",
-    customDuration: String(savedDuration),
-    deviceName: dashboard.sleep.device_name || defaults.device_name || "",
-    playlistUri: dashboard.sleep.playlist_uri || defaults.playlist_uri || "",
-    volume: clamp(
-      Number(dashboard.sleep.volume ?? defaults.volume ?? 30),
-      0,
-      100
-    ),
-    shuffle: Boolean(defaults.shuffle)
-  };
-}
-
-function createPlayFormState(dashboard: DashboardData): PlayFormState {
-  const activeDevice = dashboard.devices.find((device) => device.is_active) || dashboard.devices[0];
-  return {
-    deviceId: activeDevice?.id || "",
-    deviceName: activeDevice?.name || "",
-    contextUri: ""
   };
 }
 
@@ -704,12 +639,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     tracks: []
   });
   const [alarmForm, setAlarmForm] = useState<AlarmFormState>(
-    createAlarmFormState(bootstrap.dashboard, bootstrap.settings)
+    createAlarmFormModel(bootstrap.dashboard, bootstrap.settings)
   );
   const [sleepForm, setSleepForm] = useState<SleepFormState>(
-    createSleepFormState(bootstrap.dashboard, bootstrap.sleep_defaults)
+    createSleepFormModel(bootstrap.dashboard, bootstrap.sleep_defaults)
   );
-  const [playForm, setPlayForm] = useState<PlayFormState>(() => createPlayFormState(bootstrap.dashboard));
+  const [playForm, setPlayForm] = useState<PlayFormState>(() => createPlayFormModel(bootstrap.dashboard));
   const [account, setAccount] = useState<AccountLoadState>({ status: "idle" });
   const [oledTheme, setOledTheme] = useState<boolean>(() => {
     try {
@@ -867,7 +802,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
   useEffect(() => {
     if (!playForm.deviceId && dashboard.devices.length > 0) {
-      const activeDevice = dashboard.devices.find((device) => device.is_active) || dashboard.devices[0];
+      const activeDevice = getPreferredDevice(dashboard.devices);
       if (activeDevice?.id) {
         setPlayForm((current) => ({
           ...current,
@@ -887,12 +822,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
 
     if (nextSurface === "alarm") {
-      setAlarmForm(createAlarmFormState(dashboard, settings));
+      setAlarmForm(createAlarmFormModel(dashboard, settings));
     } else if (nextSurface === "sleep") {
-      setSleepForm(createSleepFormState(dashboard, bootstrap.sleep_defaults));
+      setSleepForm(createSleepFormModel(dashboard, bootstrap.sleep_defaults));
     } else if (nextSurface === "play") {
       setPlayForm((current) => ({
-        ...createPlayFormState(dashboard),
+        ...createPlayFormModel(dashboard),
         contextUri: current.contextUri
       }));
     }
@@ -1432,18 +1367,19 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 "Starte Musik direkt über Alarm, Sleep oder Jetzt abspielen auf der Startseite."
               );
   const playerHasPlaceholderCopy = !currentTrack?.name;
+  const primaryFlows: PrimaryFlowSnapshot = toPrimaryFlowSnapshot(dashboard);
   const devicesStatus = dashboard.devices_meta.status || "pending";
-  const alarmSummary = dashboard.alarm.enabled
-    ? `${formatTimeLabel(dashboard.alarm.time, bootstrap.language)} · ${dashboard.alarm.device_name || localized(bootstrap.language, "No speaker", "Kein Lautsprecher")}`
+  const alarmSummary = primaryFlows.alarmEnabled
+    ? `${formatTimeLabel(primaryFlows.alarmTime, bootstrap.language)} · ${primaryFlows.alarmDeviceName || localized(bootstrap.language, "No speaker", "Kein Lautsprecher")}`
     : localized(bootstrap.language, "No alarm scheduled", "Kein Wecker geplant");
-  const sleepSummary = dashboard.sleep.active
-    ? formatCountdown(dashboard.sleep.remaining_seconds, bootstrap.language)
+  const sleepSummary = primaryFlows.sleepActive
+    ? formatCountdown(primaryFlows.sleepRemainingSeconds, bootstrap.language)
     : localized(bootstrap.language, "No sleep timer running", "Kein Sleep-Timer aktiv");
-  const playSummary = dashboard.devices.length
+  const playSummary = primaryFlows.availableDevices
     ? localized(
         bootstrap.language,
-        `${dashboard.devices.length} speaker${dashboard.devices.length === 1 ? "" : "s"} ready`,
-        `${dashboard.devices.length} Lautsprecher bereit`
+        `${primaryFlows.availableDevices} speaker${primaryFlows.availableDevices === 1 ? "" : "s"} ready`,
+        `${primaryFlows.availableDevices} Lautsprecher bereit`
       )
     : localized(bootstrap.language, "Speaker list will hydrate here", "Lautsprecherliste lädt hier");
 

@@ -42,7 +42,7 @@ class ThreadSafeConfigManager:
 
     def __init__(self, base_config_manager):
         self._base_manager = base_config_manager
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._cache: Dict[str, Any] | None = None
         self._cache_timestamp: float = 0.0
         self._listeners: list[Callable[[Dict[str, Any]], None]] = []
@@ -61,13 +61,25 @@ class ThreadSafeConfigManager:
             return True
         return (time.monotonic() - self._cache_timestamp) > _CACHE_TTL
 
-    def _notify_listeners(self, config: Dict[str, Any]) -> None:
-        for callback in list(self._listeners):
+    def _notify_listeners(
+        self,
+        config: Dict[str, Any],
+        listeners: Optional[list[Callable[[Dict[str, Any]], None]]] = None
+    ) -> None:
+        targets = list(listeners) if listeners is not None else list(self._listeners)
+        for callback in targets:
             try:
                 callback(self._snapshot(config))
             except Exception:
                 # Never let listener failures break config writes
                 continue
+
+    def _save_config_locked(self, snapshot: Dict[str, Any]) -> bool:
+        success = self._base_manager.save_config(snapshot)
+        if success:
+            self._cache = self._snapshot(snapshot)
+            self._cache_timestamp = time.monotonic()
+        return success
 
     # ------------------------------------------------------------------
     # Public API
@@ -94,13 +106,13 @@ class ThreadSafeConfigManager:
 
     def save_config(self, config: Dict[str, Any], notify_listeners: bool = True) -> bool:
         snapshot = self._snapshot(config)
+        listeners_snapshot: Optional[list[Callable[[Dict[str, Any]], None]]] = None
         with self._lock:
-            success = self._base_manager.save_config(snapshot)
-            if success:
-                self._cache = self._snapshot(snapshot)
-                self._cache_timestamp = time.monotonic()
-        if success and notify_listeners:
-            self._notify_listeners(snapshot)
+            success = self._save_config_locked(snapshot)
+            if success and notify_listeners:
+                listeners_snapshot = list(self._listeners)
+        if success and notify_listeners and listeners_snapshot:
+            self._notify_listeners(snapshot, listeners_snapshot)
         return success
 
     def get_config_value(self, key: str, default: Any = None) -> Any:
@@ -108,9 +120,35 @@ class ThreadSafeConfigManager:
         return config.get(key, default)
 
     def set_config_value(self, key: str, value: Any) -> bool:
-        config = self.load_config()
-        config[key] = value
-        return self.save_config(config)
+        return self.update_config_atomic(lambda config: {**config, key: value})
+
+    def update_config_atomic(
+        self,
+        mutator: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
+        notify_listeners: bool = True,
+    ) -> bool:
+        """Apply a config mutation atomically under one lock and one write."""
+        listeners_snapshot: Optional[list[Callable[[Dict[str, Any]], None]]] = None
+        updated_snapshot: Optional[Dict[str, Any]] = None
+
+        with self._lock:
+            if self._cache_stale():
+                config = self._base_manager.load_config()
+                self._cache = self._snapshot(config)
+                self._cache_timestamp = time.monotonic()
+
+            current = self._snapshot(self._cache or {})
+            result = mutator(current)
+            updated = current if result is None else result
+            updated_snapshot = self._snapshot(updated)
+
+            success = self._save_config_locked(updated_snapshot)
+            if success and notify_listeners:
+                listeners_snapshot = list(self._listeners)
+
+        if success and notify_listeners and listeners_snapshot and updated_snapshot is not None:
+            self._notify_listeners(updated_snapshot, listeners_snapshot)
+        return success
 
     def invalidate_cache(self) -> None:
         with self._lock:
@@ -130,31 +168,61 @@ class ThreadSafeConfigManager:
 
     @contextmanager
     def config_transaction(self):
-        manager = _ConfigTransactionContext(self)
-        try:
-            yield manager
-        except Exception:
-            manager.rollback()
-            raise
+        listeners_snapshot: Optional[list[Callable[[Dict[str, Any]], None]]] = None
+        pending_snapshot: Optional[Dict[str, Any]] = None
+        with self._lock:
+            if self._cache_stale():
+                config = self._base_manager.load_config()
+                self._cache = self._snapshot(config)
+                self._cache_timestamp = time.monotonic()
+
+            base_snapshot = self._snapshot(self._cache or {})
+            manager = _ConfigTransactionContext(self, base_snapshot)
+            try:
+                yield manager
+            except Exception:
+                manager.rollback()
+                raise
+
+            if manager.dirty:
+                pending_snapshot = manager.pending_snapshot()
+                success = self._save_config_locked(pending_snapshot)
+                if not success:
+                    raise RuntimeError("Failed to commit configuration transaction")
+                listeners_snapshot = list(self._listeners)
+
+        if listeners_snapshot and pending_snapshot is not None:
+            self._notify_listeners(pending_snapshot, listeners_snapshot)
 
 
 class _ConfigTransactionContext:
     """Context manager that keeps config changes atomic."""
 
-    def __init__(self, manager: ThreadSafeConfigManager):
+    def __init__(self, manager: ThreadSafeConfigManager, base_snapshot: Dict[str, Any]):
         self._manager = manager
-        self._original = manager._deep_snapshot(manager.load_config())
+        self._original = manager._deep_snapshot(base_snapshot)
         self._pending = self._manager._deep_snapshot(self._original)
+        self._dirty = False
 
     def load(self) -> Dict[str, Any]:
         return self._manager._deep_snapshot(self._pending)
 
     def save(self, config: Dict[str, Any]) -> bool:
         self._pending = self._manager._deep_snapshot(config)
-        return self._manager.save_config(self._pending)
+        self._dirty = True
+        return True
+
+    @property
+    def dirty(self) -> bool:
+        return self._dirty
+
+    def pending_snapshot(self) -> Dict[str, Any]:
+        return self._manager._deep_snapshot(self._pending)
 
     def rollback(self) -> bool:
-        return self._manager.save_config(self._original, notify_listeners=False)
+        self._pending = self._manager._deep_snapshot(self._original)
+        self._dirty = False
+        return True
 
 
 _thread_safe_config_manager: Optional[ThreadSafeConfigManager] = None
@@ -187,6 +255,10 @@ def get_config_value_safe(key: str, default: Any = None) -> Any:
 
 def set_config_value_safe(key: str, value: Any) -> bool:
     return get_thread_safe_config_manager().set_config_value(key, value)
+
+
+def update_config_atomic(mutator: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]) -> bool:
+    return get_thread_safe_config_manager().update_config_atomic(mutator)
 
 
 def config_transaction():

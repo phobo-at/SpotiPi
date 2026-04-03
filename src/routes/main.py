@@ -12,12 +12,12 @@ import os
 from flask import Blueprint, render_template, request, session
 
 from ..api.spotify import get_access_token
-from ..config import load_config, save_config
+from ..config import load_config
 from ..core.scheduler import AlarmTimeValidator
 from ..services.service_manager import get_service
 from ..utils.cache_migration import get_cache_migration_layer
 from ..utils.rate_limiting import rate_limit
-from ..utils.thread_safety import invalidate_config_cache
+from ..utils.thread_safety import invalidate_config_cache, update_config_atomic
 from ..utils.translations import get_translations, get_user_language, t_api
 from ..version import VERSION, get_app_info
 from .helpers import api_error_handler, api_response, normalise_snapshot_meta
@@ -26,6 +26,14 @@ main_bp = Blueprint("main", __name__)
 logger = logging.getLogger(__name__)
 
 LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
+DEBUG_ROUTES_ENABLED = os.getenv("SPOTIPI_ENABLE_DEBUG_ROUTES", "0").lower() in ("1", "true", "yes", "on")
+DEBUG_HEADER_WHITELIST = (
+    "Accept-Language",
+    "User-Agent",
+    "Host",
+    "X-Forwarded-For",
+    "X-Forwarded-Proto",
+)
 _VALID_INITIAL_SURFACES = {"home", "settings"}
 
 _dashboard_snapshot = None
@@ -243,15 +251,22 @@ def index():
 @main_bp.route("/debug/language")
 def debug_language():
     """Debug endpoint to check language detection."""
+    if not DEBUG_ROUTES_ENABLED:
+        return api_response(False, message="Not Found", status=404, error_code="not_found")
+
     user_language = get_user_language(request)
     translations = get_translations(user_language)
+    visible_headers = {
+        header: request.headers.get(header, "Not found")
+        for header in DEBUG_HEADER_WHITELIST
+    }
 
-    return {
+    return api_response(True, data={
         "detected_language": user_language,
         "accept_language_header": request.headers.get('Accept-Language', 'Not found'),
         "sample_translation": translations.get('app_title', 'Translation not found'),
-        "all_headers": dict(request.headers)
-    }
+        "request_headers": visible_headers,
+    })
 
 
 @main_bp.route("/settings")
@@ -294,41 +309,36 @@ def api_update_settings():
     if not data:
         return api_response(False, message=t_api("invalid_request", request), status=400, error_code="invalid_request")
 
-    config = load_config()
-    updated_fields = []
+    updates = {}
 
     if "feature_flags" in data:
         flags = data["feature_flags"]
         if "sleep_timer" in flags:
-            config["feature_sleep"] = bool(flags["sleep_timer"])
-            updated_fields.append("feature_sleep")
+            updates["feature_sleep"] = bool(flags["sleep_timer"])
         if "music_library" in flags:
-            config["feature_library"] = bool(flags["music_library"])
-            updated_fields.append("feature_library")
+            updates["feature_library"] = bool(flags["music_library"])
 
     if "app" in data:
         app_settings = data["app"]
         if "language" in app_settings:
             lang = app_settings["language"]
             if lang in ("de", "en"):
-                config["language"] = lang
-                updated_fields.append("language")
+                updates["language"] = lang
         if "default_volume" in app_settings:
             try:
                 vol = max(0, min(100, int(app_settings["default_volume"])))
-                config["alarm_volume"] = vol
-                updated_fields.append("alarm_volume")
+                updates["alarm_volume"] = vol
             except (TypeError, ValueError):
                 pass
         if "debug" in app_settings:
-            config["debug"] = bool(app_settings["debug"])
-            updated_fields.append("debug")
+            updates["debug"] = bool(app_settings["debug"])
+
+    updated_fields = sorted(updates.keys())
 
     if not updated_fields:
         return api_response(False, message=t_api("no_changes", request), status=400, error_code="no_changes")
 
-    if save_config(config):
-        invalidate_config_cache()
+    if update_config_atomic(lambda config: {**config, **updates}):
         logger.info("⚙️ Settings updated: %s", ", ".join(updated_fields))
         return api_response(True, message=t_api("settings_saved", request), data={"updated": updated_fields})
 

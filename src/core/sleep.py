@@ -16,12 +16,12 @@ import time
 from threading import Lock, Thread
 from typing import Any, Dict, Optional, Tuple
 
-import requests
-
 # Import from new modular structure
 from ..api.spotify import (get_access_token, get_current_playback, get_devices,
-                           refresh_access_token, set_volume, start_playback)
-from ..config import load_config, save_config
+                           refresh_access_token, set_volume, start_playback,
+                           stop_playback)
+from ..config import load_config
+from ..utils.thread_safety import update_config_atomic
 
 # Detect low-power mode once for module-wide optimisations
 LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
@@ -436,22 +436,11 @@ def _stop_sleep_music() -> bool:
         except Exception:
             logger.debug("Sleep fade-out: unable to set final volume to 0 before pause")
             
-        # Try to pause playback
-        response = requests.put(
-            "https://api.spotify.com/v1/me/player/pause",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10
-        )
-        
-        if response.status_code == 204:
+        if stop_playback(token, device_id=device_id):
             logger.info("🎵 Sleep music stopped successfully")
             return True
-        else:
-            logger.warning(f"Failed to stop sleep music: HTTP {response.status_code}")
-            return False
-            
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Network error stopping sleep music: {e}")
+
+        logger.warning("Failed to stop sleep music via Spotify API helper")
         return False
     except Exception:
         logger.exception("Unexpected error stopping sleep music")
@@ -471,17 +460,23 @@ def save_sleep_settings(settings: Dict[str, Any]) -> bool:
             logger.warning("Invalid settings format for sleep timer")
             return False
             
-        config = load_config()
-        
-        # Validate and set sleep settings with defaults
-        config.update({
-            "sleep_volume": max(0, min(100, settings.get("volume", 30))),  # Clamp to 0-100
-            "sleep_default_duration": max(1, settings.get("duration", 30)),  # At least 1 minute
+        try:
+            volume = int(settings.get("volume", 30))
+        except (TypeError, ValueError):
+            volume = 30
+        try:
+            duration = int(settings.get("duration", 30))
+        except (TypeError, ValueError):
+            duration = 30
+
+        updates = {
+            "sleep_volume": max(0, min(100, volume)),  # Clamp to 0-100
+            "sleep_default_duration": max(1, duration),  # At least 1 minute
             "sleep_playlist_uri": settings.get("playlist_uri", ""),
             "sleep_device_name": settings.get("device_name", "")
-        })
-        
-        success = save_config(config)
+        }
+
+        success = update_config_atomic(lambda config: {**config, **updates})
         if success:
             logger.info("💾 Sleep settings saved successfully")
         return success
