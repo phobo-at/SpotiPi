@@ -107,6 +107,7 @@ test("library picker supports keyboard tab switching and offline retry state", a
 
   await page.locator('[data-testid="play-card"] button').click();
   await expect(page.locator("#play-sheet")).toBeVisible();
+  await expect(page.getByRole("button", { name: /start playback|wiedergabe starten/i })).toHaveCount(0);
 
   const tabs = page.locator("#play-sheet [role='tab']");
   await tabs.nth(0).evaluate((element) => {

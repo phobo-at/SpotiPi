@@ -9,9 +9,13 @@ interface UseThemeResult {
 export function useTheme(): UseThemeResult {
   const [oledTheme, setOledTheme] = useState<boolean>(() => {
     try {
-      return window.localStorage.getItem("theme") === "oled";
+      const storedTheme = window.localStorage.getItem("theme");
+      if (storedTheme === "default") {
+        return false;
+      }
+      return true;
     } catch {
-      return false;
+      return true;
     }
   });
 

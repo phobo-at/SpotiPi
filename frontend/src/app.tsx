@@ -493,6 +493,9 @@ interface LibraryPickerProps {
   onEnsureSection: (section: LibrarySection) => void;
   onRetrySection: (section: LibrarySection) => void;
   onSelect: (item: LibraryItem) => void;
+  onQuickPlay?: (item: LibraryItem) => void;
+  quickPlayBusy?: boolean;
+  quickPlayDisabled?: boolean;
   onOpenArtist: (artist: LibraryItem) => void;
   onCloseArtist: () => void;
   t: TranslateFn;
@@ -510,6 +513,9 @@ function LibraryPicker({
   onEnsureSection,
   onRetrySection,
   onSelect,
+  onQuickPlay,
+  quickPlayBusy = false,
+  quickPlayDisabled = false,
   onOpenArtist,
   onCloseArtist,
   t,
@@ -683,6 +689,8 @@ function LibraryPicker({
               {filteredItems.map((item) => {
                 const selected = selectedUri === item.uri;
                 const isArtistRoot = currentSection === "artists" && !artistDrilldown.artist;
+                const showActionButton = Boolean(onQuickPlay);
+                const showInlineArtistArrow = isArtistRoot && !showActionButton;
                 const safeImageUrl = normalizeImageUrl(item.image_url);
                 const meta = item.artist
                   ? item.artist
@@ -691,32 +699,56 @@ function LibraryPicker({
                     : item.type || "";
 
                 return (
-                  <button
-                    key={item.uri}
-                    type="button"
-                    class={`library-row ${selected ? "is-selected" : ""}`}
-                    aria-pressed={selected}
-                    onClick={() => (isArtistRoot ? onOpenArtist(item) : onSelect(item))}
-                  >
-                    {safeImageUrl ? (
-                      <img
-                        class="library-artwork"
-                        src={safeImageUrl}
-                        alt=""
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <span class="artwork-fallback artwork-fallback-compact" aria-hidden="true">
-                        {icon("library")}
+                  <div key={item.uri} class={`library-row ${selected ? "is-selected" : ""}`}>
+                    <button
+                      type="button"
+                      class="library-row-main"
+                      aria-pressed={selected}
+                      onClick={() => (isArtistRoot ? onOpenArtist(item) : onSelect(item))}
+                    >
+                      {safeImageUrl ? (
+                        <img
+                          class="library-artwork"
+                          src={safeImageUrl}
+                          alt=""
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <span class="artwork-fallback artwork-fallback-compact" aria-hidden="true">
+                          {icon("library")}
+                        </span>
+                      )}
+                      <span class="library-row-copy">
+                        <span class="library-row-title">{item.name}</span>
+                        <span class="library-row-meta">{meta}</span>
                       </span>
-                    )}
-                    <span class="library-row-copy">
-                      <span class="library-row-title">{item.name}</span>
-                      <span class="library-row-meta">{meta}</span>
-                    </span>
-                    {isArtistRoot ? icon("arrow", "icon icon-muted") : selected ? icon("check", "icon icon-check") : null}
-                  </button>
+                      {selected && !isArtistRoot ? icon("check", "icon icon-check") : null}
+                      {showInlineArtistArrow ? icon("arrow", "icon icon-muted") : null}
+                    </button>
+                    {showActionButton ? (
+                      <button
+                        type="button"
+                        class="library-row-action"
+                        disabled={isArtistRoot ? false : quickPlayDisabled || quickPlayBusy}
+                        data-testid="library-quick-play"
+                        aria-label={
+                          isArtistRoot
+                            ? localized(language, "Open artist", "Künstler öffnen")
+                            : localized(language, "Play now", "Jetzt abspielen")
+                        }
+                        onClick={() => {
+                          if (isArtistRoot) {
+                            onOpenArtist(item);
+                            return;
+                          }
+                          onQuickPlay?.(item);
+                        }}
+                      >
+                        {isArtistRoot ? icon("arrow") : icon("play")}
+                      </button>
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
@@ -1152,7 +1184,10 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
   }
 
-  async function handlePlayNow() {
+  async function handlePlayNow(contextUriOverride?: string) {
+    const contextUri = contextUriOverride || playForm.contextUri;
+    const deviceId = playForm.deviceId;
+
     if (networkStatus === "offline") {
       pushToast(
         "error",
@@ -1165,7 +1200,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       return;
     }
 
-    if (!playForm.contextUri || !playForm.deviceId) {
+    if (!contextUri || !deviceId) {
       pushToast(
         "error",
         localized(
@@ -1177,14 +1212,18 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       return;
     }
 
+    if (contextUriOverride && contextUriOverride !== playForm.contextUri) {
+      setPlayForm((current) => ({ ...current, contextUri: contextUriOverride }));
+    }
+
     setBusyAction("play");
     try {
       const result = await postJson<Record<string, unknown>>("/play", {
-        context_uri: playForm.contextUri,
-        device_id: playForm.deviceId
+        context_uri: contextUri,
+        device_id: deviceId
       });
       if (result.body?.success) {
-        writeLastDeviceId(playForm.deviceId);
+        writeLastDeviceId(deviceId);
         pushToast(
           "success",
           result.body.message ||
@@ -1317,30 +1356,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         `${primaryFlows.availableDevices} Lautsprecher bereit`
       )
     : localized(bootstrap.language, "Speaker list will hydrate here", "Lautsprecherliste lädt hier");
-  const playFlowHint = networkStatus === "offline"
-    ? localized(
-        bootstrap.language,
-        "Reconnect to start playback.",
-        "Für die Wiedergabe bitte wieder verbinden."
-      )
-    : !playForm.deviceId
-      ? localized(
-          bootstrap.language,
-          "Choose a speaker first.",
-          "Bitte zuerst einen Lautsprecher auswählen."
-        )
-      : !playForm.contextUri
-        ? localized(
-            bootstrap.language,
-            "Choose music to enable playback.",
-            "Bitte Musik auswählen, um die Wiedergabe zu starten."
-          )
-        : localized(
-            bootstrap.language,
-            "Ready. Start playback now.",
-            "Bereit. Wiedergabe jetzt starten."
-          );
-
   return (
     <Fragment>
       <div class="app-shell">
@@ -1356,7 +1371,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               {icon("spotify")}
             </span>
             <div>
-              <p class="eyebrow">Music appliance</p>
               <h1>SpotiPi</h1>
             </div>
           </div>
@@ -1364,8 +1378,9 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           <div class="header-meta">
             <StatusPill tone={statusSnapshot.tone} label={statusSnapshot.label} />
             <div class="clock-panel">
-              <span>{clockLabel.time}</span>
-              <small>{clockLabel.date}</small>
+              <span class="clock-time">{clockLabel.time}</span>
+              <span class="clock-separator" aria-hidden="true">·</span>
+              <span class="clock-date">{clockLabel.date}</span>
             </div>
             <button
               type="button"
@@ -1516,10 +1531,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         </main>
 
         <section class="actions-section">
-          <div class="section-heading">
-            <h2>{localized(bootstrap.language, "Primary actions", "Primäraktionen")}</h2>
-          </div>
-
           <div class="action-grid">
             <ActionCard
               title={localized(bootstrap.language, "Set alarm", "Wecker setzen")}
@@ -1926,36 +1937,25 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             artistDrilldown={artistDrilldown}
             selectedUri={playForm.contextUri}
             currentSection={librarySection}
-              onSectionChange={(section) => {
-                setLibrarySection(section);
-                resetArtistDrilldown();
-              }}
-              onEnsureSection={(section) => void ensureLibrarySection(section)}
-              onRetrySection={(section) => void ensureLibrarySection(section)}
-              onSelect={handleLibrarySelect}
-              onOpenArtist={(artist) => void openArtistTracks(artist)}
+            onSectionChange={(section) => {
+              setLibrarySection(section);
+              resetArtistDrilldown();
+            }}
+            onEnsureSection={(section) => void ensureLibrarySection(section)}
+            onRetrySection={(section) => void ensureLibrarySection(section)}
+            onSelect={handleLibrarySelect}
+            onQuickPlay={(item) => void handlePlayNow(item.uri)}
+            quickPlayBusy={busyAction === "play"}
+            quickPlayDisabled={networkStatus === "offline" || !playForm.deviceId}
+            onOpenArtist={(artist) => void openArtistTracks(artist)}
             onCloseArtist={resetArtistDrilldown}
             t={t}
             language={bootstrap.language}
           />
 
-          <div class={`state-card ${playForm.contextUri && playForm.deviceId && networkStatus !== "offline" ? "state-card-active" : "state-card-muted"}`}>
-            <p>{playFlowHint}</p>
-          </div>
-
-          <div class="sheet-actions">
+          <div class="sheet-actions sheet-actions-single">
             <button type="button" class="secondary-button" onClick={closeSurface}>
               {localized(bootstrap.language, "Cancel", "Abbrechen")}
-            </button>
-            <button
-              type="button"
-              class="primary-button"
-              disabled={busyAction === "play" || networkStatus === "offline" || !playForm.contextUri || !playForm.deviceId}
-              onClick={() => void handlePlayNow()}
-            >
-              {busyAction === "play"
-                ? localized(bootstrap.language, "Starting...", "Startet...")
-                : localized(bootstrap.language, "Start playback", "Wiedergabe starten")}
             </button>
           </div>
         </div>
