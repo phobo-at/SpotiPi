@@ -22,6 +22,7 @@ import type {
   LibraryItem,
   LibrarySection,
   PlayFormState,
+  PlaybackQueuePayload,
   PrimaryFlowSnapshot,
   SettingsData,
   SleepFormState,
@@ -39,7 +40,7 @@ import {
   toPrimaryFlowSnapshot
 } from "./lib/view_models";
 
-const LIBRARY_SECTIONS: LibrarySection[] = ["playlists", "albums", "tracks", "artists"];
+const LIBRARY_SECTIONS: LibrarySection[] = ["playlists", "albums", "tracks", "artists", "recent", "top", "search"];
 const DURATION_OPTIONS = SLEEP_DURATION_PRESETS;
 const LAST_DEVICE_STORAGE_KEY = "spotipi.last_device_id";
 const FOCUSABLE_SELECTOR = [
@@ -319,22 +320,19 @@ function Sheet({ id, title, subtitle, open, onClose, closeLabel, variant = "defa
         return;
       }
 
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
       const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const currentIndex = active ? focusables.indexOf(active) : -1;
 
       if (event.shiftKey) {
-        if (!active || active === first || !dialog.contains(active)) {
-          event.preventDefault();
-          last.focus();
-        }
+        event.preventDefault();
+        const previousIndex = currentIndex <= 0 ? focusables.length - 1 : currentIndex - 1;
+        focusables[previousIndex]?.focus();
         return;
       }
 
-      if (!active || active === last || !dialog.contains(active)) {
-        event.preventDefault();
-        first.focus();
-      }
+      event.preventDefault();
+      const nextIndex = currentIndex === -1 || currentIndex >= focusables.length - 1 ? 0 : currentIndex + 1;
+      focusables[nextIndex]?.focus();
     };
 
     document.addEventListener("keydown", onKeyDown);
@@ -497,6 +495,7 @@ interface LibraryPickerProps {
   quickPlayBusy?: boolean;
   quickPlayDisabled?: boolean;
   onOpenArtist: (artist: LibraryItem) => void;
+  onSearchCatalog: (query: string) => void;
   onCloseArtist: () => void;
   t: TranslateFn;
   language: string;
@@ -517,15 +516,39 @@ function LibraryPicker({
   quickPlayBusy = false,
   quickPlayDisabled = false,
   onOpenArtist,
+  onSearchCatalog,
   onCloseArtist,
   t,
   language
 }: LibraryPickerProps) {
   const [query, setQuery] = useState("");
+  const searchDebounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     setQuery("");
   }, [currentSection, artistDrilldown.artist?.uri]);
+
+  useEffect(() => {
+    if (currentSection !== "search") {
+      if (searchDebounceRef.current) {
+        window.clearTimeout(searchDebounceRef.current);
+      }
+      return;
+    }
+
+    if (searchDebounceRef.current) {
+      window.clearTimeout(searchDebounceRef.current);
+    }
+    searchDebounceRef.current = window.setTimeout(() => {
+      onSearchCatalog(query);
+    }, 300);
+
+    return () => {
+      if (searchDebounceRef.current) {
+        window.clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, [currentSection, onSearchCatalog, query]);
 
   if (!enabled) {
     return (
@@ -545,23 +568,41 @@ function LibraryPicker({
     currentSection === "artists" && artistDrilldown.artist
       ? {
           status: artistDrilldown.status,
-          items: artistDrilldown.tracks,
+          items: artistDrilldown.items,
           errorMessage: artistDrilldown.errorMessage
         }
       : collections[currentSection];
 
-  const filteredItems = currentCollection.items.filter((item) => {
-    const haystack = `${item.name} ${item.artist || ""}`.toLowerCase();
-    return haystack.includes(query.toLowerCase());
-  });
+  const filteredItems =
+    currentSection === "search"
+      ? currentCollection.items
+      : currentCollection.items.filter((item) => {
+          const haystack = `${item.name} ${item.artist || ""}`.toLowerCase();
+          return haystack.includes(query.toLowerCase());
+        });
 
   const currentSectionIndex = Math.max(0, LIBRARY_SECTIONS.indexOf(currentSection));
   const resultRegionId = `library-results-${currentSection}`;
   const showOfflineState = offline || currentCollection.status === "offline";
+  const searchGroupOrder: Array<{ type: string; label: string }> = [
+    { type: "track", label: localized(language, "Tracks", "Titel") },
+    { type: "album", label: localized(language, "Albums", "Alben") },
+    { type: "artist", label: localized(language, "Artists", "Künstler") },
+    { type: "playlist", label: localized(language, "Playlists", "Playlists") }
+  ];
+
+  const groupedSearchItems = searchGroupOrder
+    .map((group) => ({
+      ...group,
+      items: filteredItems.filter((item) => item.type === group.type)
+    }))
+    .filter((group) => group.items.length > 0);
 
   function activateSection(section: LibrarySection) {
     onSectionChange(section);
-    onEnsureSection(section);
+    if (section !== "search") {
+      onEnsureSection(section);
+    }
   }
 
   function handleTabKeyNavigation(
@@ -587,6 +628,72 @@ function LibraryPicker({
     const nextSection = LIBRARY_SECTIONS[nextIndex];
     activateSection(nextSection);
     document.getElementById(`library-tab-${nextSection}`)?.focus();
+  }
+
+  function renderLibraryRow(item: LibraryItem, keySuffix = "") {
+    const selected = selectedUri === item.uri;
+    const isArtistRoot = currentSection === "artists" && !artistDrilldown.artist;
+    const showActionButton = Boolean(onQuickPlay);
+    const showInlineArtistArrow = isArtistRoot && !showActionButton;
+    const safeImageUrl = normalizeImageUrl(item.image_url);
+    const meta = item.artist
+      ? item.artist
+      : item.track_count
+        ? localized(language, `${item.track_count} tracks`, `${item.track_count} Titel`)
+        : item.type || "";
+
+    return (
+      <div key={`${item.uri}-${item.type || "item"}-${keySuffix}`} class={`library-row ${selected ? "is-selected" : ""}`}>
+        <button
+          type="button"
+          class="library-row-main"
+          aria-pressed={selected}
+          onClick={() => (isArtistRoot ? onOpenArtist(item) : onSelect(item))}
+        >
+          {safeImageUrl ? (
+            <img
+              class="library-artwork"
+              src={safeImageUrl}
+              alt=""
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <span class="artwork-fallback artwork-fallback-compact" aria-hidden="true">
+              {icon("library")}
+            </span>
+          )}
+          <span class="library-row-copy">
+            <span class="library-row-title">{item.name}</span>
+            <span class="library-row-meta">{meta}</span>
+          </span>
+          {selected && !isArtistRoot ? icon("check", "icon icon-check") : null}
+          {showInlineArtistArrow ? icon("arrow", "icon icon-muted") : null}
+        </button>
+        {showActionButton ? (
+          <button
+            type="button"
+            class="library-row-action"
+            disabled={isArtistRoot ? false : quickPlayDisabled || quickPlayBusy}
+            data-testid="library-quick-play"
+            aria-label={
+              isArtistRoot
+                ? localized(language, "Open artist", "Künstler öffnen")
+                : localized(language, "Play now", "Jetzt abspielen")
+            }
+            onClick={() => {
+              if (isArtistRoot) {
+                onOpenArtist(item);
+                return;
+              }
+              onQuickPlay?.(item);
+            }}
+          >
+            {isArtistRoot ? icon("arrow") : icon("play")}
+          </button>
+        ) : null}
+      </div>
+    );
   }
 
   return (
@@ -617,7 +724,13 @@ function LibraryPicker({
                     ? t("albums", localized(language, "Albums", "Alben"))
                     : section === "tracks"
                       ? t("songs", localized(language, "Songs", "Songs"))
-                      : t("artists", localized(language, "Artists", "Künstler"))}
+                      : section === "artists"
+                        ? t("artists", localized(language, "Artists", "Künstler"))
+                        : section === "recent"
+                          ? localized(language, "Recent", "Zuletzt")
+                          : section === "top"
+                            ? localized(language, "Top", "Top")
+                            : localized(language, "Search", "Suche")}
               </button>
             );
           })}
@@ -635,12 +748,20 @@ function LibraryPicker({
           class="field-input"
           aria-label={localized(language, "Search music", "Musik suchen")}
           placeholder={t(
-            "playlist_search_placeholder",
-            localized(language, "Search music...", "Musik suchen...")
+            currentSection === "search" ? "search_music" : "playlist_search_placeholder",
+            currentSection === "search"
+              ? localized(language, "Search Spotify catalog...", "Spotify-Katalog durchsuchen...")
+              : localized(language, "Search music...", "Musik suchen...")
           )}
           value={query}
           onInput={(event) => setQuery((event.currentTarget as HTMLInputElement).value)}
         />
+
+        {currentSection === "search" && query.trim().length > 0 && query.trim().length < 3 ? (
+          <div class="state-card state-card-muted">
+            <p>{localized(language, "Type at least 3 characters.", "Mindestens 3 Zeichen eingeben.")}</p>
+          </div>
+        ) : null}
 
         {showOfflineState ? (
           <div class="state-card state-card-muted">
@@ -648,7 +769,13 @@ function LibraryPicker({
             <button
               type="button"
               class="ghost-button"
-              onClick={() => onRetrySection(currentSection)}
+              onClick={() => {
+                if (currentSection === "search") {
+                  onSearchCatalog(query);
+                  return;
+                }
+                onRetrySection(currentSection);
+              }}
             >
               {icon("refresh")}
               <span>{localized(language, "Retry", "Erneut versuchen")}</span>
@@ -686,71 +813,14 @@ function LibraryPicker({
               role="tabpanel"
               aria-labelledby={`library-tab-${LIBRARY_SECTIONS[currentSectionIndex]}`}
             >
-              {filteredItems.map((item) => {
-                const selected = selectedUri === item.uri;
-                const isArtistRoot = currentSection === "artists" && !artistDrilldown.artist;
-                const showActionButton = Boolean(onQuickPlay);
-                const showInlineArtistArrow = isArtistRoot && !showActionButton;
-                const safeImageUrl = normalizeImageUrl(item.image_url);
-                const meta = item.artist
-                  ? item.artist
-                  : item.track_count
-                    ? localized(language, `${item.track_count} tracks`, `${item.track_count} Titel`)
-                    : item.type || "";
-
-                return (
-                  <div key={item.uri} class={`library-row ${selected ? "is-selected" : ""}`}>
-                    <button
-                      type="button"
-                      class="library-row-main"
-                      aria-pressed={selected}
-                      onClick={() => (isArtistRoot ? onOpenArtist(item) : onSelect(item))}
-                    >
-                      {safeImageUrl ? (
-                        <img
-                          class="library-artwork"
-                          src={safeImageUrl}
-                          alt=""
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <span class="artwork-fallback artwork-fallback-compact" aria-hidden="true">
-                          {icon("library")}
-                        </span>
-                      )}
-                      <span class="library-row-copy">
-                        <span class="library-row-title">{item.name}</span>
-                        <span class="library-row-meta">{meta}</span>
-                      </span>
-                      {selected && !isArtistRoot ? icon("check", "icon icon-check") : null}
-                      {showInlineArtistArrow ? icon("arrow", "icon icon-muted") : null}
-                    </button>
-                    {showActionButton ? (
-                      <button
-                        type="button"
-                        class="library-row-action"
-                        disabled={isArtistRoot ? false : quickPlayDisabled || quickPlayBusy}
-                        data-testid="library-quick-play"
-                        aria-label={
-                          isArtistRoot
-                            ? localized(language, "Open artist", "Künstler öffnen")
-                            : localized(language, "Play now", "Jetzt abspielen")
-                        }
-                        onClick={() => {
-                          if (isArtistRoot) {
-                            onOpenArtist(item);
-                            return;
-                          }
-                          onQuickPlay?.(item);
-                        }}
-                      >
-                        {isArtistRoot ? icon("arrow") : icon("play")}
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
+              {currentSection === "search"
+                ? groupedSearchItems.map((group) => (
+                    <Fragment key={group.type}>
+                      <p class="library-search-heading">{group.label}</p>
+                      {group.items.map((item) => renderLibraryRow(item, group.type))}
+                    </Fragment>
+                  ))
+                : filteredItems.map((item) => renderLibraryRow(item))}
             </div>
           )
         ) : null}
@@ -816,6 +886,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   );
   const [playForm, setPlayForm] = useState<PlayFormState>(() => createPlayFormModel(bootstrap.dashboard));
   const [account, setAccount] = useState<AccountLoadState>({ status: "idle" });
+  const [playbackQueue, setPlaybackQueue] = useState<LibraryItem[]>([]);
+  const [queueStatus, setQueueStatus] = useState<AsyncStatus>("idle");
   const { toasts, pushToast, dismissToast } = useToasts({
     initialNotifications: bootstrap.notifications
   });
@@ -834,7 +906,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     collections,
     artistDrilldown,
     ensureLibrarySection,
-    openArtistTracks,
+    openArtistAlbums,
+    searchCatalog,
     resetArtistDrilldown
   } = useLibraryData({
     enabled: settings.feature_flags.music_library,
@@ -947,6 +1020,65 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       }));
     }
   }, [dashboard.devices, playForm.deviceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId = 0;
+
+    async function loadQueue() {
+      if (networkStatus === "offline") {
+        setQueueStatus("offline");
+        setPlaybackQueue([]);
+        return;
+      }
+      if (dashboard.playback_status === "auth_required") {
+        setQueueStatus("auth_required");
+        setPlaybackQueue([]);
+        return;
+      }
+
+      setQueueStatus((current) => (current === "ready" ? current : "loading"));
+      try {
+        const result = await getJson<PlaybackQueuePayload>("/api/playback/queue");
+        if (cancelled) {
+          return;
+        }
+        if (result.status === 401 || result.body?.error_code === "auth_required") {
+          setQueueStatus("auth_required");
+          setPlaybackQueue([]);
+          return;
+        }
+        if (result.body?.error_code === "insufficient_scope") {
+          setQueueStatus("error");
+          setPlaybackQueue([]);
+          return;
+        }
+        if (result.body?.success && result.body.data) {
+          const queueItems = (result.body.data.queue || []).slice(0, 5);
+          setPlaybackQueue(queueItems);
+          setQueueStatus(queueItems.length ? "ready" : "empty");
+          return;
+        }
+        setQueueStatus("error");
+        setPlaybackQueue([]);
+      } catch {
+        if (!cancelled) {
+          setQueueStatus("offline");
+          setPlaybackQueue([]);
+        }
+      }
+    }
+
+    void loadQueue();
+    intervalId = window.setInterval(() => {
+      void loadQueue();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [dashboard.playback.current_track?.name, dashboard.playback_status, networkStatus]);
 
   function openSurface(nextSurface: SurfaceName) {
     if (nextSurface === "sleep" && !settings.feature_flags.sleep_timer) {
@@ -1481,6 +1613,34 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 </button>
               </div>
 
+              <div class="player-queue" data-testid="player-queue">
+                <div class="field-label-row">
+                  <label class="field-label">{localized(bootstrap.language, "Up next", "Als Nächstes")}</label>
+                </div>
+                {queueStatus === "loading" ? (
+                  <p class="player-queue-placeholder">{localized(bootstrap.language, "Loading queue...", "Lade Warteschlange...")}</p>
+                ) : null}
+                {queueStatus === "auth_required" ? (
+                  <p class="player-queue-placeholder">{localized(bootstrap.language, "Spotify sign-in required", "Spotify-Anmeldung erforderlich")}</p>
+                ) : null}
+                {queueStatus === "error" ? (
+                  <p class="player-queue-placeholder">{localized(bootstrap.language, "Queue unavailable", "Warteschlange nicht verfügbar")}</p>
+                ) : null}
+                {queueStatus === "empty" ? (
+                  <p class="player-queue-placeholder">{localized(bootstrap.language, "Queue is empty", "Warteschlange ist leer")}</p>
+                ) : null}
+                {queueStatus === "ready" ? (
+                  <ul class="player-queue-list">
+                    {playbackQueue.map((item) => (
+                      <li key={`${item.uri}-${item.type || "item"}`} class="player-queue-item">
+                        <span class="player-queue-title">{item.name}</span>
+                        <span class="player-queue-meta">{item.artist || item.type || ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+
               <div class="range-field">
                 <div class="field-label-row">
                   <label class="field-label">{t("volume_label", localized(bootstrap.language, "Volume", "Lautstärke"))}</label>
@@ -1667,7 +1827,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             onEnsureSection={(section) => void ensureLibrarySection(section)}
             onRetrySection={(section) => void ensureLibrarySection(section)}
             onSelect={handleLibrarySelect}
-            onOpenArtist={(artist) => void openArtistTracks(artist)}
+            onOpenArtist={(artist) => void openArtistAlbums(artist)}
+            onSearchCatalog={(value) => void searchCatalog(value)}
             onCloseArtist={resetArtistDrilldown}
             t={t}
             language={bootstrap.language}
@@ -1863,7 +2024,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 onEnsureSection={(section) => void ensureLibrarySection(section)}
                 onRetrySection={(section) => void ensureLibrarySection(section)}
                 onSelect={handleLibrarySelect}
-                onOpenArtist={(artist) => void openArtistTracks(artist)}
+                onOpenArtist={(artist) => void openArtistAlbums(artist)}
+                onSearchCatalog={(value) => void searchCatalog(value)}
                 onCloseArtist={resetArtistDrilldown}
                 t={t}
                 language={bootstrap.language}
@@ -1947,7 +2109,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             onQuickPlay={(item) => void handlePlayNow(item.uri)}
             quickPlayBusy={busyAction === "play"}
             quickPlayDisabled={networkStatus === "offline" || !playForm.deviceId}
-            onOpenArtist={(artist) => void openArtistTracks(artist)}
+            onOpenArtist={(artist) => void openArtistAlbums(artist)}
+            onSearchCatalog={(value) => void searchCatalog(value)}
             onCloseArtist={resetArtistDrilldown}
             t={t}
             language={bootstrap.language}

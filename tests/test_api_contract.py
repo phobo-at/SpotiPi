@@ -60,6 +60,89 @@ def test_music_library_sections_contract(client):
                 assert set(item.keys()).issubset({'uri', 'name', 'image_url', 'track_count', 'type', 'artist'})
 
 
+def test_music_library_sections_recent_top_contract(client):
+    resp = client.get('/api/music-library/sections?sections=recent,top&fields=basic')
+    if resp.status_code == 401:
+        data = resp.get_json()
+        assert data.get('error_code') == 'auth_required'
+        return
+    if resp.status_code == 304:
+        assert resp.headers.get('ETag')
+        assert resp.headers.get('X-MusicLibrary-Hash')
+        return
+
+    data = assert_api_envelope(resp, expect_success=True)
+    payload = data['data']
+    assert payload.get('partial') is True
+    assert 'sections' in payload
+    assert resp.headers.get('X-MusicLibrary-Hash')
+    for coll in ('recent', 'top'):
+        for item in payload.get(coll, []):
+            assert set(item.keys()).issubset({'uri', 'name', 'image_url', 'track_count', 'type', 'artist'})
+
+
+def test_music_search_contract(client):
+    resp = client.get('/api/music-search?q=test')
+    data = resp.get_json()
+    assert isinstance(data, dict)
+    assert 'success' in data
+
+    if resp.status_code == 401:
+        assert data.get('error_code') == 'auth_required'
+        return
+
+    if not data.get('success'):
+        assert 'error_code' in data
+        return
+
+    payload = data.get('data', {})
+    assert 'query' in payload
+    assert 'results' in payload
+    for key in ('tracks', 'albums', 'artists', 'playlists'):
+        assert key in payload['results']
+        assert isinstance(payload['results'][key], list)
+
+
+def test_artist_albums_contract(client):
+    resp = client.get('/api/artist-albums/1vCWHaC5f2uS3yhpwWbIA6')
+    data = resp.get_json()
+    assert isinstance(data, dict)
+    assert 'success' in data
+
+    if resp.status_code == 401:
+        assert data.get('error_code') == 'auth_required'
+        return
+
+    if not data.get('success'):
+        assert 'error_code' in data
+        return
+
+    payload = data.get('data', {})
+    assert 'artist_id' in payload
+    assert 'albums' in payload
+    assert isinstance(payload['albums'], list)
+
+
+def test_playback_queue_contract(client):
+    resp = client.get('/api/playback/queue')
+    data = resp.get_json()
+    assert isinstance(data, dict)
+    assert 'success' in data
+
+    if resp.status_code == 401:
+        assert data.get('error_code') == 'auth_required'
+        return
+
+    if not data.get('success'):
+        assert 'error_code' in data
+        return
+
+    payload = data.get('data', {})
+    assert 'queue' in payload
+    assert isinstance(payload['queue'], list)
+    assert 'total' in payload
+
+
 def test_playback_status_no_token(client, monkeypatch):
     monkeypatch.setattr('src.routes.health.get_access_token', lambda: None)
     resp = client.get('/playback_status')

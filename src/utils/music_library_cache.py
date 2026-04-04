@@ -10,7 +10,7 @@ Ersetzt alle bisherigen Cache-Implementierungen:
 - Device Cache (_DEVICE_CACHE)
 
 Bietet einheitliche Interfaces für:
-- Vollständige Library (playlists, albums, tracks, artists)
+- Vollständige Library (playlists, albums, tracks, artists, recent, top)
 - Partielle/Section-basierte Library-Abfragen
 - Device-Caching
 - Persistente Offline-Fallbacks
@@ -69,6 +69,8 @@ class CacheType(Enum):
     ALBUMS = "albums"
     TRACKS = "tracks"
     ARTISTS = "artists"
+    RECENT = "recent"
+    TOP = "top"
     DEVICES = "devices"
 
 
@@ -163,6 +165,8 @@ class MusicLibraryCache:
             CacheType.ALBUMS: section_ttl_seconds,
             CacheType.TRACKS: section_ttl_seconds,
             CacheType.ARTISTS: section_ttl_seconds,
+            CacheType.RECENT: section_ttl_seconds,
+            CacheType.TOP: section_ttl_seconds,
             CacheType.DEVICES: device_ttl,
         }
 
@@ -470,7 +474,7 @@ class MusicLibraryCache:
         Returns:
             Partial library with requested sections
         """
-        valid_sections = {"playlists", "albums", "tracks", "artists"}
+        valid_sections = {"playlists", "albums", "tracks", "artists", "recent", "top"}
         wanted = [s for s in sections if s in valid_sections]
         if not wanted:
             wanted = ["playlists"]
@@ -501,6 +505,8 @@ class MusicLibraryCache:
                 section_cache_status[section_name] = False
                 return fresh_data
             except Exception as e:
+                if hasattr(e, "required_scope"):
+                    raise
                 self.logger.error(f"❌ Failed loading section {section_name}: {e}")
                 return []
         
@@ -524,6 +530,8 @@ class MusicLibraryCache:
                         results[sec] = []
                         section_cache_status[sec] = False
                     except Exception as e:
+                        if hasattr(e, "required_scope"):
+                            raise
                         self.logger.error(f"❌ Section {sec} failed: {e}")
                         results[sec] = []
                         section_cache_status[sec] = False

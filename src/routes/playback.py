@@ -8,6 +8,7 @@ import logging
 from flask import Blueprint, request
 
 from ..services.service_manager import get_service
+from ..utils.rate_limiting import rate_limit
 from ..utils.translations import t_api
 from .helpers import api_error_handler, api_response
 
@@ -131,3 +132,30 @@ def playback_previous():
         return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
 
     return api_response(False, message=result.message or "Skip failed", status=503, error_code=error_code)
+
+
+@playback_bp.route("/api/playback/queue", methods=["GET"])
+@api_error_handler
+@rate_limit("spotify_api")
+def playback_queue():
+    """Get current playback queue."""
+    spotify_service = get_service("spotify")
+    result = spotify_service.get_playback_queue()
+
+    if result.success:
+        return api_response(True, data=result.data, message=t_api("ok", request))
+
+    error_code = result.error_code or "queue_failed"
+    if error_code == "auth_required":
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
+    if error_code == "insufficient_scope":
+        payload = result.data if isinstance(result.data, dict) else {}
+        return api_response(
+            False,
+            message=result.message or "Spotify scope required",
+            status=403,
+            error_code="insufficient_scope",
+            data=payload,
+        )
+
+    return api_response(False, message=result.message or "Queue unavailable", status=503, error_code=error_code)

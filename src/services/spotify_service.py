@@ -9,8 +9,9 @@ device management, playlist operations, and playback control.
 from datetime import datetime
 from typing import Any, Mapping, Optional
 
-from ..api.spotify import (get_access_token, get_combined_playback,
+from ..api.spotify import (SpotifyScopeError, get_access_token, get_combined_playback,
                            get_devices, get_playlists, get_user_library,
+                           get_playback_queue,
                            resume_playback, set_volume, start_playback,
                            stop_playback, toggle_playback,
                            toggle_playback_fast, skip_to_next, skip_to_previous)
@@ -214,6 +215,27 @@ class SpotifyService(BaseService):
             
         except Exception as e:
             return self._handle_error(e, "get_playback_status")
+
+    def get_playback_queue(self) -> ServiceResult:
+        """Get current playback queue."""
+        try:
+            token, error = self._require_token()
+            if error:
+                return error
+
+            queue_data = get_playback_queue(token)
+            return self._success_result(
+                data=queue_data,
+                message="Playback queue retrieved successfully"
+            )
+        except SpotifyScopeError as exc:
+            return self._error_result(
+                "Spotify scope required",
+                error_code="insufficient_scope",
+                data={"required_scope": exc.required_scope}
+            )
+        except Exception as e:
+            return self._handle_error(e, "get_playback_queue")
     
     def control_playback(self, action: str, **kwargs) -> ServiceResult:
         """Control Spotify playback (start, stop, resume, toggle)."""

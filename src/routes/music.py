@@ -8,9 +8,11 @@ from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, Response, redirect, request, url_for
 
-from ..api.spotify import (get_access_token, get_followed_artists,
+from ..api.spotify import (SpotifyScopeError, get_access_token, get_artist_albums,
+                           get_followed_artists, get_recently_played_tracks,
                            get_playlists, get_saved_albums,
-                           get_user_saved_tracks, get_user_library)
+                           get_user_saved_tracks, get_user_library,
+                           get_user_top_items, search_items)
 from ..utils.cache_migration import get_cache_migration_layer
 from ..utils.library_utils import compute_library_hash, prepare_library_payload
 from ..utils.rate_limiting import rate_limit
@@ -21,12 +23,14 @@ music_bp = Blueprint("music", __name__)
 logger = logging.getLogger(__name__)
 
 # Section loaders mapping
-_VALID_LIBRARY_SECTIONS = ("playlists", "albums", "tracks", "artists")
+_VALID_LIBRARY_SECTIONS = ("playlists", "albums", "tracks", "artists", "recent", "top")
 _SECTION_LOADERS = {
     "playlists": get_playlists,
     "albums": get_saved_albums,
     "tracks": get_user_saved_tracks,
     "artists": get_followed_artists,
+    "recent": get_recently_played_tracks,
+    "top": lambda token: get_user_top_items(token, item_type="tracks", time_range="medium_term"),
 }
 
 
@@ -154,6 +158,14 @@ def api_music_library():
             if_modified=if_modified,
             request_obj=request,
         )
+    except SpotifyScopeError as scope_exc:
+        return api_response(
+            False,
+            message="Spotify scope required",
+            status=403,
+            error_code="insufficient_scope",
+            data={"required_scope": scope_exc.required_scope},
+        )
     except Exception:
         logging.exception("Error loading music library")
         if not requested_sections:
@@ -176,7 +188,7 @@ def api_music_library_sections():
     """Load only requested music library sections with unified caching.
 
     Query params:
-        sections: comma separated list (playlists,albums,tracks,artists)
+        sections: comma separated list (playlists,albums,tracks,artists,recent,top)
         refresh: force bypass cache if '1' or 'true'
         fields: 'basic' for slimmed down response
     """
@@ -202,9 +214,102 @@ def api_music_library_sections():
             if_modified=if_modified,
             request_obj=request,
         )
+    except SpotifyScopeError as scope_exc:
+        return api_response(
+            False,
+            message="Spotify scope required",
+            status=403,
+            error_code="insufficient_scope",
+            data={"required_scope": scope_exc.required_scope},
+        )
     except Exception as e:
         logging.exception("Error loading partial music library")
         return api_response(False, message=str(e), status=500, error_code="music_library_partial_error")
+
+
+@music_bp.route("/api/artist-albums/<artist_id>")
+@api_error_handler
+@rate_limit("spotify_api")
+def api_artist_albums(artist_id):
+    """API endpoint for artist albums."""
+    token = get_access_token()
+    if not token:
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
+
+    try:
+        albums = get_artist_albums(token, artist_id)
+        return api_response(True, data={"artist_id": artist_id, "albums": albums, "total": len(albums)})
+    except SpotifyScopeError as scope_exc:
+        return api_response(
+            False,
+            message="Spotify scope required",
+            status=403,
+            error_code="insufficient_scope",
+            data={"required_scope": scope_exc.required_scope},
+        )
+    except Exception:
+        logging.exception("Error loading artist albums")
+        return api_response(
+            False,
+            message="Failed to load artist albums",
+            status=500,
+            error_code="artist_albums_failed",
+        )
+
+
+@music_bp.route("/api/music-search")
+@api_error_handler
+@rate_limit("spotify_api")
+def api_music_search():
+    """Search Spotify catalog for tracks, albums, artists and playlists."""
+    token = get_access_token()
+    if not token:
+        return api_response(False, message=t_api("auth_required", request), status=401, error_code="auth_required")
+
+    query = (request.args.get("q") or "").strip()
+    if len(query) < 3:
+        return api_response(
+            False,
+            message="Query must be at least 3 characters",
+            status=400,
+            error_code="invalid_query",
+        )
+
+    raw_types = request.args.get("types", "track,album,artist,playlist")
+    requested_types = [item.strip().lower() for item in raw_types.split(",") if item.strip()]
+    raw_limit = request.args.get("limit", "5")
+    try:
+        limit = max(1, min(int(raw_limit), 10))
+    except ValueError:
+        limit = 5
+
+    try:
+        results = search_items(token, query, item_types=requested_types, limit=limit)
+        return api_response(
+            True,
+            data={
+                "query": query,
+                "types": requested_types,
+                "results": results,
+                "total": sum(len(items) for items in results.values()),
+            },
+        )
+    except SpotifyScopeError as scope_exc:
+        return api_response(
+            False,
+            message="Spotify scope required",
+            status=403,
+            error_code="insufficient_scope",
+            data={"required_scope": scope_exc.required_scope},
+        )
+    except Exception:
+        logging.exception("Error searching music catalog")
+        return api_response(
+            False,
+            message="Failed to search Spotify catalog",
+            status=500,
+            error_code="music_search_failed",
+        )
 
 
 @music_bp.route("/api/artist-top-tracks/<artist_id>")

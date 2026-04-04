@@ -4,11 +4,12 @@ import { useCallback, useEffect, useState } from "preact/hooks";
 import { getJson } from "../lib/api";
 import type {
   ArtistDrilldown,
-  ArtistTracksPayload,
+  ArtistAlbumsPayload,
   CollectionState,
   LibraryItem,
   LibraryPayload,
   LibrarySection,
+  SearchResultsPayload,
   SurfaceName
 } from "../lib/types";
 
@@ -32,7 +33,8 @@ interface UseLibraryDataResult {
   artistDrilldown: ArtistDrilldown;
   setArtistDrilldown: (value: ArtistDrilldown) => void;
   ensureLibrarySection: (section: LibrarySection) => Promise<void>;
-  openArtistTracks: (artist: LibraryItem) => Promise<void>;
+  openArtistAlbums: (artist: LibraryItem) => Promise<void>;
+  searchCatalog: (query: string) => Promise<void>;
   resetArtistDrilldown: () => void;
 }
 
@@ -53,7 +55,10 @@ function createCollectionMap(): Record<LibrarySection, CollectionState> {
     playlists: { status: "idle", items: [] },
     albums: { status: "idle", items: [] },
     tracks: { status: "idle", items: [] },
-    artists: { status: "idle", items: [] }
+    artists: { status: "idle", items: [] },
+    recent: { status: "idle", items: [] },
+    top: { status: "idle", items: [] },
+    search: { status: "idle", items: [] }
   };
 }
 
@@ -70,11 +75,15 @@ export function useLibraryData({
   const [artistDrilldown, setArtistDrilldown] = useState<ArtistDrilldown>({
     artist: null,
     status: "idle",
-    tracks: []
+    items: []
   });
 
   const ensureLibrarySection = useCallback(async (section: LibrarySection) => {
     if (!enabled) {
+      return;
+    }
+
+    if (section === "search") {
       return;
     }
 
@@ -156,7 +165,7 @@ export function useLibraryData({
     }
   }, [surface, librarySection, ensureLibrarySection]);
 
-  const openArtistTracks = useCallback(async (artist: LibraryItem) => {
+  const openArtistAlbums = useCallback(async (artist: LibraryItem) => {
     const artistId = extractArtistId(artist.uri);
     if (!artistId) {
       return;
@@ -165,16 +174,16 @@ export function useLibraryData({
     setArtistDrilldown({
       artist,
       status: "loading",
-      tracks: []
+      items: []
     });
 
     try {
-      const result = await getJson<ArtistTracksPayload>(`/api/artist-top-tracks/${artistId}`);
+      const result = await getJson<ArtistAlbumsPayload>(`/api/artist-albums/${artistId}`);
       if (result.status === 401 || result.body?.error_code === "auth_required") {
         setArtistDrilldown({
           artist,
           status: "auth_required",
-          tracks: []
+          items: []
         });
         return;
       }
@@ -182,8 +191,8 @@ export function useLibraryData({
       if (result.body?.success && result.body.data) {
         setArtistDrilldown({
           artist,
-          status: result.body.data.tracks.length ? "ready" : "empty",
-          tracks: result.body.data.tracks
+          status: result.body.data.albums.length ? "ready" : "empty",
+          items: result.body.data.albums
         });
         return;
       }
@@ -191,16 +200,16 @@ export function useLibraryData({
       setArtistDrilldown({
         artist,
         status: "error",
-        tracks: [],
+        items: [],
         errorMessage:
           result.body?.message ||
-          localized(language, "Unable to load tracks", "Tracks konnten nicht geladen werden")
+          localized(language, "Unable to load albums", "Alben konnten nicht geladen werden")
       });
     } catch (error) {
       setArtistDrilldown({
         artist,
         status: "offline",
-        tracks: [],
+        items: [],
         errorMessage:
           error instanceof Error
             ? error.message
@@ -209,8 +218,107 @@ export function useLibraryData({
     }
   }, [language]);
 
+  const searchCatalog = useCallback(async (query: string) => {
+    const trimmed = query.trim();
+    if (!enabled) {
+      return;
+    }
+
+    if (trimmed.length < 3) {
+      setCollections((current) => ({
+        ...current,
+        search: {
+          status: "idle",
+          items: []
+        }
+      }));
+      return;
+    }
+
+    setCollections((current) => ({
+      ...current,
+      search: {
+        ...current.search,
+        status: "loading",
+        errorMessage: undefined
+      }
+    }));
+
+    try {
+      const result = await getJson<SearchResultsPayload>(
+        `/api/music-search?q=${encodeURIComponent(trimmed)}&types=track,album,artist,playlist&limit=5`
+      );
+      if (result.status === 401 || result.body?.error_code === "auth_required") {
+        setCollections((current) => ({
+          ...current,
+          search: {
+            ...current.search,
+            status: "auth_required"
+          }
+        }));
+        return;
+      }
+      if (result.body?.error_code === "insufficient_scope") {
+        setCollections((current) => ({
+          ...current,
+          search: {
+            ...current.search,
+            status: "error",
+            errorMessage: localized(
+              language,
+              "Spotify re-authentication required for search.",
+              "Spotify-Neuanmeldung für Suche erforderlich."
+            )
+          }
+        }));
+        return;
+      }
+
+      if (result.body?.success && result.body.data) {
+        const groups = result.body.data.results;
+        const items = [
+          ...(groups.tracks || []),
+          ...(groups.albums || []),
+          ...(groups.artists || []),
+          ...(groups.playlists || [])
+        ];
+        setCollections((current) => ({
+          ...current,
+          search: {
+            status: items.length ? "ready" : "empty",
+            items
+          }
+        }));
+        return;
+      }
+
+      setCollections((current) => ({
+        ...current,
+        search: {
+          ...current.search,
+          status: "error",
+          errorMessage:
+            result.body?.message ||
+            localized(language, "Unable to search Spotify", "Spotify-Suche fehlgeschlagen")
+        }
+      }));
+    } catch (error) {
+      setCollections((current) => ({
+        ...current,
+        search: {
+          ...current.search,
+          status: "offline",
+          errorMessage:
+            error instanceof Error
+              ? error.message
+              : localized(language, "Network error", "Netzwerkfehler")
+        }
+      }));
+    }
+  }, [enabled, language]);
+
   const resetArtistDrilldown = useCallback(() => {
-    setArtistDrilldown({ artist: null, status: "idle", tracks: [] });
+    setArtistDrilldown({ artist: null, status: "idle", items: [] });
   }, []);
 
   return {
@@ -220,7 +328,8 @@ export function useLibraryData({
     artistDrilldown,
     setArtistDrilldown,
     ensureLibrarySection,
-    openArtistTracks,
+    openArtistAlbums,
+    searchCatalog,
     resetArtistDrilldown
   };
 }
