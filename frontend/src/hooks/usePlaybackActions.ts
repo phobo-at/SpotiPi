@@ -45,11 +45,18 @@ function currentVolume(dashboard: DashboardData, settings: SettingsData): number
   );
 }
 
+function isPlaybackInitialHydration(dashboard: DashboardData): boolean {
+  return (
+    dashboard.playback_status === "pending" ||
+    (dashboard.hydration.playback.pending && !dashboard.hydration.playback.has_data)
+  );
+}
+
 function isPlaybackReady(dashboard: DashboardData, networkStatus: "online" | "offline"): boolean {
   if (networkStatus === "offline") {
     return false;
   }
-  if (dashboard.hydration.playback.pending || dashboard.playback_status === "pending") {
+  if (isPlaybackInitialHydration(dashboard)) {
     return false;
   }
   if (dashboard.playback_status === "auth_required" || dashboard.playback_status === "error") {

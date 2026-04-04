@@ -1,6 +1,34 @@
 const AxeBuilder = require("@axe-core/playwright").default;
 const { expect, test } = require("@playwright/test");
 
+const BOOTSTRAP_SCRIPT_RE = /(<script id="spotipi-bootstrap" type="application\/json">)([\s\S]*?)(<\/script>)/;
+
+async function gotoWithDashboardOverride(page, overrideDashboard) {
+  await page.route("**/*", async (route, request) => {
+    const url = new URL(request.url());
+    if (request.resourceType() !== "document" || url.pathname !== "/") {
+      await route.continue();
+      return;
+    }
+
+    const response = await route.fetch();
+    const html = await response.text();
+    const match = html.match(BOOTSTRAP_SCRIPT_RE);
+    if (!match) {
+      await route.fulfill({ response, body: html });
+      return;
+    }
+
+    const bootstrap = JSON.parse(match[2]);
+    bootstrap.dashboard = overrideDashboard(bootstrap.dashboard);
+    const bootstrapJson = JSON.stringify(bootstrap).replace(/</g, "\\u003c");
+    const patchedHtml = html.replace(BOOTSTRAP_SCRIPT_RE, `$1${bootstrapJson}$3`);
+    await route.fulfill({ response, body: patchedHtml });
+  });
+
+  await page.goto("/");
+}
+
 test("dashboard shell renders primary surfaces without critical accessibility issues", async ({ page }) => {
   await page.goto("/");
 
@@ -123,4 +151,50 @@ test("initial load stays within runtime budget and avoids legacy assets", async 
 
   expect(timing).toBeGreaterThan(0);
   expect(timing).toBeLessThanOrEqual(7000);
+});
+
+test("player keeps idle copy when playback snapshot is stale but already hydrated", async ({ page }) => {
+  await gotoWithDashboardOverride(page, (dashboard) => ({
+    ...dashboard,
+    playback_status: "empty",
+    playback: {
+      ...dashboard.playback,
+      current_track: null,
+      is_playing: false
+    },
+    hydration: {
+      ...dashboard.hydration,
+      playback: {
+        ...dashboard.hydration.playback,
+        pending: true,
+        has_data: true
+      }
+    }
+  }));
+
+  const playerCard = page.getByTestId("player-card");
+  await expect(playerCard).not.toContainText(/spotify is waking up|spotify wacht auf/i);
+  await expect(playerCard).toContainText(/ready to play|bereit zum abspielen|no active playback|keine aktive wiedergabe/i);
+});
+
+test("player shows waking copy only during initial playback hydration", async ({ page }) => {
+  await gotoWithDashboardOverride(page, (dashboard) => ({
+    ...dashboard,
+    playback_status: "pending",
+    playback: {
+      ...dashboard.playback,
+      current_track: null,
+      is_playing: false
+    },
+    hydration: {
+      ...dashboard.hydration,
+      playback: {
+        ...dashboard.hydration.playback,
+        pending: true,
+        has_data: false
+      }
+    }
+  }));
+
+  await expect(page.getByTestId("player-card")).toContainText(/spotify is waking up|spotify wacht auf/i);
 });

@@ -1210,6 +1210,10 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
   }
 
+  const isPlaybackInitialHydration =
+    dashboard.playback_status === "pending" ||
+    (dashboard.hydration.playback.pending && !dashboard.hydration.playback.has_data);
+
   const statusSnapshot = useMemo(() => {
     if (networkStatus === "offline") {
       return {
@@ -1217,10 +1221,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         tone: "warning" as const
       };
     }
-    if (
-      (dashboard.hydration.playback.pending || dashboard.playback_status === "pending") &&
-      !dashboard.playback.current_track
-    ) {
+    if (isPlaybackInitialHydration && !dashboard.playback.current_track) {
       return {
         label: t("status_pending", localized(bootstrap.language, "Waiting for Spotify", "Warte auf Spotify")),
         tone: "muted" as const
@@ -1250,7 +1251,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       label: t("no_active_playback", localized(bootstrap.language, "No active playback", "Keine aktive Wiedergabe")),
       tone: "muted" as const
     };
-  }, [dashboard, networkStatus, t, bootstrap.language]);
+  }, [dashboard, isPlaybackInitialHydration, networkStatus, t, bootstrap.language]);
 
   const clockLabel = formatDateTime(clock, bootstrap.language);
   const currentTrack = dashboard.playback.current_track;
@@ -1266,7 +1267,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         ? localized(bootstrap.language, "Spotify sign-in needed", "Spotify-Anmeldung nötig")
         : dashboard.playback_status === "error"
           ? localized(bootstrap.language, "Spotify is unavailable", "Spotify ist gerade nicht erreichbar")
-          : dashboard.hydration.playback.pending || dashboard.playback_status === "pending"
+          : isPlaybackInitialHydration
             ? localized(bootstrap.language, "Spotify is waking up", "Spotify wacht auf")
             : localized(bootstrap.language, "Ready to play", "Bereit zum Abspielen");
   const playerSubtitle = currentTrack?.artist
@@ -1289,7 +1290,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               "Try syncing again or switch devices once Spotify responds.",
               "Synchronisiere erneut oder wechsle das Gerät, sobald Spotify wieder antwortet."
             )
-          : dashboard.hydration.playback.pending || dashboard.playback_status === "pending"
+          : isPlaybackInitialHydration
             ? localized(
                 bootstrap.language,
                 "Playback controls appear here as soon as the next Spotify snapshot lands.",
