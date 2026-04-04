@@ -47,9 +47,19 @@ __all__ = [
     "start_playback", "play_with_retry", "stop_playback", "resume_playback", "toggle_playback",
     "get_current_playback", "get_current_track", "get_current_spotify_volume", 
     "get_saved_albums", "get_user_saved_tracks", "get_followed_artists",
+    "get_recently_played_tracks", "get_user_top_items", "get_artist_albums", "search_items",
+    "get_playback_queue", "SpotifyScopeError",
     "set_volume", "get_playback_status", "get_user_library", "get_combined_playback",
     "load_music_library_parallel", "spotify_network_health", "get_user_profile"
 ]
+
+
+class SpotifyScopeError(RuntimeError):
+    """Raised when Spotify rejects a request due to missing OAuth scopes."""
+
+    def __init__(self, required_scope: str, message: Optional[str] = None):
+        self.required_scope = required_scope
+        super().__init__(message or f"Spotify scope required: {required_scope}")
 
 # 🔧 File paths - Use path-agnostic configuration
 def _get_app_config_dir():
@@ -637,6 +647,77 @@ def _spotify_request(
 
 # 🎵 Spotify API
 
+def _pick_image_url(images: Any) -> Optional[str]:
+    """Select a medium-sized image when possible, otherwise first available."""
+    if not isinstance(images, list):
+        return None
+    for img in images:
+        width = img.get("width") if isinstance(img, dict) else None
+        if width and 200 <= int(width) <= 400:
+            return img.get("url") if isinstance(img, dict) else None
+    if images and isinstance(images[0], dict):
+        return images[0].get("url")
+    return None
+
+
+def _format_track_item(track: Dict[str, Any]) -> Dict[str, Any]:
+    album = track.get("album", {}) if isinstance(track, dict) else {}
+    artists = track.get("artists", []) if isinstance(track, dict) else []
+    artist_names = [artist.get("name", "") for artist in artists if isinstance(artist, dict)]
+    image_url = _pick_image_url(album.get("images", []))
+    return {
+        "name": track.get("name", "Unknown Song"),
+        "artist": ", ".join(name for name in artist_names if name) or "Unknown Artist",
+        "uri": track.get("uri", ""),
+        "image_url": image_url,
+        "track_count": 1,
+        "type": "track",
+        "album": album.get("name", "") if isinstance(album, dict) else "",
+        "duration_ms": track.get("duration_ms", 0),
+    }
+
+
+def _format_queue_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    item_type = item.get("type") if isinstance(item, dict) else None
+    if item_type == "track":
+        return _format_track_item(item)
+
+    if item_type == "episode":
+        images = item.get("images", []) if isinstance(item, dict) else []
+        show = item.get("show", {}) if isinstance(item, dict) else {}
+        return {
+            "name": item.get("name", "Unknown Episode"),
+            "artist": show.get("name", "Podcast") if isinstance(show, dict) else "Podcast",
+            "uri": item.get("uri", ""),
+            "image_url": _pick_image_url(images),
+            "track_count": 1,
+            "type": "episode",
+            "duration_ms": item.get("duration_ms", 0),
+        }
+
+    return {
+        "name": item.get("name", "Unknown Item") if isinstance(item, dict) else "Unknown Item",
+        "artist": "",
+        "uri": item.get("uri", "") if isinstance(item, dict) else "",
+        "image_url": _pick_image_url(item.get("images", [])) if isinstance(item, dict) else None,
+        "track_count": 1,
+        "type": item_type or "item",
+    }
+
+
+def _raise_scope_error_if_needed(
+    response: requests.Response,
+    required_scope: str,
+    *,
+    logger: Optional[logging.Logger] = None,
+    context: str = "spotify.request",
+) -> None:
+    if response.status_code != 403:
+        return
+    if logger:
+        logger.warning("%s.insufficient_scope status=403 body=%s", context, response.text)
+    raise SpotifyScopeError(required_scope=required_scope)
+
 def get_user_profile(token: str) -> Optional[Dict[str, Any]]:
     """Fetch the current user's Spotify profile.
     
@@ -1006,7 +1087,7 @@ def get_followed_artists(token: str) -> List[Dict[str, Any]]:
                     
                     artists.append({
                         "name": item.get("name", "Unknown Artist"),
-                        "artist": f"{item.get('followers', {}).get('total', 0):,} Follower",  # Follower as additional info
+                        "artist": "Artist",
                         "uri": item.get("uri", ""),
                         "artist_id": item.get("id", ""),  # Artist ID for top tracks API
                         "image_url": image_url,
@@ -1029,6 +1110,288 @@ def get_followed_artists(token: str) -> List[Dict[str, Any]]:
     artists.sort(key=lambda a: a["name"].lower())
     logger.info(f"🎤 Total {len(artists)} followed artists found")
     return artists
+
+
+def get_recently_played_tracks(token: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Fetch recently played tracks for the current user."""
+    logger = logging.getLogger("app")
+    headers = {"Authorization": f"Bearer {token}"}
+    capped_limit = max(1, min(int(limit), 50))
+    url = f"https://api.spotify.com/v1/me/player/recently-played?limit={capped_limit}"
+
+    try:
+        response = _spotify_request("GET", url, headers=headers, timeout=SPOTIFY_API_TIMEOUT)
+        _raise_scope_error_if_needed(
+            response,
+            "user-read-recently-played",
+            logger=logger,
+            context="spotify.recently_played",
+        )
+        if response.status_code != 200:
+            logger.error("❌ Error fetching recently played tracks: %s - %s", response.status_code, response.text)
+            return []
+
+        items = response.json().get("items", [])
+        tracks: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in items:
+            track = item.get("track", {}) if isinstance(item, dict) else {}
+            uri = track.get("uri", "")
+            if not uri or uri in seen:
+                continue
+            seen.add(uri)
+            track_payload = _format_track_item(track)
+            track_payload["type"] = "track"
+            tracks.append(track_payload)
+        return tracks
+    except SpotifyScopeError:
+        raise
+    except Exception as exc:
+        logger.error("❌ Exception fetching recently played tracks: %s", exc)
+        return []
+
+
+def get_user_top_items(
+    token: str,
+    *,
+    item_type: str = "tracks",
+    time_range: str = "medium_term",
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """Fetch user's top tracks or artists."""
+    logger = logging.getLogger("app")
+    resolved_type = "artists" if item_type == "artists" else "tracks"
+    resolved_range = time_range if time_range in {"short_term", "medium_term", "long_term"} else "medium_term"
+    capped_limit = max(1, min(int(limit), 50))
+    headers = {"Authorization": f"Bearer {token}"}
+    url = (
+        f"https://api.spotify.com/v1/me/top/{resolved_type}"
+        f"?time_range={resolved_range}&limit={capped_limit}"
+    )
+
+    try:
+        response = _spotify_request("GET", url, headers=headers, timeout=SPOTIFY_API_TIMEOUT)
+        _raise_scope_error_if_needed(
+            response,
+            "user-top-read",
+            logger=logger,
+            context="spotify.top_items",
+        )
+        if response.status_code != 200:
+            logger.error("❌ Error fetching top items: %s - %s", response.status_code, response.text)
+            return []
+
+        items = response.json().get("items", [])
+        if resolved_type == "tracks":
+            tracks = [_format_track_item(item) for item in items if isinstance(item, dict)]
+            tracks.sort(key=lambda item: item.get("name", "").lower())
+            return tracks
+
+        artists: List[Dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            artists.append({
+                "name": item.get("name", "Unknown Artist"),
+                "artist": "Artist",
+                "uri": item.get("uri", ""),
+                "artist_id": item.get("id", ""),
+                "image_url": _pick_image_url(item.get("images", [])),
+                "track_count": None,
+                "type": "artist",
+            })
+        artists.sort(key=lambda item: item.get("name", "").lower())
+        return artists
+    except SpotifyScopeError:
+        raise
+    except Exception as exc:
+        logger.error("❌ Exception fetching top items: %s", exc)
+        return []
+
+
+def get_artist_albums(token: str, artist_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Fetch albums for a given artist."""
+    logger = logging.getLogger("app")
+    headers = {"Authorization": f"Bearer {token}"}
+    capped_limit = max(1, min(int(limit), 50))
+    url = (
+        f"https://api.spotify.com/v1/artists/{artist_id}/albums"
+        f"?include_groups=album,single,compilation&limit={capped_limit}"
+    )
+
+    albums: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    next_url: Optional[str] = url
+    try:
+        while next_url:
+            response = _spotify_request("GET", next_url, headers=headers, timeout=SPOTIFY_API_TIMEOUT)
+            if response.status_code != 200:
+                logger.error("❌ Error fetching artist albums: %s - %s", response.status_code, response.text)
+                break
+            payload = response.json()
+            for item in payload.get("items", []):
+                if not isinstance(item, dict):
+                    continue
+                uri = item.get("uri", "")
+                if not uri or uri in seen:
+                    continue
+                seen.add(uri)
+                artist_names = [artist.get("name", "") for artist in item.get("artists", []) if isinstance(artist, dict)]
+                albums.append({
+                    "name": item.get("name", "Unknown Album"),
+                    "artist": ", ".join(name for name in artist_names if name) or "Unknown Artist",
+                    "uri": uri,
+                    "image_url": _pick_image_url(item.get("images", [])),
+                    "track_count": item.get("total_tracks", 0),
+                    "type": "album",
+                })
+            next_url = payload.get("next")
+    except Exception as exc:
+        logger.error("❌ Exception fetching artist albums: %s", exc)
+    albums.sort(key=lambda item: item.get("name", "").lower())
+    return albums
+
+
+def search_items(
+    token: str,
+    query: str,
+    *,
+    item_types: Union[List[str], Tuple[str, ...], str] = ("track", "album", "artist", "playlist"),
+    limit: int = 5,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Search Spotify catalog for tracks, albums, artists and playlists."""
+    logger = logging.getLogger("app")
+    headers = {"Authorization": f"Bearer {token}"}
+    allowed = {"track", "album", "artist", "playlist"}
+    if isinstance(item_types, str):
+        raw_types = [item.strip().lower() for item in item_types.split(",") if item.strip()]
+    else:
+        raw_types = [str(item).strip().lower() for item in item_types if str(item).strip()]
+    selected_types = [item for item in raw_types if item in allowed] or ["track", "album", "artist", "playlist"]
+    capped_limit = max(1, min(int(limit), 10))
+
+    params = {
+        "q": query,
+        "type": ",".join(selected_types),
+        "limit": capped_limit,
+    }
+
+    output: Dict[str, List[Dict[str, Any]]] = {
+        "tracks": [],
+        "albums": [],
+        "artists": [],
+        "playlists": [],
+    }
+
+    try:
+        response = _spotify_request(
+            "GET",
+            "https://api.spotify.com/v1/search",
+            headers=headers,
+            params=params,
+            timeout=SPOTIFY_API_TIMEOUT,
+        )
+        _raise_scope_error_if_needed(
+            response,
+            "user-read-private",
+            logger=logger,
+            context="spotify.search",
+        )
+        if response.status_code != 200:
+            logger.error("❌ Error searching Spotify catalog: %s - %s", response.status_code, response.text)
+            return output
+
+        payload = response.json()
+
+        for item in payload.get("tracks", {}).get("items", []):
+            if isinstance(item, dict):
+                track_payload = _format_track_item(item)
+                track_payload["type"] = "track"
+                output["tracks"].append(track_payload)
+
+        for item in payload.get("albums", {}).get("items", []):
+            if not isinstance(item, dict):
+                continue
+            artist_names = [artist.get("name", "") for artist in item.get("artists", []) if isinstance(artist, dict)]
+            output["albums"].append({
+                "name": item.get("name", "Unknown Album"),
+                "artist": ", ".join(name for name in artist_names if name) or "Unknown Artist",
+                "uri": item.get("uri", ""),
+                "image_url": _pick_image_url(item.get("images", [])),
+                "track_count": item.get("total_tracks", 0),
+                "type": "album",
+            })
+
+        for item in payload.get("artists", {}).get("items", []):
+            if not isinstance(item, dict):
+                continue
+            output["artists"].append({
+                "name": item.get("name", "Unknown Artist"),
+                "artist": "Artist",
+                "uri": item.get("uri", ""),
+                "artist_id": item.get("id", ""),
+                "image_url": _pick_image_url(item.get("images", [])),
+                "track_count": None,
+                "type": "artist",
+            })
+
+        for item in payload.get("playlists", {}).get("items", []):
+            if not isinstance(item, dict):
+                continue
+            owner = item.get("owner", {}) if isinstance(item.get("owner"), dict) else {}
+            output["playlists"].append({
+                "name": item.get("name", "Unknown Playlist"),
+                "artist": owner.get("display_name", "Spotify"),
+                "uri": item.get("uri", ""),
+                "image_url": _pick_image_url(item.get("images", [])),
+                "track_count": item.get("tracks", {}).get("total", 0) if isinstance(item.get("tracks"), dict) else 0,
+                "type": "playlist",
+            })
+
+        return output
+    except SpotifyScopeError:
+        raise
+    except Exception as exc:
+        logger.error("❌ Exception searching Spotify catalog: %s", exc)
+        return output
+
+
+def get_playback_queue(token: str) -> Dict[str, Any]:
+    """Fetch the current playback queue."""
+    logger = logging.getLogger("spotify")
+    headers = {"Authorization": f"Bearer {token}"}
+    fallback = {"currently_playing": None, "queue": [], "total": 0}
+    try:
+        response = _spotify_request(
+            "GET",
+            "https://api.spotify.com/v1/me/player/queue",
+            headers=headers,
+            timeout=SPOTIFY_API_TIMEOUT,
+        )
+        _raise_scope_error_if_needed(
+            response,
+            "user-read-playback-state",
+            logger=logger,
+            context="spotify.queue",
+        )
+        if response.status_code != 200:
+            logger.warning("spotify.queue.failed status=%s body=%s", response.status_code, response.text)
+            return fallback
+
+        data = response.json()
+        currently_playing = data.get("currently_playing")
+        queue_items = data.get("queue", [])
+        return {
+            "currently_playing": _format_queue_item(currently_playing) if isinstance(currently_playing, dict) else None,
+            "queue": [_format_queue_item(item) for item in queue_items if isinstance(item, dict)],
+            "total": len(queue_items) if isinstance(queue_items, list) else 0,
+        }
+    except SpotifyScopeError:
+        raise
+    except Exception as exc:
+        logger.warning("spotify.queue.exception error=%s", exc)
+        return fallback
+
 
 def get_devices(token: str) -> List[Dict[str, Any]]:
     """Get available Spotify devices with unified caching.
@@ -1857,13 +2220,15 @@ def skip_to_previous(token: str) -> Dict[str, Union[bool, str]]:
 
 #  Exportable functions - Updated for new config system
 __all__ = [
-    "refresh_access_token", 
+    "refresh_access_token", "ensure_token_valid", "get_access_token", "force_refresh_token",
     "get_playlists", "get_devices", "get_device_id",
-    "start_playback", "stop_playback", "resume_playback", "toggle_playback",
-    "get_current_playback", "get_current_track", "get_current_spotify_volume", 
-    "get_saved_albums", "get_user_saved_tracks", "get_followed_artists", "get_artist_top_tracks",
-    "set_volume", "get_playback_status", "get_user_library",
-    "load_music_library_parallel"
+    "start_playback", "play_with_retry", "stop_playback", "resume_playback", "toggle_playback",
+    "get_current_playback", "get_current_track", "get_current_spotify_volume",
+    "get_saved_albums", "get_user_saved_tracks", "get_followed_artists",
+    "get_recently_played_tracks", "get_user_top_items", "get_artist_albums", "search_items",
+    "get_playback_queue", "SpotifyScopeError",
+    "set_volume", "get_playback_status", "get_user_library", "get_combined_playback",
+    "load_music_library_parallel", "spotify_network_health", "get_user_profile"
 ]
 
 def get_current_spotify_volume(token: str) -> int:
@@ -2078,7 +2443,9 @@ def load_music_library_parallel(token: str) -> Dict[str, Any]:
         'playlists': (get_playlists, "Playlists"),
         'albums': (get_saved_albums, "Albums"),
         'tracks': (get_user_saved_tracks, "Saved Tracks"),
-        'artists': (get_followed_artists, "Followed Artists")
+        'artists': (get_followed_artists, "Followed Artists"),
+        'recent': (get_recently_played_tracks, "Recently Played"),
+        'top': (lambda token: get_user_top_items(token, item_type="tracks", time_range="medium_term"), "Top Tracks"),
     }
     max_workers = max(1, min(len(section_funcs), _get_library_worker_limit()))
 
@@ -2116,6 +2483,8 @@ def load_music_library_parallel(token: str) -> Dict[str, Any]:
         "albums": results['albums'], 
         "tracks": results['tracks'],
         "artists": results['artists'],
+        "recent": results['recent'],
+        "top": results['top'],
         "total": total_items
     }
     payload["hash"] = compute_library_hash(payload)

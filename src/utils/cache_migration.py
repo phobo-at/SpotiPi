@@ -100,7 +100,9 @@ class CacheMigrationLayer:
             'playlists': CacheType.PLAYLISTS,
             'albums': CacheType.ALBUMS,
             'tracks': CacheType.TRACKS,
-            'artists': CacheType.ARTISTS
+            'artists': CacheType.ARTISTS,
+            'recent': CacheType.RECENT,
+            'top': CacheType.TOP,
         }
         
         cache_type = type_mapping.get(section_name, CacheType.PLAYLISTS)
@@ -125,7 +127,9 @@ class CacheMigrationLayer:
             'playlists': CacheType.PLAYLISTS,
             'albums': CacheType.ALBUMS,
             'tracks': CacheType.TRACKS,
-            'artists': CacheType.ARTISTS
+            'artists': CacheType.ARTISTS,
+            'recent': CacheType.RECENT,
+            'top': CacheType.TOP,
         }
         
         cache_type = type_mapping.get(section_name, CacheType.PLAYLISTS)
@@ -250,6 +254,8 @@ class CacheMigrationLayer:
         count += self.unified_cache.invalidate(CacheType.ALBUMS)
         count += self.unified_cache.invalidate(CacheType.TRACKS)
         count += self.unified_cache.invalidate(CacheType.ARTISTS)
+        count += self.unified_cache.invalidate(CacheType.RECENT)
+        count += self.unified_cache.invalidate(CacheType.TOP)
         return count
     
     def invalidate_devices(self) -> int:

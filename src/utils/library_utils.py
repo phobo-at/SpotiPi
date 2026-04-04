@@ -24,7 +24,7 @@ def compute_library_hash(data: Dict[str, Any]) -> str:
     """
     try:
         parts: List[str] = []
-        for coll in ("playlists", "albums", "tracks", "artists"):
+        for coll in ("playlists", "albums", "tracks", "artists", "recent", "top"):
             for item in data.get(coll, []) or []:
                 uri = item.get("uri")
                 if uri:
@@ -62,7 +62,7 @@ def prepare_library_payload(
     payload = {
         "total": raw.get("total", 0),
     }
-    for coll in ("playlists", "albums", "tracks", "artists"):
+    for coll in ("playlists", "albums", "tracks", "artists", "recent", "top"):
         col_items = raw.get(coll, []) or []
         payload[coll] = slim_collection(col_items) if basic else col_items
     existing_hash = raw.get("hash") if isinstance(raw, dict) else None

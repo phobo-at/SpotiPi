@@ -22,7 +22,9 @@ SCOPES = [
     "user-read-currently-playing",
     "playlist-read-private",
     "playlist-read-collaborative",
+    "user-follow-read",
     "user-library-read",
+    "user-read-private",
     "user-top-read",
     "user-read-recently-played",
 ]

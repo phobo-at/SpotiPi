@@ -24,3 +24,14 @@ def test_load_environment_reads_canonical_env_file(tmp_path, monkeypatch):
 
     assert loaded_path == env_path
     assert os.getenv("SPOTIPI_TEST_MARKER") == "canonical"
+
+
+def test_scope_configuration_contains_required_library_and_search_scopes():
+    required_scopes = {
+        "user-follow-read",
+        "user-library-read",
+        "user-top-read",
+        "user-read-recently-played",
+        "user-read-private",
+    }
+    assert required_scopes.issubset(set(generate_token.SCOPES))
