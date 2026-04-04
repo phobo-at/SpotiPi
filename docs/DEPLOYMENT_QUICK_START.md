@@ -59,6 +59,10 @@ Von deinem **Mac** aus:
 ```bash
 cd /Users/michi/Development/repos/spotipi
 
+# Lokales Deploy-Script aus der anonymisierten Vorlage erzeugen
+cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh
+chmod +x scripts/deploy_to_pi.sh
+
 # Standard-Deployment (rsync + systemd restart)
 ./scripts/deploy_to_pi.sh
 ```

@@ -9,7 +9,7 @@
 # - Transfers only the files the Pi needs to run SpotiPi
 
 # 🔧 Configuration with smart defaults
-PI_HOST="${SPOTIPI_PI_HOST:-pi@spotipi.local}"
+PI_HOST="${SPOTIPI_PI_HOST:-pi@your-pi-host.local}"
 APP_NAME="${SPOTIPI_APP_NAME:-spotipi}"
 
 # Auto-detect local path (where this script is located)
@@ -316,7 +316,7 @@ if [ -n "$SERVICE_NAME" ]; then
 fi
 
 echo "🎵 SpotiPi deployment complete!"
-echo "🌐 Access: http://spotipi.local:5000"
+echo "🌐 Access: http://your-pi-host.local:5000"
 
 if [ "${SPOTIPI_SHOW_STATUS:-}" = "1" ]; then
   echo "\n📊 Service Status"

@@ -104,6 +104,8 @@ python generate_token.py
 From your dev machine (sync + restart service):
 
 ```bash
+cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh
+chmod +x scripts/deploy_to_pi.sh
 ./scripts/deploy_to_pi.sh
 ```
 

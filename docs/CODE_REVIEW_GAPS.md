@@ -179,6 +179,8 @@ pytest tests/test_config_validation.py tests/test_spotify_retry.py -v
 ### Deploy zum Pi
 
 ```bash
+cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh
+chmod +x scripts/deploy_to_pi.sh
 ./scripts/deploy_to_pi.sh
 ```
 

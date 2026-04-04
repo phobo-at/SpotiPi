@@ -11,6 +11,7 @@ spotify_credentials.json
 sleep_status.json
 *.pid
 scripts/server*.meta.json
+scripts/deploy_to_pi.sh
 *.log
 logs/
 cache/
