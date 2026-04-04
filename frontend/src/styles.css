@@ -239,6 +239,23 @@ button:disabled {
   color: #ffe4ad;
 }
 
+.banner-success {
+  background: rgba(76, 217, 100, 0.1);
+  border-color: rgba(76, 217, 100, 0.24);
+  color: #d9ffe3;
+}
+
+.banner-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.banner-actions .ghost-button {
+  min-height: 40px;
+  padding: 0 12px;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
@@ -977,7 +994,8 @@ input[type="range"] {
   .section-heading,
   .player-heading,
   .sheet-header,
-  .field-label-row {
+  .field-label-row,
+  .banner {
     flex-direction: column;
     align-items: stretch;
   }
@@ -989,6 +1007,10 @@ input[type="range"] {
 
   .action-grid {
     gap: 14px;
+  }
+
+  .banner-actions {
+    margin-left: 0;
   }
 
   .sheet-backdrop {

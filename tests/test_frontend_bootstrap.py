@@ -42,3 +42,23 @@ def test_settings_route_opens_settings_surface(client):
     bootstrap = _extract_bootstrap(html)
 
     assert bootstrap["app"]["initial_surface"] == "settings"
+
+
+def test_index_route_sets_security_headers(client):
+    response = client.get("/")
+
+    assert response.status_code == 200
+    csp = response.headers.get("Content-Security-Policy", "")
+    assert "default-src 'self'" in csp
+    assert "script-src 'self'" in csp
+    assert "img-src 'self' https: data:" in csp
+    assert response.headers.get("X-Content-Type-Options") == "nosniff"
+    assert response.headers.get("X-Frame-Options") == "DENY"
+    assert response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+
+def test_music_library_route_redirects_to_shell(client):
+    response = client.get("/music_library", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers.get("Location", "").endswith("/")

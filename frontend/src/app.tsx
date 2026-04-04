@@ -3,18 +3,23 @@ import { Fragment } from "preact";
 import type { JSX } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 
-import { getJson, NetworkRequestError, patchJson, postForm, postJson } from "./lib/api";
+import { getJson, postForm, postJson } from "./lib/api";
+import { useDashboardPolling } from "./hooks/useDashboardPolling";
+import { useLibraryData } from "./hooks/useLibraryData";
+import { useNetworkStatus } from "./hooks/useNetworkStatus";
+import { usePlaybackActions } from "./hooks/usePlaybackActions";
+import { useSettingsMutations } from "./hooks/useSettingsMutations";
+import { useTheme } from "./hooks/useTheme";
+import { useToasts } from "./hooks/useToasts";
 import type {
   AlarmFormState,
   AlarmSummary,
   AppBootstrap,
   ArtistDrilldown,
-  ArtistTracksPayload,
   AsyncStatus,
   CollectionState,
   DashboardData,
   LibraryItem,
-  LibraryPayload,
   LibrarySection,
   PlayFormState,
   PrimaryFlowSnapshot,
@@ -22,7 +27,8 @@ import type {
   SleepFormState,
   SpotifyDevice,
   SpotifyProfile,
-  SurfaceName
+  SurfaceName,
+  ToastItem
 } from "./lib/types";
 import {
   createAlarmFormModel,
@@ -35,12 +41,16 @@ import {
 
 const LIBRARY_SECTIONS: LibrarySection[] = ["playlists", "albums", "tracks", "artists"];
 const DURATION_OPTIONS = SLEEP_DURATION_PRESETS;
-
-interface ToastItem {
-  id: number;
-  type: "success" | "error" | "info";
-  message: string;
-}
+const LAST_DEVICE_STORAGE_KEY = "spotipi.last_device_id";
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "area[href]",
+  "button:not([disabled])",
+  "input:not([type='hidden']):not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])"
+].join(",");
 
 interface AccountLoadState {
   status: AsyncStatus;
@@ -104,6 +114,66 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function normalizeImageUrl(candidate: string | null | undefined): string | null {
+  if (typeof candidate !== "string" || !candidate.trim()) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(candidate, window.location.origin);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.href;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function isValidTimeInput(value: string): boolean {
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+}
+
+function hasPassedToday(value: string): boolean {
+  if (!isValidTimeInput(value)) {
+    return false;
+  }
+  const [hour, minute] = value.split(":").map((segment) => Number(segment));
+  const now = new Date();
+  const selected = new Date(now);
+  selected.setHours(hour, minute, 0, 0);
+  return selected.getTime() <= now.getTime();
+}
+
+function readLastDeviceId(): string {
+  try {
+    return window.localStorage.getItem(LAST_DEVICE_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeLastDeviceId(deviceId: string): void {
+  if (!deviceId) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(LAST_DEVICE_STORAGE_KEY, deviceId);
+  } catch {
+    // Ignore quota/storage errors on constrained devices.
+  }
+}
+
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => {
+    if (element.hasAttribute("disabled") || element.getAttribute("aria-hidden") === "true") {
+      return false;
+    }
+    return element.tabIndex >= 0 && element.offsetParent !== null;
+  });
+}
+
 function formatTimeLabel(value: string, language: string): string {
   if (!value) {
     return "--:--";
@@ -148,63 +218,6 @@ function formatCountdown(value: number | undefined, language: string): string {
   return language === "de" ? `${seconds} Sek` : `${seconds}s`;
 }
 
-function createCollectionMap(): Record<LibrarySection, CollectionState> {
-  return {
-    playlists: { status: "idle", items: [] },
-    albums: { status: "idle", items: [] },
-    tracks: { status: "idle", items: [] },
-    artists: { status: "idle", items: [] }
-  };
-}
-
-function mergeDashboard(current: DashboardData, incoming: DashboardData): DashboardData {
-  const next = { ...incoming };
-
-  if (next.playback_status === "pending" && !incoming.playback.current_track && current.playback.current_track) {
-    next.playback = current.playback;
-  }
-
-  if (
-    next.hydration.devices.pending &&
-    (!incoming.devices || incoming.devices.length === 0) &&
-    current.devices.length > 0
-  ) {
-    next.devices = current.devices;
-    next.devices_meta = current.devices_meta;
-  }
-
-  return next;
-}
-
-function extractArtistId(uri: string): string | null {
-  const segments = uri.split(":");
-  if (segments.length === 3 && segments[1] === "artist") {
-    return segments[2];
-  }
-  return null;
-}
-
-function isPlaybackReady(dashboard: DashboardData, networkStatus: "online" | "offline"): boolean {
-  if (networkStatus === "offline") {
-    return false;
-  }
-  if (dashboard.hydration.playback.pending || dashboard.playback_status === "pending") {
-    return false;
-  }
-  if (dashboard.playback_status === "auth_required" || dashboard.playback_status === "error") {
-    return false;
-  }
-  return Boolean(dashboard.playback.current_track || dashboard.playback.device);
-}
-
-function currentVolume(dashboard: DashboardData, settings: SettingsData): number {
-  return clamp(
-    Number(dashboard.playback.device?.volume_percent ?? settings.app.default_volume ?? 50),
-    0,
-    100
-  );
-}
-
 function icon(name: string, className = "icon"): JSX.Element {
   return (
     <svg class={className} viewBox="0 0 24 24" aria-hidden="true">
@@ -225,9 +238,10 @@ function StatusPill({ tone, label }: StatusPillProps) {
 interface ToastStackProps {
   items: ToastItem[];
   onDismiss: (id: number) => void;
+  dismissLabel: string;
 }
 
-function ToastStack({ items, onDismiss }: ToastStackProps) {
+function ToastStack({ items, onDismiss, dismissLabel }: ToastStackProps) {
   return (
     <div class="toast-stack" aria-live="polite" aria-atomic="true">
       {items.map((item) => (
@@ -236,7 +250,7 @@ function ToastStack({ items, onDismiss }: ToastStackProps) {
           <button
             type="button"
             class="icon-button"
-            aria-label="Dismiss"
+            aria-label={dismissLabel}
             onClick={() => onDismiss(item.id)}
           >
             {icon("close")}
@@ -253,11 +267,87 @@ interface SheetProps {
   subtitle?: string;
   open: boolean;
   onClose: () => void;
+  closeLabel: string;
   variant?: "default" | "settings";
   children: JSX.Element;
 }
 
-function Sheet({ id, title, subtitle, open, onClose, variant = "default", children }: SheetProps) {
+function Sheet({ id, title, subtitle, open, onClose, closeLabel, variant = "default", children }: SheetProps) {
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
+
+    const initialTarget =
+      dialog.querySelector<HTMLElement>("[data-sheet-initial-focus]") || getFocusableElements(dialog)[0];
+    if (initialTarget) {
+      initialTarget.focus();
+    } else {
+      dialog.focus();
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusables = getFocusableElements(dialog);
+      if (focusables.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+      if (event.shiftKey) {
+        if (!active || active === first || !dialog.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+        return;
+      }
+
+      if (!active || active === last || !dialog.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      const opener = openerRef.current;
+      if (opener && document.contains(opener)) {
+        opener.focus();
+      }
+    };
+  }, [open]);
+
   if (!open) {
     return null;
   }
@@ -266,10 +356,12 @@ function Sheet({ id, title, subtitle, open, onClose, variant = "default", childr
     <div class="sheet-backdrop" onClick={onClose}>
       <section
         id={id}
+        ref={dialogRef}
         class={`sheet sheet-${variant}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${id}-title`}
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         <header class="sheet-header">
@@ -278,7 +370,7 @@ function Sheet({ id, title, subtitle, open, onClose, variant = "default", childr
             <h2 id={`${id}-title`}>{title}</h2>
             {subtitle ? <p class="sheet-subtitle">{subtitle}</p> : null}
           </div>
-          <button type="button" class="icon-button" aria-label="Close" onClick={onClose}>
+          <button type="button" class="icon-button" aria-label={closeLabel} onClick={onClose}>
             {icon("close")}
           </button>
         </header>
@@ -392,12 +484,14 @@ function DevicePicker({
 
 interface LibraryPickerProps {
   enabled: boolean;
+  offline: boolean;
   collections: Record<LibrarySection, CollectionState>;
   artistDrilldown: ArtistDrilldown;
   selectedUri: string;
   currentSection: LibrarySection;
   onSectionChange: (section: LibrarySection) => void;
   onEnsureSection: (section: LibrarySection) => void;
+  onRetrySection: (section: LibrarySection) => void;
   onSelect: (item: LibraryItem) => void;
   onOpenArtist: (artist: LibraryItem) => void;
   onCloseArtist: () => void;
@@ -407,12 +501,14 @@ interface LibraryPickerProps {
 
 function LibraryPicker({
   enabled,
+  offline,
   collections,
   artistDrilldown,
   selectedUri,
   currentSection,
   onSectionChange,
   onEnsureSection,
+  onRetrySection,
   onSelect,
   onOpenArtist,
   onCloseArtist,
@@ -453,6 +549,40 @@ function LibraryPicker({
     return haystack.includes(query.toLowerCase());
   });
 
+  const currentSectionIndex = Math.max(0, LIBRARY_SECTIONS.indexOf(currentSection));
+  const resultRegionId = `library-results-${currentSection}`;
+  const showOfflineState = offline || currentCollection.status === "offline";
+
+  function activateSection(section: LibrarySection) {
+    onSectionChange(section);
+    onEnsureSection(section);
+  }
+
+  function handleTabKeyNavigation(
+    event: JSX.TargetedKeyboardEvent<HTMLButtonElement>,
+    index: number
+  ) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+
+    let nextIndex = index;
+    if (event.key === "ArrowRight") {
+      nextIndex = (index + 1) % LIBRARY_SECTIONS.length;
+    } else if (event.key === "ArrowLeft") {
+      nextIndex = (index - 1 + LIBRARY_SECTIONS.length) % LIBRARY_SECTIONS.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = LIBRARY_SECTIONS.length - 1;
+    }
+
+    const nextSection = LIBRARY_SECTIONS[nextIndex];
+    activateSection(nextSection);
+    document.getElementById(`library-tab-${nextSection}`)?.focus();
+  }
+
   return (
     <div class="field-group">
       <label class="field-label">
@@ -465,14 +595,15 @@ function LibraryPicker({
             return (
               <button
                 key={section}
+                id={`library-tab-${section}`}
                 type="button"
                 role="tab"
                 class={`section-tab ${active ? "is-active" : ""}`}
                 aria-selected={active}
-                onClick={() => {
-                  onSectionChange(section);
-                  onEnsureSection(section);
-                }}
+                aria-controls={resultRegionId}
+                tabIndex={active ? 0 : -1}
+                onClick={() => activateSection(section)}
+                onKeyDown={(event) => handleTabKeyNavigation(event, LIBRARY_SECTIONS.indexOf(section))}
               >
                 {section === "playlists"
                   ? t("playlists", localized(language, "Playlists", "Playlists"))
@@ -505,34 +636,54 @@ function LibraryPicker({
           onInput={(event) => setQuery((event.currentTarget as HTMLInputElement).value)}
         />
 
-        {currentCollection.status === "loading" || currentCollection.status === "pending" ? (
+        {showOfflineState ? (
+          <div class="state-card state-card-muted">
+            <p>{localized(language, "Offline mode. Music list is unavailable.", "Offline-Modus. Musikliste ist nicht verfügbar.")}</p>
+            <button
+              type="button"
+              class="ghost-button"
+              onClick={() => onRetrySection(currentSection)}
+            >
+              {icon("refresh")}
+              <span>{localized(language, "Retry", "Erneut versuchen")}</span>
+            </button>
+          </div>
+        ) : null}
+
+        {!showOfflineState && (currentCollection.status === "loading" || currentCollection.status === "pending") ? (
           <div class="state-card state-card-muted">
             <p>{t("loading_music", localized(language, "Loading music...", "Musik wird geladen..."))}</p>
           </div>
         ) : null}
 
-        {currentCollection.status === "auth_required" ? (
+        {!showOfflineState && currentCollection.status === "auth_required" ? (
           <div class="state-card state-card-danger">
             <p>{t("status_auth_required", localized(language, "Spotify sign-in required", "Spotify-Anmeldung erforderlich"))}</p>
           </div>
         ) : null}
 
-        {currentCollection.status === "error" ? (
+        {!showOfflineState && currentCollection.status === "error" ? (
           <div class="state-card state-card-danger">
             <p>{currentCollection.errorMessage || t("spotify_unavailable", localized(language, "Spotify unavailable", "Spotify nicht verfügbar"))}</p>
           </div>
         ) : null}
 
-        {currentCollection.status === "ready" || currentCollection.status === "empty" ? (
+        {!showOfflineState && (currentCollection.status === "ready" || currentCollection.status === "empty") ? (
           filteredItems.length === 0 ? (
             <div class="state-card state-card-muted">
               <p>{t("playlist_no_results", localized(language, "No music found", "Keine Musik gefunden"))}</p>
             </div>
           ) : (
-            <div class="library-list" role="list">
+            <div
+              id={resultRegionId}
+              class="library-list"
+              role="tabpanel"
+              aria-labelledby={`library-tab-${LIBRARY_SECTIONS[currentSectionIndex]}`}
+            >
               {filteredItems.map((item) => {
                 const selected = selectedUri === item.uri;
                 const isArtistRoot = currentSection === "artists" && !artistDrilldown.artist;
+                const safeImageUrl = normalizeImageUrl(item.image_url);
                 const meta = item.artist
                   ? item.artist
                   : item.track_count
@@ -547,10 +698,10 @@ function LibraryPicker({
                     aria-pressed={selected}
                     onClick={() => (isArtistRoot ? onOpenArtist(item) : onSelect(item))}
                   >
-                    {item.image_url ? (
+                    {safeImageUrl ? (
                       <img
                         class="library-artwork"
-                        src={item.image_url}
+                        src={safeImageUrl}
                         alt=""
                         loading="lazy"
                         referrerPolicy="no-referrer"
@@ -619,25 +770,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     () => createTranslator(bootstrap.language, bootstrap.translations),
     [bootstrap.language, bootstrap.translations]
   );
-  const [dashboard, setDashboard] = useState<DashboardData>(bootstrap.dashboard);
   const [settings, setSettings] = useState<SettingsData>(bootstrap.settings);
   const [surface, setSurface] = useState<SurfaceName>(
     bootstrap.app.initial_surface === "settings" ? "settings" : "none"
   );
   const [clock, setClock] = useState<Date>(() => new Date(bootstrap.app.now_iso));
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [networkStatus, setNetworkStatus] = useState<"online" | "offline">("online");
-  const [playerVolume, setPlayerVolume] = useState<number>(() => currentVolume(bootstrap.dashboard, bootstrap.settings));
-  const [librarySection, setLibrarySection] = useState<LibrarySection>("playlists");
-  const [collections, setCollections] = useState<Record<LibrarySection, CollectionState>>(
-    createCollectionMap()
-  );
-  const [artistDrilldown, setArtistDrilldown] = useState<ArtistDrilldown>({
-    artist: null,
-    status: "idle",
-    tracks: []
-  });
   const [alarmForm, setAlarmForm] = useState<AlarmFormState>(
     createAlarmFormModel(bootstrap.dashboard, bootstrap.settings)
   );
@@ -646,111 +784,62 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   );
   const [playForm, setPlayForm] = useState<PlayFormState>(() => createPlayFormModel(bootstrap.dashboard));
   const [account, setAccount] = useState<AccountLoadState>({ status: "idle" });
-  const [oledTheme, setOledTheme] = useState<boolean>(() => {
-    try {
-      return window.localStorage.getItem("theme") === "oled";
-    } catch {
-      return false;
-    }
+  const { toasts, pushToast, dismissToast } = useToasts({
+    initialNotifications: bootstrap.notifications
   });
-  const toastCounterRef = useRef(0);
-  const volumeTimerRef = useRef<number | null>(null);
-  const connectionWasLostRef = useRef(false);
-
-  useEffect(() => {
-    if (oledTheme) {
-      document.documentElement.dataset.theme = "oled";
-      window.localStorage.setItem("theme", "oled");
-    } else {
-      delete document.documentElement.dataset.theme;
-      window.localStorage.setItem("theme", "default");
-    }
-  }, [oledTheme]);
-
-  useEffect(() => {
-    setPlayerVolume(currentVolume(dashboard, settings));
-  }, [dashboard, settings]);
+  const { networkStatus, setNetworkStatus } = useNetworkStatus("online");
+  const { dashboard, setDashboard, refreshDashboard } = useDashboardPolling({
+    initialDashboard: bootstrap.dashboard,
+    lowPower: bootstrap.low_power,
+    language: bootstrap.language,
+    t,
+    setNetworkStatus,
+    pushToast
+  });
+  const {
+    librarySection,
+    setLibrarySection,
+    collections,
+    artistDrilldown,
+    ensureLibrarySection,
+    openArtistTracks,
+    resetArtistDrilldown
+  } = useLibraryData({
+    enabled: settings.feature_flags.music_library,
+    surface,
+    language: bootstrap.language,
+    t
+  });
+  const { oledTheme, setOledTheme } = useTheme();
+  const {
+    playerVolume,
+    isPlayerReady: playerReady,
+    handleVolumeInput,
+    handlePlaybackCommand
+  } = usePlaybackActions({
+    dashboard,
+    settings,
+    networkStatus,
+    language: bootstrap.language,
+    t,
+    setBusyAction,
+    pushToast,
+    refreshDashboard
+  });
+  const { updateSetting, handleClearCache } = useSettingsMutations({
+    language: bootstrap.language,
+    t,
+    setSettings,
+    setBusyAction,
+    pushToast,
+    refreshDashboard
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       setClock(new Date());
     }, 1000);
     return () => window.clearInterval(timer);
-  }, []);
-
-  function pushToast(type: ToastItem["type"], message: string) {
-    const id = ++toastCounterRef.current;
-    setToasts((items) => [...items, { id, type, message }]);
-    window.setTimeout(() => {
-      setToasts((items) => items.filter((item) => item.id !== id));
-    }, 4200);
-  }
-
-  useEffect(() => {
-    bootstrap.notifications.forEach((notification) => {
-      pushToast(notification.type === "error" ? "error" : "success", notification.message);
-    });
-    // bootstrap is immutable for the page lifetime
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function refreshDashboard(force = false) {
-    try {
-      const suffix = force ? "?refresh=1" : "";
-      const result = await getJson<DashboardData>(`/api/dashboard/status${suffix}`);
-      if (result.body?.success && result.body.data) {
-        setDashboard((current) => mergeDashboard(current, result.body!.data!));
-        setNetworkStatus("online");
-        if (connectionWasLostRef.current) {
-          connectionWasLostRef.current = false;
-          pushToast(
-            "success",
-            t("connection_restored", localized(bootstrap.language, "Connection restored", "Verbindung wiederhergestellt"))
-          );
-        }
-      }
-    } catch (error) {
-      if (error instanceof NetworkRequestError) {
-        setNetworkStatus("offline");
-        if (!connectionWasLostRef.current) {
-          connectionWasLostRef.current = true;
-          pushToast(
-            "error",
-            t("connection_lost", localized(bootstrap.language, "Connection lost", "Verbindung verloren"))
-          );
-        }
-      }
-    }
-  }
-
-  useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState === "visible") {
-        void refreshDashboard();
-      }
-    };
-
-    const interval = window.setInterval(
-      refresh,
-      bootstrap.low_power ? 6000 : 4000
-    );
-    document.addEventListener("visibilitychange", refresh);
-
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [bootstrap.low_power]);
-
-  useEffect(() => {
-    const onOnline = () => setNetworkStatus("online");
-    const onOffline = () => setNetworkStatus("offline");
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
-    return () => {
-      window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onOffline);
-    };
   }, []);
 
   useEffect(() => {
@@ -801,15 +890,29 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   }, [surface, account.status, bootstrap.language, t]);
 
   useEffect(() => {
-    if (!playForm.deviceId && dashboard.devices.length > 0) {
-      const activeDevice = getPreferredDevice(dashboard.devices);
-      if (activeDevice?.id) {
-        setPlayForm((current) => ({
-          ...current,
-          deviceId: activeDevice.id || "",
-          deviceName: activeDevice.name || ""
-        }));
-      }
+    if (dashboard.devices.length === 0) {
+      return;
+    }
+
+    const deviceStillAvailable = playForm.deviceId
+      ? dashboard.devices.some((device) => device.id === playForm.deviceId)
+      : false;
+    if (deviceStillAvailable) {
+      return;
+    }
+
+    const rememberedDeviceId = readLastDeviceId();
+    const rememberedDevice = rememberedDeviceId
+      ? dashboard.devices.find((device) => device.id === rememberedDeviceId)
+      : undefined;
+    const preferredDevice = rememberedDevice || getPreferredDevice(dashboard.devices);
+
+    if (preferredDevice?.id) {
+      setPlayForm((current) => ({
+        ...current,
+        deviceId: preferredDevice.id || "",
+        deviceName: preferredDevice.name || ""
+      }));
     }
   }, [dashboard.devices, playForm.deviceId]);
 
@@ -839,136 +942,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     setSurface("none");
   }
 
-  async function ensureLibrarySection(section: LibrarySection) {
-    if (!settings.feature_flags.music_library) {
-      return;
-    }
-
-    const existing = collections[section];
-    if (existing.status === "loading" || existing.status === "ready") {
-      return;
-    }
-
-    setCollections((current) => ({
-      ...current,
-      [section]: {
-        ...current[section],
-        status: "loading",
-        errorMessage: undefined
-      }
-    }));
-
-    try {
-      const result = await getJson<LibraryPayload>(
-        `/api/music-library/sections?sections=${section}&fields=basic`
-      );
-      if (result.status === 401 || result.body?.error_code === "auth_required") {
-        setCollections((current) => ({
-          ...current,
-          [section]: {
-            ...current[section],
-            status: "auth_required"
-          }
-        }));
-        return;
-      }
-
-      if (result.body?.success && result.body.data) {
-        const items = result.body.data[section] || [];
-        setCollections((current) => ({
-          ...current,
-          [section]: {
-            status: items.length > 0 ? "ready" : "empty",
-            items
-          }
-        }));
-        return;
-      }
-
-      setCollections((current) => ({
-        ...current,
-        [section]: {
-          ...current[section],
-          status: "error",
-          errorMessage:
-            result.body?.message ||
-            t("spotify_unavailable", localized(bootstrap.language, "Spotify unavailable", "Spotify nicht verfügbar"))
-        }
-      }));
-    } catch (error) {
-      setCollections((current) => ({
-        ...current,
-        [section]: {
-          ...current[section],
-          status: "offline",
-          errorMessage:
-            error instanceof Error
-              ? error.message
-              : localized(bootstrap.language, "Network error", "Netzwerkfehler")
-        }
-      }));
-    }
-  }
-
-  useEffect(() => {
-    if (surface === "alarm" || surface === "sleep" || surface === "play") {
-      void ensureLibrarySection(librarySection);
-    }
-  }, [surface, librarySection]);
-
-  async function openArtistTracks(artist: LibraryItem) {
-    const artistId = extractArtistId(artist.uri);
-    if (!artistId) {
-      return;
-    }
-
-    setArtistDrilldown({
-      artist,
-      status: "loading",
-      tracks: []
-    });
-
-    try {
-      const result = await getJson<ArtistTracksPayload>(`/api/artist-top-tracks/${artistId}`);
-      if (result.status === 401 || result.body?.error_code === "auth_required") {
-        setArtistDrilldown({
-          artist,
-          status: "auth_required",
-          tracks: []
-        });
-        return;
-      }
-
-      if (result.body?.success && result.body.data) {
-        setArtistDrilldown({
-          artist,
-          status: result.body.data.tracks.length ? "ready" : "empty",
-          tracks: result.body.data.tracks
-        });
-        return;
-      }
-
-      setArtistDrilldown({
-        artist,
-        status: "error",
-        tracks: [],
-        errorMessage:
-          result.body?.message ||
-          localized(bootstrap.language, "Unable to load tracks", "Tracks konnten nicht geladen werden")
-      });
-    } catch (error) {
-      setArtistDrilldown({
-        artist,
-        status: "offline",
-        tracks: [],
-        errorMessage:
-          error instanceof Error
-            ? error.message
-            : localized(bootstrap.language, "Network error", "Netzwerkfehler")
-      });
-    }
-  }
-
   function handleLibrarySelect(item: LibraryItem) {
     if (surface === "alarm") {
       setAlarmForm((current) => ({ ...current, playlistUri: item.uri }));
@@ -979,32 +952,54 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
   }
 
-  async function handlePlaybackCommand(endpoint: string, actionName: string) {
-    if (!isPlaybackReady(dashboard, networkStatus)) {
+  async function handleAlarmSave() {
+    if (networkStatus === "offline") {
+      pushToast(
+        "error",
+        localized(
+          bootstrap.language,
+          "You are offline. Reconnect before saving the alarm.",
+          "Du bist offline. Bitte vor dem Speichern des Weckers wieder verbinden."
+        )
+      );
       return;
     }
 
-    setBusyAction(actionName);
-    try {
-      const result = await postForm<Record<string, unknown>>(endpoint, new URLSearchParams());
-      if (result.body?.success) {
-        window.setTimeout(() => {
-          void refreshDashboard(true);
-        }, 350);
-      } else if (result.body?.message) {
-        pushToast("error", result.body.message);
-      }
-    } catch (error) {
+    if (!isValidTimeInput(alarmForm.time)) {
       pushToast(
         "error",
-        error instanceof Error ? error.message : localized(bootstrap.language, "Playback failed", "Wiedergabe fehlgeschlagen")
+        localized(
+          bootstrap.language,
+          "Enter a valid alarm time (HH:MM).",
+          "Bitte eine gültige Weckzeit eingeben (HH:MM)."
+        )
       );
-    } finally {
-      setBusyAction(null);
+      return;
     }
-  }
 
-  async function handleAlarmSave() {
+    if (!alarmForm.deviceName.trim()) {
+      pushToast(
+        "error",
+        localized(
+          bootstrap.language,
+          "Choose a speaker for the alarm.",
+          "Bitte einen Lautsprecher für den Wecker auswählen."
+        )
+      );
+      return;
+    }
+
+    if (alarmForm.enabled && hasPassedToday(alarmForm.time)) {
+      pushToast(
+        "info",
+        localized(
+          bootstrap.language,
+          "That time has already passed today. The alarm will ring tomorrow.",
+          "Diese Uhrzeit ist heute bereits vorbei. Der Wecker klingelt morgen."
+        )
+      );
+    }
+
     setBusyAction("alarm");
 
     const payload = new URLSearchParams();
@@ -1049,6 +1044,45 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   }
 
   async function handleSleepStart() {
+    if (networkStatus === "offline") {
+      pushToast(
+        "error",
+        localized(
+          bootstrap.language,
+          "You are offline. Reconnect before starting sleep timer.",
+          "Du bist offline. Bitte vor dem Start des Sleep-Timers wieder verbinden."
+        )
+      );
+      return;
+    }
+
+    if (!sleepForm.deviceName.trim()) {
+      pushToast(
+        "error",
+        localized(
+          bootstrap.language,
+          "Choose a speaker before starting the timer.",
+          "Bitte zuerst einen Lautsprecher auswählen."
+        )
+      );
+      return;
+    }
+
+    if (sleepForm.duration === "custom") {
+      const customDuration = Number(sleepForm.customDuration);
+      if (!Number.isFinite(customDuration) || customDuration < 1 || customDuration > 480) {
+        pushToast(
+          "error",
+          localized(
+            bootstrap.language,
+            "Custom duration must be between 1 and 480 minutes.",
+            "Die benutzerdefinierte Dauer muss zwischen 1 und 480 Minuten liegen."
+          )
+        );
+        return;
+      }
+    }
+
     setBusyAction("sleep");
 
     const payload = new URLSearchParams();
@@ -1119,6 +1153,18 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   }
 
   async function handlePlayNow() {
+    if (networkStatus === "offline") {
+      pushToast(
+        "error",
+        localized(
+          bootstrap.language,
+          "You are offline. Reconnect before starting playback.",
+          "Du bist offline. Bitte vor dem Start der Wiedergabe wieder verbinden."
+        )
+      );
+      return;
+    }
+
     if (!playForm.contextUri || !playForm.deviceId) {
       pushToast(
         "error",
@@ -1138,6 +1184,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         device_id: playForm.deviceId
       });
       if (result.body?.success) {
+        writeLastDeviceId(playForm.deviceId);
         pushToast(
           "success",
           result.body.message ||
@@ -1161,125 +1208,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     } finally {
       setBusyAction(null);
     }
-  }
-
-  async function updateSetting(path: string, value: boolean | number | string) {
-    const [category, key] = path.split(".");
-    const payload = {
-      [category]: {
-        [key]: value
-      }
-    };
-
-    setBusyAction(path);
-    try {
-      const result = await patchJson<Record<string, unknown>>("/api/settings", payload);
-      if (result.body?.success) {
-        setSettings((current) => {
-          if (category === "feature_flags") {
-            return {
-              ...current,
-              feature_flags: {
-                ...current.feature_flags,
-                [key]: Boolean(value)
-              }
-            };
-          }
-
-          return {
-            ...current,
-            app: {
-              ...current.app,
-              [key]: value
-            }
-          };
-        });
-
-        pushToast(
-          "success",
-          result.body.message ||
-            t("settings_saved", localized(bootstrap.language, "Settings saved", "Einstellungen gespeichert"))
-        );
-
-        if (path === "app.language") {
-          window.setTimeout(() => window.location.reload(), 350);
-        }
-        return;
-      }
-
-      pushToast(
-        "error",
-        result.body?.message ||
-          t("settings_save_error", localized(bootstrap.language, "Save failed", "Speichern fehlgeschlagen"))
-      );
-    } catch (error) {
-      pushToast(
-        "error",
-        error instanceof Error ? error.message : localized(bootstrap.language, "Save failed", "Speichern fehlgeschlagen")
-      );
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  async function handleClearCache() {
-    setBusyAction("clear-cache");
-    try {
-      const result = await postForm<Record<string, unknown>>(
-        "/api/settings/cache/clear",
-        new URLSearchParams()
-      );
-      if (result.body?.success) {
-        pushToast(
-          "success",
-          result.body.message ||
-            localized(bootstrap.language, "Cache cleared", "Cache geleert")
-        );
-        await refreshDashboard(true);
-      } else {
-        pushToast(
-          "error",
-          result.body?.message ||
-            localized(bootstrap.language, "Unable to clear cache", "Cache konnte nicht geleert werden")
-        );
-      }
-    } catch (error) {
-      pushToast(
-        "error",
-        error instanceof Error ? error.message : localized(bootstrap.language, "Unable to clear cache", "Cache konnte nicht geleert werden")
-      );
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  function handleVolumeInput(value: number) {
-    const nextValue = clamp(value, 0, 100);
-    setPlayerVolume(nextValue);
-
-    if (volumeTimerRef.current) {
-      window.clearTimeout(volumeTimerRef.current);
-    }
-
-    volumeTimerRef.current = window.setTimeout(async () => {
-      const payload = new URLSearchParams();
-      payload.set("volume", String(nextValue));
-      if (dashboard.playback.device?.id) {
-        payload.set("device_id", dashboard.playback.device.id);
-      }
-
-      try {
-        const result = await postForm<Record<string, unknown>>("/volume", payload);
-        if (!result.body?.success && result.body?.message) {
-          pushToast("error", result.body.message);
-        }
-      } catch (error) {
-        pushToast(
-          "error",
-          error instanceof Error ? error.message : localized(bootstrap.language, "Volume update failed", "Lautstärke konnte nicht gesetzt werden")
-        );
-      }
-    }, 160);
   }
 
   const statusSnapshot = useMemo(() => {
@@ -1323,7 +1251,10 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
   const clockLabel = formatDateTime(clock, bootstrap.language);
   const currentTrack = dashboard.playback.current_track;
-  const playerReady = isPlaybackReady(dashboard, networkStatus);
+  const safeCurrentTrackImage = normalizeImageUrl(currentTrack?.album_image);
+  const safeAccountAvatar = normalizeImageUrl(account.profile?.avatar_url);
+  const dismissToastLabel = localized(bootstrap.language, "Dismiss notification", "Hinweis schließen");
+  const closeSheetLabel = localized(bootstrap.language, "Close panel", "Panel schließen");
   const playerTitle = currentTrack?.name
     ? currentTrack.name
     : networkStatus === "offline"
@@ -1382,13 +1313,37 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         `${primaryFlows.availableDevices} Lautsprecher bereit`
       )
     : localized(bootstrap.language, "Speaker list will hydrate here", "Lautsprecherliste lädt hier");
+  const playFlowHint = networkStatus === "offline"
+    ? localized(
+        bootstrap.language,
+        "Reconnect to start playback.",
+        "Für die Wiedergabe bitte wieder verbinden."
+      )
+    : !playForm.deviceId
+      ? localized(
+          bootstrap.language,
+          "Choose a speaker first.",
+          "Bitte zuerst einen Lautsprecher auswählen."
+        )
+      : !playForm.contextUri
+        ? localized(
+            bootstrap.language,
+            "Choose music to enable playback.",
+            "Bitte Musik auswählen, um die Wiedergabe zu starten."
+          )
+        : localized(
+            bootstrap.language,
+            "Ready. Start playback now.",
+            "Bereit. Wiedergabe jetzt starten."
+          );
 
   return (
     <Fragment>
       <div class="app-shell">
         <ToastStack
           items={toasts}
-          onDismiss={(id) => setToasts((items) => items.filter((item) => item.id !== id))}
+          dismissLabel={dismissToastLabel}
+          onDismiss={dismissToast}
         />
 
         <header class="app-header">
@@ -1433,11 +1388,37 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           </section>
         ) : null}
 
+        {dashboard.sleep.active ? (
+          <section class="banner banner-success" data-testid="sleep-active-banner">
+            <strong>{localized(bootstrap.language, "Sleep timer running", "Sleep-Timer läuft")}</strong>
+            <span>{formatCountdown(dashboard.sleep.remaining_seconds, bootstrap.language)}</span>
+            <div class="banner-actions">
+              <button
+                type="button"
+                class="ghost-button"
+                onClick={() => openSurface("sleep")}
+              >
+                {localized(bootstrap.language, "Manage", "Verwalten")}
+              </button>
+              <button
+                type="button"
+                class="ghost-button"
+                disabled={busyAction === "sleep-stop"}
+                onClick={() => void handleSleepStop()}
+              >
+                {busyAction === "sleep-stop"
+                  ? localized(bootstrap.language, "Stopping...", "Stoppt...")
+                  : localized(bootstrap.language, "Stop", "Stoppen")}
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         <main class="dashboard-grid">
           <section class="player-card" data-testid="player-card">
             <div class="player-artwork">
-              {currentTrack?.album_image ? (
-                <img src={currentTrack.album_image} alt="" loading="lazy" referrerPolicy="no-referrer" />
+              {safeCurrentTrackImage ? (
+                <img src={safeCurrentTrackImage} alt="" loading="lazy" referrerPolicy="no-referrer" />
               ) : (
                 <span class="artwork-fallback">{icon("library", "icon icon-xl")}</span>
               )}
@@ -1625,6 +1606,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         id="alarm-sheet"
         open={surface === "alarm"}
         onClose={closeSurface}
+        closeLabel={closeSheetLabel}
         title={localized(bootstrap.language, "Alarm flow", "Wecker-Flow")}
         subtitle={localized(
           bootstrap.language,
@@ -1639,6 +1621,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             </label>
             <input
               id="alarm-time-input"
+              data-sheet-initial-focus="true"
               class="field-input field-input-large"
               type="time"
               value={alarmForm.time}
@@ -1689,18 +1672,20 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
           <LibraryPicker
             enabled={settings.feature_flags.music_library}
+            offline={networkStatus === "offline"}
             collections={collections}
             artistDrilldown={artistDrilldown}
             selectedUri={alarmForm.playlistUri}
             currentSection={librarySection}
             onSectionChange={(section) => {
               setLibrarySection(section);
-              setArtistDrilldown({ artist: null, status: "idle", tracks: [] });
+              resetArtistDrilldown();
             }}
             onEnsureSection={(section) => void ensureLibrarySection(section)}
+            onRetrySection={(section) => void ensureLibrarySection(section)}
             onSelect={handleLibrarySelect}
             onOpenArtist={(artist) => void openArtistTracks(artist)}
-            onCloseArtist={() => setArtistDrilldown({ artist: null, status: "idle", tracks: [] })}
+            onCloseArtist={resetArtistDrilldown}
             t={t}
             language={bootstrap.language}
           />
@@ -1720,6 +1705,22 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             checked={alarmForm.shuffle}
             onChange={(checked) => setAlarmForm((current) => ({ ...current, shuffle: checked }))}
           />
+
+          <div class={`state-card ${alarmForm.enabled ? "state-card-active" : "state-card-muted"}`}>
+            <p>
+              {alarmForm.enabled
+                ? localized(
+                    bootstrap.language,
+                    `Alarm active for ${formatTimeLabel(alarmForm.time, bootstrap.language)}.`,
+                    `Wecker aktiv für ${formatTimeLabel(alarmForm.time, bootstrap.language)}.`
+                  )
+                : localized(
+                    bootstrap.language,
+                    "Alarm is currently disabled.",
+                    "Der Wecker ist aktuell deaktiviert."
+                  )}
+            </p>
+          </div>
 
           <div class="sheet-actions">
             <button type="button" class="secondary-button" onClick={closeSurface}>
@@ -1743,6 +1744,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         id="sleep-sheet"
         open={surface === "sleep"}
         onClose={closeSurface}
+        closeLabel={closeSheetLabel}
         title={localized(bootstrap.language, "Sleep flow", "Sleep-Flow")}
         subtitle={localized(
           bootstrap.language,
@@ -1760,6 +1762,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               </div>
               <button
                 type="button"
+                data-sheet-initial-focus="true"
                 class="primary-button button-danger"
                 disabled={busyAction === "sleep-stop"}
                 onClick={() => void handleSleepStop()}
@@ -1782,6 +1785,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                       <button
                         key={option}
                         type="button"
+                        data-sheet-initial-focus={option === DURATION_OPTIONS[0] ? "true" : undefined}
                         class={`choice-chip ${active ? "is-active" : ""}`}
                         onClick={() =>
                           setSleepForm((current) => ({
@@ -1864,18 +1868,20 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
               <LibraryPicker
                 enabled={settings.feature_flags.music_library}
+                offline={networkStatus === "offline"}
                 collections={collections}
                 artistDrilldown={artistDrilldown}
                 selectedUri={sleepForm.playlistUri}
                 currentSection={librarySection}
                 onSectionChange={(section) => {
                   setLibrarySection(section);
-                  setArtistDrilldown({ artist: null, status: "idle", tracks: [] });
+                  resetArtistDrilldown();
                 }}
                 onEnsureSection={(section) => void ensureLibrarySection(section)}
+                onRetrySection={(section) => void ensureLibrarySection(section)}
                 onSelect={handleLibrarySelect}
                 onOpenArtist={(artist) => void openArtistTracks(artist)}
-                onCloseArtist={() => setArtistDrilldown({ artist: null, status: "idle", tracks: [] })}
+                onCloseArtist={resetArtistDrilldown}
                 t={t}
                 language={bootstrap.language}
               />
@@ -1910,6 +1916,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         id="play-sheet"
         open={surface === "play"}
         onClose={closeSurface}
+        closeLabel={closeSheetLabel}
         title={localized(bootstrap.language, "Play now", "Jetzt abspielen")}
         subtitle={localized(
           bootstrap.language,
@@ -1925,11 +1932,15 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             status={devicesStatus}
             offline={networkStatus === "offline"}
             onSelect={(device) =>
-              setPlayForm((current) => ({
-                ...current,
-                deviceId: device.id || "",
-                deviceName: device.name
-              }))
+              setPlayForm((current) => {
+                const nextDeviceId = device.id || "";
+                writeLastDeviceId(nextDeviceId);
+                return {
+                  ...current,
+                  deviceId: nextDeviceId,
+                  deviceName: device.name
+                };
+              })
             }
             onRefresh={() => void refreshDashboard(true)}
             t={t}
@@ -1938,21 +1949,27 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
           <LibraryPicker
             enabled={settings.feature_flags.music_library}
+            offline={networkStatus === "offline"}
             collections={collections}
             artistDrilldown={artistDrilldown}
             selectedUri={playForm.contextUri}
             currentSection={librarySection}
-            onSectionChange={(section) => {
-              setLibrarySection(section);
-              setArtistDrilldown({ artist: null, status: "idle", tracks: [] });
-            }}
-            onEnsureSection={(section) => void ensureLibrarySection(section)}
-            onSelect={handleLibrarySelect}
-            onOpenArtist={(artist) => void openArtistTracks(artist)}
-            onCloseArtist={() => setArtistDrilldown({ artist: null, status: "idle", tracks: [] })}
+              onSectionChange={(section) => {
+                setLibrarySection(section);
+                resetArtistDrilldown();
+              }}
+              onEnsureSection={(section) => void ensureLibrarySection(section)}
+              onRetrySection={(section) => void ensureLibrarySection(section)}
+              onSelect={handleLibrarySelect}
+              onOpenArtist={(artist) => void openArtistTracks(artist)}
+            onCloseArtist={resetArtistDrilldown}
             t={t}
             language={bootstrap.language}
           />
+
+          <div class={`state-card ${playForm.contextUri && playForm.deviceId && networkStatus !== "offline" ? "state-card-active" : "state-card-muted"}`}>
+            <p>{playFlowHint}</p>
+          </div>
 
           <div class="sheet-actions">
             <button type="button" class="secondary-button" onClick={closeSurface}>
@@ -1961,7 +1978,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             <button
               type="button"
               class="primary-button"
-              disabled={busyAction === "play" || !playForm.contextUri || !playForm.deviceId}
+              disabled={busyAction === "play" || networkStatus === "offline" || !playForm.contextUri || !playForm.deviceId}
               onClick={() => void handlePlayNow()}
             >
               {busyAction === "play"
@@ -1976,6 +1993,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         id="settings-sheet"
         open={surface === "settings"}
         onClose={closeSurface}
+        closeLabel={closeSheetLabel}
         variant="settings"
         title={localized(bootstrap.language, "Settings", "Einstellungen")}
         subtitle={localized(
@@ -2005,8 +2023,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             {account.status === "ready" && account.profile ? (
               <div class="account-card">
                 <div class="account-avatar">
-                  {account.profile.avatar_url ? (
-                    <img src={account.profile.avatar_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                  {safeAccountAvatar ? (
+                    <img src={safeAccountAvatar} alt="" loading="lazy" referrerPolicy="no-referrer" />
                   ) : (
                     icon("spotify", "icon icon-xl")
                   )}

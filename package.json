@@ -7,7 +7,8 @@
     "build:dev": "node scripts/build_frontend.mjs --dev",
     "watch": "node scripts/build_frontend.mjs --watch --dev",
     "typecheck": "tsc --noEmit",
-    "test:frontend": "npm run typecheck && npm run build",
+    "budget:check": "node scripts/check_frontend_budget.mjs",
+    "test:frontend": "npm run typecheck && npm run build && npm run budget:check",
     "test:e2e": "playwright test",
     "screenshot:readme": "bash scripts/update_readme_screenshot.sh"
   },

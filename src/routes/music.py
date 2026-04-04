@@ -6,9 +6,9 @@ Handles music library browsing and API endpoints.
 import logging
 from typing import Any, Dict, List, Optional
 
-from flask import Blueprint, Response, render_template, request
+from flask import Blueprint, Response, redirect, request, url_for
 
-from ..api.spotify import (get_access_token, get_devices, get_followed_artists,
+from ..api.spotify import (get_access_token, get_followed_artists,
                            get_playlists, get_saved_albums,
                            get_user_saved_tracks, get_user_library)
 from ..utils.cache_migration import get_cache_migration_layer
@@ -123,13 +123,8 @@ def _build_library_response(
 @api_error_handler
 @rate_limit("spotify_api")
 def music_library():
-    """Standalone music library browser."""
-    token = get_access_token()
-    devices = get_devices(token) if token else []
-    
-    return render_template('music_library.html', 
-                         devices=devices,
-                         has_token=bool(token))
+    """Deprecated standalone library route; redirect to unified app shell."""
+    return redirect(url_for("main.index"), code=302)
 
 
 @music_bp.route("/api/music-library")

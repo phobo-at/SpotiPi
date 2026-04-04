@@ -60,6 +60,7 @@ Common frontend commands:
 npm run build
 npm run watch
 npm run typecheck
+npm run budget:check
 ```
 
 If you change frontend code, rebuild before running the app or deploying to the Pi.
@@ -182,8 +183,11 @@ Full environment variable reference: [`docs/ENVIRONMENT_VARIABLES.md`](docs/ENVI
 pytest
 npm run typecheck
 npm run build
+npm run budget:check
 npm run test:e2e
 ```
+
+Performance budget details: [`docs/FRONTEND_PERFORMANCE_BUDGET.md`](docs/FRONTEND_PERFORMANCE_BUDGET.md)
 
 Current baseline as of 2026-03-18:
 
