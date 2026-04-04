@@ -1217,7 +1217,10 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         tone: "warning" as const
       };
     }
-    if (dashboard.hydration.playback.pending || dashboard.playback_status === "pending") {
+    if (
+      (dashboard.hydration.playback.pending || dashboard.playback_status === "pending") &&
+      !dashboard.playback.current_track
+    ) {
       return {
         label: t("status_pending", localized(bootstrap.language, "Waiting for Spotify", "Warte auf Spotify")),
         tone: "muted" as const
@@ -1427,10 +1430,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             <div class="player-copy">
               <div class="player-heading">
                 <StatusPill tone={statusSnapshot.tone} label={statusSnapshot.label} />
-                <button type="button" class="ghost-button" onClick={() => void refreshDashboard(true)}>
-                  {icon("refresh")}
-                  <span>{localized(bootstrap.language, "Sync now", "Jetzt synchronisieren")}</span>
-                </button>
               </div>
 
               <h2 class={playerHasPlaceholderCopy ? "player-title-placeholder" : undefined}>{playerTitle}</h2>
@@ -1486,13 +1485,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           <section class="snapshot-card">
             <div class="snapshot-header">
               <h2>{localized(bootstrap.language, "Today at a glance", "Heute auf einen Blick")}</h2>
-              <p>
-                {localized(
-                  bootstrap.language,
-                  "Three primary actions, one persistent player, no dead ends.",
-                  "Drei Primäraktionen, ein permanenter Player, keine Sackgassen."
-                )}
-              </p>
             </div>
 
             <div class="snapshot-grid">
@@ -1519,32 +1511,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               </div>
             </div>
 
-            <div class="insight-card">
-              <span class="insight-badge">
-                {icon("lightning")}
-                {localized(bootstrap.language, "Dashboard-first", "Dashboard-first")}
-              </span>
-              <p>
-                {localized(
-                  bootstrap.language,
-                  "Alarm, sleep and playback live on one surface so the core flows stay within three taps.",
-                  "Wecker, Sleep und Wiedergabe liegen auf einer Oberfläche, damit die Kernflows innerhalb von drei Taps bleiben."
-                )}
-              </p>
-            </div>
           </section>
         </main>
 
         <section class="actions-section">
           <div class="section-heading">
             <h2>{localized(bootstrap.language, "Primary actions", "Primäraktionen")}</h2>
-            <p>
-              {localized(
-                bootstrap.language,
-                "This replaces the old equal-weight tab model with one touch-first dashboard.",
-                "Das ersetzt die alte Tab-Struktur durch ein touch-first Dashboard."
-              )}
-            </p>
           </div>
 
           <div class="action-grid">
@@ -1598,7 +1570,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
         <footer class="app-footer">
           <span>{bootstrap.app.info}</span>
-          <span>{localized(bootstrap.language, "Touch-first rebuild path enabled", "Touch-first Neuaufbau aktiv")}</span>
         </footer>
       </div>
 

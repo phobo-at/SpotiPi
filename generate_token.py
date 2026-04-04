@@ -134,7 +134,8 @@ def get_spotify_token() -> int:
     sp_oauth = build_oauth_client(client_id, client_secret, env_path)
 
     print("🌐 Öffne Browser für Spotify Autorisierung...")
-    token_info = sp_oauth.get_access_token()
+    sp_oauth.get_access_token(as_dict=False)
+    token_info = sp_oauth.get_cached_token()
     if not token_info:
         print("❌ Token-Generierung fehlgeschlagen")
         return 1

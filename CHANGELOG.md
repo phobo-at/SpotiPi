@@ -5,6 +5,21 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-04-04
+
+### ✨ New Features
+- Modernized frontend shell with Preact/TypeScript SPA rebuild
+- `DEFAULT_VOLUME` constant in `config_schema.py` as single source of truth for default playback volume
+
+### 🎨 UI/UX
+- Removed "Jetzt synchronisieren" button — auto-polling (4s) makes manual sync redundant
+- Fixed "Warte auf Spotify" status showing even when track data is already available from previous poll
+- Removed development notes from production UI (insight cards, section subtitles, footer badge)
+- Default volume lowered from 50% to 20%
+
+### 🧪 Tests
+- `pytest -q` → `133 passed, 2 skipped`
+
 ## [1.5.2] - 2026-03-17
 
 ### 🐛 Bug Fixes

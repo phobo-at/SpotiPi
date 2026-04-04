@@ -39,7 +39,7 @@ function clamp(value: number, min: number, max: number): number {
 
 function currentVolume(dashboard: DashboardData, settings: SettingsData): number {
   return clamp(
-    Number(dashboard.playback.device?.volume_percent ?? settings.app.default_volume ?? 50),
+    Number(dashboard.playback.device?.volume_percent ?? settings.app.default_volume ?? 20),
     0,
     100
   );

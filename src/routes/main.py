@@ -13,6 +13,7 @@ from flask import Blueprint, render_template, request, session
 
 from ..api.spotify import get_access_token
 from ..config import load_config
+from ..config_schema import DEFAULT_VOLUME
 from ..core.scheduler import AlarmTimeValidator
 from ..services.service_manager import get_service
 from ..utils.cache_migration import get_cache_migration_layer
@@ -64,7 +65,7 @@ def _build_settings_payload(config: dict) -> dict:
         },
         "app": {
             "language": config.get("language", "de"),
-            "default_volume": config.get("alarm_volume", 50),
+            "default_volume": config.get("alarm_volume", DEFAULT_VOLUME),
             "debug": config.get("debug", False),
         },
         "environment": config.get("_runtime", {}).get("environment", "unknown"),
@@ -116,7 +117,7 @@ def _build_dashboard_payload(
     alarm_payload = {
         "enabled": config.get("enabled", False),
         "time": config.get("time", "07:00"),
-        "alarm_volume": config.get("alarm_volume", 50),
+        "alarm_volume": config.get("alarm_volume", DEFAULT_VOLUME),
         "next_alarm": next_alarm_time,
         "playlist_uri": config.get("playlist_uri", ""),
         "device_name": config.get("device_name", ""),
@@ -290,7 +291,7 @@ def api_get_settings():
         },
         "app": {
             "language": config.get("language", "de"),
-            "default_volume": config.get("alarm_volume", 50),
+            "default_volume": config.get("alarm_volume", DEFAULT_VOLUME),
             "debug": config.get("debug", False),
         },
         "environment": config.get("_runtime", {}).get("environment", "unknown"),

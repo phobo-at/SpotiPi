@@ -210,7 +210,7 @@ class TestPydanticValidation:
         # Pydantic provides defaults, so this shouldn't raise
         validated, _ = validate_config_dict(config)
         assert validated.time == "07:00"  # Default from Field
-        assert validated.alarm_volume == 50  # Default from Field
+        assert validated.alarm_volume == 20  # Default from Field
     
     def test_legacy_migration_old_format(self):
         """Test migration from old config format"""

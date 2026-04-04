@@ -13,18 +13,22 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
+DEFAULT_VOLUME = 20
+"""Single source of truth for the default playback volume (0-100)."""
+
+
 class AlarmConfig(BaseModel):
     """Alarm-specific configuration settings."""
-    
+
     enabled: bool = Field(default=False, description="Whether the alarm is enabled")
     time: str = Field(default="07:00", pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", description="Alarm time in HH:MM format")
     playlist_uri: str = Field(default="", description="Spotify URI for alarm playlist/album/track")
     device_name: str = Field(default="", description="Target Spotify device name")
-    alarm_volume: int = Field(default=50, ge=0, le=100, description="Playback volume (0-100)")
+    alarm_volume: int = Field(default=DEFAULT_VOLUME, ge=0, le=100, description="Playback volume (0-100)")
     fade_in: bool = Field(default=False, description="Enable gradual volume fade-in")
     shuffle: bool = Field(default=False, description="Enable shuffle playback")
     weekdays: Optional[list[int]] = Field(default=None, description="Days of week (0=Monday, 6=Sunday). None = daily")
-    
+
     @field_validator('weekdays')
     @classmethod
     def validate_weekdays(cls, v: Optional[list[int]]) -> Optional[list[int]]:
@@ -84,19 +88,19 @@ class SpotiPiConfig(BaseModel):
         >>> config_dict = json.load(open("config/production.json"))
         >>> validated_config = SpotiPiConfig(**config_dict)
         >>> print(validated_config.alarm_volume)  # Type-safe access
-        50
+        20
     """
-    
+
     # Alarm settings
     enabled: bool = Field(default=False, description="Whether the alarm is enabled")
     time: str = Field(default="07:00", pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", description="Alarm time in HH:MM format")
     playlist_uri: str = Field(default="", description="Spotify URI for alarm playlist/album/track")
     device_name: str = Field(default="", description="Target Spotify device name")
-    alarm_volume: int = Field(default=50, ge=0, le=100, description="Playback volume (0-100)")
+    alarm_volume: int = Field(default=DEFAULT_VOLUME, ge=0, le=100, description="Playback volume (0-100)")
     fade_in: bool = Field(default=False, description="Enable gradual volume fade-in")
     shuffle: bool = Field(default=False, description="Enable shuffle playback")
     weekdays: Optional[list[int]] = Field(default=None, description="Days of week (0=Monday, 6=Sunday). None = daily")
-    
+
     # Sleep timer settings
     sleep_volume: int = Field(default=30, ge=0, le=100, description="Sleep timer volume (0-100)")
     sleep_default_duration: int = Field(default=30, ge=1, le=240, description="Default duration in minutes")
