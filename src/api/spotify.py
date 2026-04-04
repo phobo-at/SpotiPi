@@ -38,6 +38,7 @@ from ..utils.token_cache import (force_token_refresh, get_cached_token,
                                  initialize_token_cache,
                                  invalidate_token_cache, seed_token_cache,
                                  token_needs_refresh)
+from ..utils.spotify_secrets import get_spotify_credentials
 from .http import DEFAULT_TIMEOUT, SESSION
 
 # Use the new central#  Exportable functions - Updated for new config system
@@ -50,7 +51,8 @@ __all__ = [
     "get_recently_played_tracks", "get_user_top_items", "get_artist_albums", "search_items",
     "get_playback_queue", "SpotifyScopeError",
     "set_volume", "get_playback_status", "get_user_library", "get_combined_playback",
-    "load_music_library_parallel", "spotify_network_health", "get_user_profile"
+    "load_music_library_parallel", "spotify_network_health", "get_user_profile",
+    "get_runtime_credentials", "reset_spotify_auth_state"
 ]
 
 
@@ -78,13 +80,37 @@ ENV_PATH = _get_env_path()
 load_dotenv()
 if os.path.exists(ENV_PATH):
     load_dotenv(dotenv_path=ENV_PATH, override=True)
-CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
-CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
-REFRESH_TOKEN = os.getenv("SPOTIFY_REFRESH_TOKEN")
-USERNAME = os.getenv("SPOTIFY_USERNAME")
 _LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
 
 TOKEN_STATE_PATH = Path(_get_app_config_dir()) / "spotify_token.json"
+
+# Backward-compatible overrides used by legacy tests and tooling.
+# Keep default ``None`` so runtime credentials are always read dynamically.
+CLIENT_ID: Optional[str] = None
+CLIENT_SECRET: Optional[str] = None
+REFRESH_TOKEN: Optional[str] = None
+USERNAME: Optional[str] = None
+
+
+def get_runtime_credentials(use_cache: bool = True) -> Dict[str, str]:
+    """Return current Spotify credentials from the runtime secret store."""
+    return get_spotify_credentials(use_cache=use_cache)
+
+
+def _resolve_runtime_credentials(use_cache: bool = True) -> Dict[str, str]:
+    """Return runtime credentials with optional compatibility overrides applied."""
+    credentials = get_runtime_credentials(use_cache=use_cache)
+
+    if CLIENT_ID is not None:
+        credentials["client_id"] = str(CLIENT_ID).strip()
+    if CLIENT_SECRET is not None:
+        credentials["client_secret"] = str(CLIENT_SECRET).strip()
+    if REFRESH_TOKEN is not None:
+        credentials["refresh_token"] = str(REFRESH_TOKEN).strip()
+    if USERNAME is not None:
+        credentials["username"] = str(USERNAME).strip()
+
+    return credentials
 
 
 def _enforce_token_permissions() -> None:
@@ -317,6 +343,19 @@ def _load_persisted_token() -> Optional[TokenResponse]:
         logging.getLogger('spotify').debug("Could not load persisted token: %s", exc)
         return None
 
+
+def reset_spotify_auth_state(clear_persisted_token: bool = True) -> None:
+    """Invalidate in-memory token cache and optionally remove persisted token state."""
+    invalidate_token_cache()
+    if not clear_persisted_token:
+        return
+
+    try:
+        if TOKEN_STATE_PATH.exists():
+            TOKEN_STATE_PATH.unlink()
+    except OSError:
+        logging.getLogger('spotify').debug("token.state.remove_failed")
+
 # 🔑 Token functions
 _TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token"
 
@@ -329,7 +368,12 @@ def _refresh_access_token_impl(with_retries: bool = True) -> Optional[TokenRespo
         logger.debug("token.refresh.skip_offline")
         return None
 
-    if not all([CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN]):
+    credentials = _resolve_runtime_credentials(use_cache=True)
+    client_id = credentials.get("client_id", "")
+    client_secret = credentials.get("client_secret", "")
+    refresh_token = credentials.get("refresh_token", "")
+
+    if not all([client_id, client_secret, refresh_token]):
         raise RuntimeError("Spotify credentials missing for token refresh")
 
     attempts = 0
@@ -343,8 +387,8 @@ def _refresh_access_token_impl(with_retries: bool = True) -> Optional[TokenRespo
             with _REQUEST_SEMAPHORE:
                 response = SESSION.post(
                     _TOKEN_ENDPOINT,
-                    data={"grant_type": "refresh_token", "refresh_token": REFRESH_TOKEN},
-                    auth=(CLIENT_ID, CLIENT_SECRET),
+                    data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+                    auth=(client_id, client_secret),
                     timeout=SPOTIFY_API_TIMEOUT,
                 )
 
@@ -374,8 +418,8 @@ def _refresh_access_token_impl(with_retries: bool = True) -> Optional[TokenRespo
             persist_payload = dict(payload)
             persist_payload["received_at"] = token_response.received_at
             persist_payload["expires_at"] = token_response.received_at + expires_in
-            if REFRESH_TOKEN and "refresh_token" not in persist_payload:
-                persist_payload["refresh_token"] = REFRESH_TOKEN
+            if refresh_token and "refresh_token" not in persist_payload:
+                persist_payload["refresh_token"] = refresh_token
 
             _save_token_atomically(persist_payload)
 
@@ -780,6 +824,7 @@ def get_playlists(token: str) -> List[Dict[str, Any]]:
     """
     logger = logging.getLogger('app')  # Use same logger as app.py
     playlists = []
+    spotify_username = str(_resolve_runtime_credentials(use_cache=True).get("username", "") or "")
     url = (
         "https://api.spotify.com/v1/me/playlists?limit=50&fields="
         "items(name,uri,images,owner(display_name),tracks(total)),next"
@@ -818,7 +863,7 @@ def get_playlists(token: str) -> List[Dict[str, Any]]:
                         
                     # Determine creator display name
                     owner_display_name = item.get("owner", {}).get("display_name", "Spotify")
-                    if owner_display_name == USERNAME:
+                    if spotify_username and owner_display_name == spotify_username:
                         creator = "Eigene Playlist"
                     elif owner_display_name == "Spotify":
                         creator = "Spotify"

@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 import { getJson } from "../lib/api";
 import type {
@@ -34,7 +34,7 @@ interface UseLibraryDataResult {
   setArtistDrilldown: (value: ArtistDrilldown) => void;
   ensureLibrarySection: (section: LibrarySection) => Promise<void>;
   openArtistAlbums: (artist: LibraryItem) => Promise<void>;
-  searchCatalog: (query: string) => Promise<void>;
+  searchCatalog: (query: string, force?: boolean) => Promise<void>;
   resetArtistDrilldown: () => void;
 }
 
@@ -77,6 +77,9 @@ export function useLibraryData({
     status: "idle",
     items: []
   });
+  const searchRequestSeqRef = useRef(0);
+  const activeSearchQueryRef = useRef<string | null>(null);
+  const lastResolvedSearchQueryRef = useRef<string | null>(null);
 
   const ensureLibrarySection = useCallback(async (section: LibrarySection) => {
     if (!enabled) {
@@ -218,13 +221,16 @@ export function useLibraryData({
     }
   }, [language]);
 
-  const searchCatalog = useCallback(async (query: string) => {
+  const searchCatalog = useCallback(async (query: string, force = false) => {
     const trimmed = query.trim();
     if (!enabled) {
       return;
     }
 
     if (trimmed.length < 3) {
+      searchRequestSeqRef.current += 1;
+      activeSearchQueryRef.current = null;
+      lastResolvedSearchQueryRef.current = null;
       setCollections((current) => ({
         ...current,
         search: {
@@ -234,6 +240,17 @@ export function useLibraryData({
       }));
       return;
     }
+
+    if (!force && (
+      activeSearchQueryRef.current === trimmed ||
+      lastResolvedSearchQueryRef.current === trimmed
+    )) {
+      return;
+    }
+
+    const requestId = searchRequestSeqRef.current + 1;
+    searchRequestSeqRef.current = requestId;
+    activeSearchQueryRef.current = trimmed;
 
     setCollections((current) => ({
       ...current,
@@ -248,7 +265,12 @@ export function useLibraryData({
       const result = await getJson<SearchResultsPayload>(
         `/api/music-search?q=${encodeURIComponent(trimmed)}&types=track,album,artist,playlist&limit=5`
       );
+      if (requestId !== searchRequestSeqRef.current) {
+        return;
+      }
       if (result.status === 401 || result.body?.error_code === "auth_required") {
+        activeSearchQueryRef.current = null;
+        lastResolvedSearchQueryRef.current = null;
         setCollections((current) => ({
           ...current,
           search: {
@@ -259,6 +281,8 @@ export function useLibraryData({
         return;
       }
       if (result.body?.error_code === "insufficient_scope") {
+        activeSearchQueryRef.current = null;
+        lastResolvedSearchQueryRef.current = null;
         setCollections((current) => ({
           ...current,
           search: {
@@ -282,6 +306,8 @@ export function useLibraryData({
           ...(groups.artists || []),
           ...(groups.playlists || [])
         ];
+        activeSearchQueryRef.current = null;
+        lastResolvedSearchQueryRef.current = trimmed;
         setCollections((current) => ({
           ...current,
           search: {
@@ -292,6 +318,8 @@ export function useLibraryData({
         return;
       }
 
+      activeSearchQueryRef.current = null;
+      lastResolvedSearchQueryRef.current = null;
       setCollections((current) => ({
         ...current,
         search: {
@@ -303,6 +331,11 @@ export function useLibraryData({
         }
       }));
     } catch (error) {
+      if (requestId !== searchRequestSeqRef.current) {
+        return;
+      }
+      activeSearchQueryRef.current = null;
+      lastResolvedSearchQueryRef.current = null;
       setCollections((current) => ({
         ...current,
         search: {

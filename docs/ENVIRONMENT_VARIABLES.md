@@ -102,6 +102,26 @@ SPOTIPI_APP_NAME=spotipi  # Changes ~/.spotipi and log names
   - Run multiple instances side-by-side
   - Isolate config/credentials per deployment
 
+#### **SPOTIPI_SPOTIFY_REDIRECT_URI** - OAuth Callback Override
+```bash
+SPOTIPI_SPOTIFY_REDIRECT_URI=https://spotipi.local/api/settings/spotify/oauth/callback
+```
+- **Function:** Overrides the callback URL used by the Settings UI Spotify OAuth flow.
+- **Default:** Auto-generated from the incoming request host.
+- **Use Cases:**
+  - Reverse proxy deployments with external HTTPS hostnames
+  - Stable callback URL when the local IP can change
+
+#### **SPOTIPI_SPOTIFY_SECRETS_CACHE_TTL** - Credential Cache TTL
+```bash
+SPOTIPI_SPOTIFY_SECRETS_CACHE_TTL=2.0
+```
+- **Function:** Controls in-memory cache lifetime (seconds) for runtime Spotify credentials read from `~/.spotipi/.env`.
+- **Default:** `2.0`
+- **Use Cases:**
+  - Lower values for immediate propagation during setup/debugging
+  - Slightly higher values to reduce file reads on low-power devices
+
 #### **SPOTIPI_CORS_ORIGINS** - CORS Allowlist
 ```bash
 SPOTIPI_CORS_ORIGINS=http://spotipi.local,http://localhost:5001

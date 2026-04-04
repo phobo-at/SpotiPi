@@ -8,18 +8,31 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import secrets
+from urllib.parse import urlencode
 
-from flask import Blueprint, render_template, request, session
+import requests
+from flask import Blueprint, redirect, render_template, request, session, url_for
 
-from ..api.spotify import get_access_token
+from ..api.spotify import (get_access_token, get_user_profile,
+                           reset_spotify_auth_state, spotify_network_health)
+from ..api.http import SESSION
 from ..config import load_config
 from ..config_schema import DEFAULT_VOLUME
 from ..core.scheduler import AlarmTimeValidator
 from ..services.service_manager import get_service
 from ..utils.cache_migration import get_cache_migration_layer
 from ..utils.rate_limiting import rate_limit
+from ..utils.spotify_secrets import (
+    build_masked_credentials_payload,
+    credentials_need_auth,
+    get_spotify_credentials,
+    has_required_oauth_credentials,
+    update_spotify_credentials,
+)
 from ..utils.thread_safety import invalidate_config_cache, update_config_atomic
 from ..utils.translations import get_translations, get_user_language, t_api
+from ..utils.validation import InputValidator
 from ..version import VERSION, get_app_info
 from .helpers import api_error_handler, api_response, normalise_snapshot_meta
 
@@ -36,6 +49,18 @@ DEBUG_HEADER_WHITELIST = (
     "X-Forwarded-Proto",
 )
 _VALID_INITIAL_SURFACES = {"home", "settings"}
+_SPOTIFY_OAUTH_SCOPES = (
+    "user-read-playback-state",
+    "user-modify-playback-state",
+    "user-read-currently-playing",
+    "playlist-read-private",
+    "playlist-read-collaborative",
+    "user-library-read",
+    "user-top-read",
+    "user-read-recently-played",
+)
+_SPOTIFY_OAUTH_STATE_KEY = "spotify_oauth_state"
+_SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 
 _dashboard_snapshot = None
 _playback_snapshot = None
@@ -70,6 +95,111 @@ def _build_settings_payload(config: dict) -> dict:
         },
         "environment": config.get("_runtime", {}).get("environment", "unknown"),
     }
+
+
+def _spotify_callback_uri() -> str:
+    """Build callback URI for Spotify OAuth authorization-code flow."""
+    override = (os.getenv("SPOTIPI_SPOTIFY_REDIRECT_URI") or "").strip()
+    if override:
+        return override
+    return url_for("main.api_settings_spotify_oauth_callback", _external=True)
+
+
+def _build_spotify_connection_payload(credentials: dict[str, str]) -> dict:
+    """Resolve current Spotify connection state for settings UI."""
+    if not has_required_oauth_credentials(credentials):
+        return {
+            "status": "missing_credentials",
+            "message": "Client ID and Client Secret are required.",
+            "profile": None,
+        }
+
+    if credentials_need_auth(credentials):
+        return {
+            "status": "auth_required",
+            "message": "Connect Spotify to generate a refresh token.",
+            "profile": None,
+        }
+
+    token = get_access_token()
+    if not token:
+        return {
+            "status": "auth_required",
+            "message": "Spotify sign-in required. Reconnect to refresh credentials.",
+            "profile": None,
+        }
+
+    profile = get_user_profile(token)
+    if profile:
+        return {
+            "status": "connected",
+            "message": "Spotify account connected.",
+            "profile": profile,
+        }
+
+    health = spotify_network_health()
+    if not health.get("ok"):
+        return {
+            "status": "offline",
+            "message": "Spotify is currently unreachable.",
+            "profile": None,
+        }
+
+    return {
+        "status": "error",
+        "message": "Spotify profile could not be loaded.",
+        "profile": None,
+    }
+
+
+def _build_spotify_settings_payload() -> dict:
+    """Build API payload used by settings UI for Spotify credential management."""
+    credentials = get_spotify_credentials(use_cache=False)
+    return {
+        "credentials": build_masked_credentials_payload(credentials),
+        "connection": _build_spotify_connection_payload(credentials),
+        "oauth": {
+            "start_url": url_for("main.api_settings_spotify_oauth_start"),
+            "callback_url": _spotify_callback_uri(),
+            "scopes": list(_SPOTIFY_OAUTH_SCOPES),
+        },
+    }
+
+
+def _validate_spotify_credential_updates(raw_payload: dict) -> tuple[dict[str, str | None], dict[str, str]]:
+    """Validate credential patch payload and return normalized updates/errors."""
+    updates: dict[str, str | None] = {}
+    errors: dict[str, str] = {}
+
+    validators = {
+        "client_id": InputValidator.validate_spotify_client_id,
+        "client_secret": InputValidator.validate_spotify_client_secret,
+        "refresh_token": InputValidator.validate_spotify_refresh_token,
+        "username": InputValidator.validate_spotify_username,
+    }
+
+    for field, validator in validators.items():
+        if field not in raw_payload:
+            continue
+
+        raw_value = raw_payload.get(field, "")
+        if raw_value is None:
+            candidate = ""
+        elif isinstance(raw_value, str):
+            candidate = raw_value
+        else:
+            errors[field] = f"{field} must be a string"
+            continue
+
+        result = validator(candidate, field_name=field, required=False)
+        if not result.is_valid:
+            errors[field] = result.error
+            continue
+
+        normalized = str(result.value or "").strip()
+        updates[field] = normalized or None
+
+    return updates, errors
 
 
 def _build_sleep_defaults(config: dict) -> dict:
@@ -344,6 +474,152 @@ def api_update_settings():
         return api_response(True, message=t_api("settings_saved", request), data={"updated": updated_fields})
 
     return api_response(False, message=t_api("settings_save_error", request), status=500, error_code="save_error")
+
+
+@main_bp.route("/api/settings/spotify", methods=["GET"])
+@api_error_handler
+@rate_limit("default")
+def api_get_spotify_settings():
+    """Return Spotify credential metadata and connection state for settings UI."""
+    return api_response(True, data=_build_spotify_settings_payload())
+
+
+@main_bp.route("/api/settings/spotify", methods=["PATCH"])
+@api_error_handler
+@rate_limit("default")
+def api_update_spotify_settings():
+    """Update Spotify credentials in runtime secrets storage."""
+    data = request.get_json(silent=True) or {}
+    payload = data.get("credentials", data)
+
+    if not isinstance(payload, dict):
+        return api_response(False, message=t_api("invalid_request", request), status=400, error_code="invalid_request")
+
+    updates, errors = _validate_spotify_credential_updates(payload)
+    if errors:
+        return api_response(
+            False,
+            message=t_api("invalid_request", request),
+            status=400,
+            error_code="validation_error",
+            data={"fields": errors},
+        )
+
+    if not updates:
+        return api_response(False, message=t_api("no_changes", request), status=400, error_code="no_changes")
+
+    updated_fields = sorted(updates.keys())
+    if not update_spotify_credentials(updates):
+        return api_response(False, message=t_api("settings_save_error", request), status=500, error_code="save_error")
+
+    if {"client_id", "client_secret", "refresh_token"} & set(updates):
+        reset_spotify_auth_state(clear_persisted_token=True)
+
+    logger.info("Spotify settings updated: %s", ", ".join(updated_fields))
+    return api_response(
+        True,
+        message=t_api("settings_saved", request),
+        data={"updated": updated_fields, "spotify": _build_spotify_settings_payload()},
+    )
+
+
+@main_bp.route("/api/settings/spotify/oauth/start", methods=["GET"])
+@api_error_handler
+@rate_limit("default")
+def api_settings_spotify_oauth_start():
+    """Start Spotify OAuth authorization-code flow."""
+    credentials = get_spotify_credentials(use_cache=False)
+    if not has_required_oauth_credentials(credentials):
+        session["error_message"] = "Client ID and Client Secret are required before OAuth."
+        return redirect(url_for("main.settings_page"))
+
+    state = secrets.token_urlsafe(24)
+    session[_SPOTIFY_OAUTH_STATE_KEY] = state
+
+    authorize_params = {
+        "client_id": credentials["client_id"],
+        "response_type": "code",
+        "redirect_uri": _spotify_callback_uri(),
+        "scope": " ".join(_SPOTIFY_OAUTH_SCOPES),
+        "state": state,
+        "show_dialog": "true",
+    }
+    authorize_url = f"https://accounts.spotify.com/authorize?{urlencode(authorize_params)}"
+    return redirect(authorize_url)
+
+
+@main_bp.route("/api/settings/spotify/oauth/callback", methods=["GET"])
+@api_error_handler
+@rate_limit("default")
+def api_settings_spotify_oauth_callback():
+    """Handle Spotify OAuth callback and persist refresh token in runtime secrets."""
+    auth_error = request.args.get("error")
+    if auth_error:
+        session["error_message"] = f"Spotify OAuth error: {auth_error}"
+        return redirect(url_for("main.settings_page"))
+
+    incoming_state = request.args.get("state")
+    expected_state = session.pop(_SPOTIFY_OAUTH_STATE_KEY, None)
+    if not incoming_state or incoming_state != expected_state:
+        session["error_message"] = "Invalid OAuth state. Please retry Spotify connection."
+        return redirect(url_for("main.settings_page"))
+
+    code = request.args.get("code")
+    if not code:
+        session["error_message"] = "Missing authorization code from Spotify callback."
+        return redirect(url_for("main.settings_page"))
+
+    credentials = get_spotify_credentials(use_cache=False)
+    if not has_required_oauth_credentials(credentials):
+        session["error_message"] = "Client ID and Client Secret are required before OAuth."
+        return redirect(url_for("main.settings_page"))
+
+    try:
+        token_response = SESSION.post(
+            _SPOTIFY_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": _spotify_callback_uri(),
+            },
+            auth=(credentials["client_id"], credentials["client_secret"]),
+            timeout=10,
+        )
+    except requests.RequestException:
+        session["error_message"] = "Spotify token exchange failed (network error)."
+        return redirect(url_for("main.settings_page"))
+
+    if token_response.status_code >= 400:
+        logger.warning("Spotify OAuth token exchange failed with status=%s", token_response.status_code)
+        session["error_message"] = "Spotify token exchange failed."
+        return redirect(url_for("main.settings_page"))
+
+    try:
+        payload = token_response.json()
+    except ValueError:
+        session["error_message"] = "Spotify token exchange returned invalid response."
+        return redirect(url_for("main.settings_page"))
+
+    refresh_token = str(payload.get("refresh_token") or "").strip()
+    if not refresh_token:
+        session["error_message"] = "Spotify did not return a refresh token. Please try again."
+        return redirect(url_for("main.settings_page"))
+
+    update_spotify_credentials({"refresh_token": refresh_token})
+    reset_spotify_auth_state(clear_persisted_token=True)
+    session["success_message"] = "Spotify connected successfully."
+    return redirect(url_for("main.settings_page"))
+
+
+@main_bp.route("/api/settings/spotify/disconnect", methods=["POST"])
+@api_error_handler
+@rate_limit("default")
+def api_disconnect_spotify():
+    """Disconnect Spotify by removing refresh token and clearing auth state."""
+    update_spotify_credentials({"refresh_token": None})
+    reset_spotify_auth_state(clear_persisted_token=True)
+    logger.info("Spotify disconnected via settings")
+    return api_response(True, message="Spotify disconnected.", data={"spotify": _build_spotify_settings_payload()})
 
 
 @main_bp.route("/api/settings/feature-flags", methods=["GET"])

@@ -34,6 +34,8 @@ class InputValidator:
     MAX_DURATION = 480  # 8 hours max
     MAX_STRING_LENGTH = 500
     MAX_URI_LENGTH = 200
+    MAX_SECRET_LENGTH = 1024
+    MAX_USERNAME_LENGTH = 120
     
     # Regex patterns
     TIME_PATTERN = re.compile(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$')
@@ -42,6 +44,10 @@ class InputValidator:
     # Simplified: allow everything except control characters (< 0x20) and block certain dangerous chars
     # This accepts ASCII, Unicode letters/numbers, emojis, and common punctuation
     DEVICE_NAME_PATTERN = re.compile(r'^[^\x00-\x1F<>]{1,100}$', re.UNICODE)
+    SPOTIFY_CLIENT_ID_PATTERN = re.compile(r'^[A-Za-z0-9]{20,80}$')
+    SPOTIFY_CLIENT_SECRET_PATTERN = re.compile(r'^[A-Za-z0-9]{20,200}$')
+    SPOTIFY_REFRESH_TOKEN_PATTERN = re.compile(r'^[A-Za-z0-9._~+/=-]{20,1024}$')
+    SPOTIFY_USERNAME_PATTERN = re.compile(r'^[^\x00-\x1F<>]{0,120}$', re.UNICODE)
     
     @classmethod
     def validate_volume(cls, value: Union[str, int, None], field_name: str = "volume") -> ValidationResult:
@@ -243,6 +249,126 @@ class InputValidator:
                 return ValidationResult(True, False, "", field_name)
         
         return ValidationResult(True, bool(value), "", field_name)
+
+    @classmethod
+    def validate_spotify_client_id(
+        cls,
+        value: Union[str, None],
+        field_name: str = "client_id",
+        required: bool = False,
+    ) -> ValidationResult:
+        """Validate Spotify client id format."""
+        if not value:
+            if required:
+                return ValidationResult(False, None, f"{field_name} is required", field_name)
+            return ValidationResult(True, "", "", field_name)
+
+        if not isinstance(value, str):
+            return ValidationResult(False, None, f"{field_name} must be a string", field_name)
+
+        normalized = value.strip()
+        if len(normalized) > cls.MAX_SECRET_LENGTH:
+            return ValidationResult(
+                False,
+                None,
+                f"{field_name} is too long (max {cls.MAX_SECRET_LENGTH} characters)",
+                field_name,
+            )
+
+        if not cls.SPOTIFY_CLIENT_ID_PATTERN.match(normalized):
+            return ValidationResult(False, None, f"{field_name} has invalid format", field_name)
+
+        return ValidationResult(True, normalized, "", field_name)
+
+    @classmethod
+    def validate_spotify_client_secret(
+        cls,
+        value: Union[str, None],
+        field_name: str = "client_secret",
+        required: bool = False,
+    ) -> ValidationResult:
+        """Validate Spotify client secret format."""
+        if not value:
+            if required:
+                return ValidationResult(False, None, f"{field_name} is required", field_name)
+            return ValidationResult(True, "", "", field_name)
+
+        if not isinstance(value, str):
+            return ValidationResult(False, None, f"{field_name} must be a string", field_name)
+
+        normalized = value.strip()
+        if len(normalized) > cls.MAX_SECRET_LENGTH:
+            return ValidationResult(
+                False,
+                None,
+                f"{field_name} is too long (max {cls.MAX_SECRET_LENGTH} characters)",
+                field_name,
+            )
+
+        if not cls.SPOTIFY_CLIENT_SECRET_PATTERN.match(normalized):
+            return ValidationResult(False, None, f"{field_name} has invalid format", field_name)
+
+        return ValidationResult(True, normalized, "", field_name)
+
+    @classmethod
+    def validate_spotify_refresh_token(
+        cls,
+        value: Union[str, None],
+        field_name: str = "refresh_token",
+        required: bool = False,
+    ) -> ValidationResult:
+        """Validate Spotify refresh token format."""
+        if not value:
+            if required:
+                return ValidationResult(False, None, f"{field_name} is required", field_name)
+            return ValidationResult(True, "", "", field_name)
+
+        if not isinstance(value, str):
+            return ValidationResult(False, None, f"{field_name} must be a string", field_name)
+
+        normalized = value.strip()
+        if len(normalized) > cls.MAX_SECRET_LENGTH:
+            return ValidationResult(
+                False,
+                None,
+                f"{field_name} is too long (max {cls.MAX_SECRET_LENGTH} characters)",
+                field_name,
+            )
+
+        if not cls.SPOTIFY_REFRESH_TOKEN_PATTERN.match(normalized):
+            return ValidationResult(False, None, f"{field_name} has invalid format", field_name)
+
+        return ValidationResult(True, normalized, "", field_name)
+
+    @classmethod
+    def validate_spotify_username(
+        cls,
+        value: Union[str, None],
+        field_name: str = "username",
+        required: bool = False,
+    ) -> ValidationResult:
+        """Validate Spotify username or user-id field."""
+        if not value:
+            if required:
+                return ValidationResult(False, None, f"{field_name} is required", field_name)
+            return ValidationResult(True, "", "", field_name)
+
+        if not isinstance(value, str):
+            return ValidationResult(False, None, f"{field_name} must be a string", field_name)
+
+        normalized = value.strip()
+        if len(normalized) > cls.MAX_USERNAME_LENGTH:
+            return ValidationResult(
+                False,
+                None,
+                f"{field_name} is too long (max {cls.MAX_USERNAME_LENGTH} characters)",
+                field_name,
+            )
+
+        if not cls.SPOTIFY_USERNAME_PATTERN.match(normalized):
+            return ValidationResult(False, None, f"{field_name} contains invalid characters", field_name)
+
+        return ValidationResult(True, normalized, "", field_name)
 
 class ValidationError(Exception):
     """Custom exception for validation errors."""

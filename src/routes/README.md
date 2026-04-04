@@ -8,7 +8,7 @@ This directory contains the Flask blueprints for SpotiPi. `src/app.py` registers
 - `devices.py`: Cached device snapshots, Spotify device listing, and refresh endpoints.
 - `errors.py`: Global 404/500 handlers with API JSON responses.
 - `health.py`: Health checks, metrics, dashboard status, playback status, auth status, and token/cache utilities.
-- `main.py`: Index page, settings UI, settings APIs, cache clear, debug language, and profile endpoints.
+- `main.py`: Index page, settings UI, settings APIs (including Spotify credentials + OAuth), cache clear, debug language, and profile endpoints.
 - `music.py`: Music library page and API endpoints, artist top tracks.
 - `playback.py`: Playback controls, volume, and next/previous track endpoints.
 - `services.py`: Service health, diagnostics, performance, perf metrics, rate limiting status/reset.

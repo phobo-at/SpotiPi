@@ -52,6 +52,17 @@ test("settings surface opens from the header action", async ({ page }) => {
   await expect(page.getByTestId("settings-sheet")).toBeVisible();
 });
 
+test("settings surface exposes Spotify credential controls", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByTestId("settings-trigger").click();
+  await expect(page.getByTestId("settings-sheet")).toBeVisible();
+  await expect(page.locator("#spotify-client-id")).toBeVisible();
+  await expect(page.locator("#spotify-client-secret")).toBeVisible();
+  await expect(page.locator("#spotify-refresh-token")).toBeVisible();
+  await expect(page.getByRole("button", { name: /connect spotify|mit spotify verbinden/i })).toBeVisible();
+});
+
 test("alarm flow opens from the primary action card", async ({ page }) => {
   await page.goto("/");
 
@@ -123,6 +134,58 @@ test("library picker supports keyboard tab switching and offline retry state", a
   await expect(offlineCard).toContainText(/offline|offline-modus/i);
   await offlineCard.getByRole("button").click();
   await expect(offlineCard).toContainText(/offline|offline-modus/i);
+});
+
+test("search tab does not refetch unchanged query on unrelated rerenders", async ({ page }) => {
+  let searchCalls = 0;
+
+  await page.route("**/api/music-search**", async (route) => {
+    searchCalls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        request_id: `search-${searchCalls}`,
+        data: {
+          query: "red ho",
+          types: ["track", "album", "artist", "playlist"],
+          results: {
+            tracks: [
+              {
+                uri: "spotify:track:1",
+                name: "Can't Stop",
+                artist: "Red Hot Chili Peppers",
+                type: "track"
+              }
+            ],
+            albums: [],
+            artists: [],
+            playlists: []
+          },
+          total: 1
+        }
+      })
+    });
+  });
+
+  await page.goto("/");
+  await page.locator('[data-testid="play-card"] button').click();
+  await expect(page.locator("#play-sheet")).toBeVisible();
+
+  await page.locator("#library-tab-search").click();
+  const searchInput = page.locator("#play-sheet input[type='search']");
+  await searchInput.evaluate((node) => {
+    const element = /** @type {HTMLInputElement} */ (node);
+    element.value = "red ho";
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  await expect(page.locator("#play-sheet .library-list")).toContainText(/can't stop/i);
+  await page.waitForTimeout(2600);
+
+  expect(searchCalls).toBe(1);
 });
 
 test("initial load stays within runtime budget and avoids legacy assets", async ({ page }) => {

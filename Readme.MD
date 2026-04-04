@@ -37,6 +37,7 @@ mkdir -p ~/.spotipi
 cp .env.example ~/.spotipi/.env
 # Fill in SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_USERNAME
 # Optional dev-only overrides can still live in ./ .env, but runtime secrets belong in ~/.spotipi/.env
+# You can also maintain these values from the Settings UI after first boot.
 
 python generate_token.py
 npm run build
@@ -116,7 +117,10 @@ Useful deploy flags:
 
 ## Configuration
 
-Minimum `.env` values:
+Spotify credentials can now be managed directly from **Settings -> Spotify Account**.
+The app still persists them in the canonical runtime file `~/.spotipi/.env`.
+
+Minimum runtime values (managed either via UI or file):
 
 ```env
 SPOTIFY_CLIENT_ID=your_client_id
@@ -134,6 +138,8 @@ SPOTIPI_TIMEZONE=Europe/Vienna
 SPOTIPI_MAX_CONCURRENCY=2
 SPOTIPI_DEVICE_TTL=10
 SPOTIPI_LIBRARY_TTL_MINUTES=60
+SPOTIPI_SPOTIFY_REDIRECT_URI=
+SPOTIPI_SPOTIFY_SECRETS_CACHE_TTL=2.0
 ```
 
 Additional runtime and Spotify resilience knobs:

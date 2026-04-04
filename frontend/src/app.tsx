@@ -1,9 +1,9 @@
 /** @jsxImportSource preact */
 import { Fragment } from "preact";
 import type { JSX } from "preact";
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 
-import { getJson, postForm, postJson } from "./lib/api";
+import { getJson, patchJson, postForm, postJson } from "./lib/api";
 import { useDashboardPolling } from "./hooks/useDashboardPolling";
 import { useLibraryData } from "./hooks/useLibraryData";
 import { useNetworkStatus } from "./hooks/useNetworkStatus";
@@ -27,6 +27,7 @@ import type {
   SettingsData,
   SleepFormState,
   SpotifyDevice,
+  SpotifySettingsPayload,
   SpotifyProfile,
   SurfaceName,
   ToastItem
@@ -54,9 +55,30 @@ const FOCUSABLE_SELECTOR = [
 ].join(",");
 
 interface AccountLoadState {
-  status: AsyncStatus;
+  status:
+    | "idle"
+    | "loading"
+    | "connected"
+    | "missing_credentials"
+    | "auth_required"
+    | "offline"
+    | "error";
   profile?: SpotifyProfile;
   errorMessage?: string;
+}
+
+interface SpotifyCredentialFormState {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+  username: string;
+}
+
+interface SpotifyCredentialTouchedState {
+  clientId: boolean;
+  clientSecret: boolean;
+  refreshToken: boolean;
+  username: boolean;
 }
 
 type TranslateFn = (
@@ -217,6 +239,66 @@ function formatCountdown(value: number | undefined, language: string): string {
   }
 
   return language === "de" ? `${seconds} Sek` : `${seconds}s`;
+}
+
+function createEmptySpotifyCredentialForm(): SpotifyCredentialFormState {
+  return {
+    clientId: "",
+    clientSecret: "",
+    refreshToken: "",
+    username: ""
+  };
+}
+
+function createEmptySpotifyCredentialTouched(): SpotifyCredentialTouchedState {
+  return {
+    clientId: false,
+    clientSecret: false,
+    refreshToken: false,
+    username: false
+  };
+}
+
+function toAccountLoadState(
+  spotifySettings: SpotifySettingsPayload,
+  language: string
+): AccountLoadState {
+  const connection = spotifySettings.connection;
+  const fallbackMessage = localized(language, "Spotify account unavailable", "Spotify-Konto nicht verfügbar");
+
+  if (connection.status === "connected") {
+    return {
+      status: "connected",
+      profile: connection.profile || undefined,
+      errorMessage: connection.message
+    };
+  }
+
+  if (connection.status === "missing_credentials") {
+    return {
+      status: "missing_credentials",
+      errorMessage: connection.message || fallbackMessage
+    };
+  }
+
+  if (connection.status === "auth_required") {
+    return {
+      status: "auth_required",
+      errorMessage: connection.message || fallbackMessage
+    };
+  }
+
+  if (connection.status === "offline") {
+    return {
+      status: "offline",
+      errorMessage: connection.message || fallbackMessage
+    };
+  }
+
+  return {
+    status: "error",
+    errorMessage: connection.message || fallbackMessage
+  };
 }
 
 function icon(name: string, className = "icon"): JSX.Element {
@@ -495,7 +577,7 @@ interface LibraryPickerProps {
   quickPlayBusy?: boolean;
   quickPlayDisabled?: boolean;
   onOpenArtist: (artist: LibraryItem) => void;
-  onSearchCatalog: (query: string) => void;
+  onSearchCatalog: (query: string, force?: boolean) => void;
   onCloseArtist: () => void;
   t: TranslateFn;
   language: string;
@@ -523,6 +605,7 @@ function LibraryPicker({
 }: LibraryPickerProps) {
   const [query, setQuery] = useState("");
   const searchDebounceRef = useRef<number | null>(null);
+  const lastSearchRequestRef = useRef<string | null>(null);
 
   useEffect(() => {
     setQuery("");
@@ -533,6 +616,12 @@ function LibraryPicker({
       if (searchDebounceRef.current) {
         window.clearTimeout(searchDebounceRef.current);
       }
+      lastSearchRequestRef.current = null;
+      return;
+    }
+
+    const normalizedQuery = query.trim();
+    if (lastSearchRequestRef.current === normalizedQuery) {
       return;
     }
 
@@ -540,7 +629,8 @@ function LibraryPicker({
       window.clearTimeout(searchDebounceRef.current);
     }
     searchDebounceRef.current = window.setTimeout(() => {
-      onSearchCatalog(query);
+      lastSearchRequestRef.current = normalizedQuery;
+      void onSearchCatalog(query);
     }, 300);
 
     return () => {
@@ -771,7 +861,7 @@ function LibraryPicker({
               class="ghost-button"
               onClick={() => {
                 if (currentSection === "search") {
-                  onSearchCatalog(query);
+                  onSearchCatalog(query, true);
                   return;
                 }
                 onRetrySection(currentSection);
@@ -886,6 +976,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   );
   const [playForm, setPlayForm] = useState<PlayFormState>(() => createPlayFormModel(bootstrap.dashboard));
   const [account, setAccount] = useState<AccountLoadState>({ status: "idle" });
+  const [spotifySettings, setSpotifySettings] = useState<SpotifySettingsPayload | null>(null);
+  const [spotifyForm, setSpotifyForm] = useState<SpotifyCredentialFormState>(createEmptySpotifyCredentialForm);
+  const [spotifyTouched, setSpotifyTouched] = useState<SpotifyCredentialTouchedState>(createEmptySpotifyCredentialTouched);
+  const [spotifySettingsStatus, setSpotifySettingsStatus] = useState<AsyncStatus>("idle");
+  const [showClientSecret, setShowClientSecret] = useState<boolean>(false);
+  const [showRefreshToken, setShowRefreshToken] = useState<boolean>(false);
   const [playbackQueue, setPlaybackQueue] = useState<LibraryItem[]>([]);
   const [queueStatus, setQueueStatus] = useState<AsyncStatus>("idle");
   const { toasts, pushToast, dismissToast } = useToasts({
@@ -915,6 +1011,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     language: bootstrap.language,
     t
   });
+  const handleOpenArtist = useCallback((artist: LibraryItem) => {
+    void openArtistAlbums(artist);
+  }, [openArtistAlbums]);
+  const handleCatalogSearch = useCallback((query: string, force = false) => {
+    void searchCatalog(query, force);
+  }, [searchCatalog]);
   const { oledTheme, setOledTheme } = useTheme();
   const {
     playerVolume,
@@ -940,6 +1042,73 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     refreshDashboard
   });
 
+  const loadSpotifySettings = useCallback(async (notifyOnError = false) => {
+    setSpotifySettingsStatus("loading");
+    setAccount({ status: "loading" });
+
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 5000);
+
+      try {
+        const result = await getJson<SpotifySettingsPayload>("/api/settings/spotify", {
+          signal: controller.signal
+        });
+        window.clearTimeout(timeoutId);
+
+        if (!result.body?.success || !result.body.data) {
+          const message =
+            result.body?.message ||
+            localized(bootstrap.language, "Unable to load Spotify settings", "Spotify-Einstellungen konnten nicht geladen werden");
+          throw new Error(message);
+        }
+
+        const payload = result.body.data;
+        setSpotifySettings(payload);
+        setSpotifyForm({
+          clientId: "",
+          clientSecret: "",
+          refreshToken: "",
+          username: payload.credentials.username.value || ""
+        });
+        setSpotifyTouched(createEmptySpotifyCredentialTouched());
+        setShowClientSecret(false);
+        setShowRefreshToken(false);
+        setAccount(toAccountLoadState(payload, bootstrap.language));
+        setSpotifySettingsStatus("ready");
+        return;
+      } catch (error) {
+        window.clearTimeout(timeoutId);
+
+        if (attempt < maxAttempts) {
+          await new Promise<void>((resolve) => {
+            window.setTimeout(resolve, 350);
+          });
+          continue;
+        }
+
+        const fallback = localized(
+          bootstrap.language,
+          "Unable to load Spotify settings",
+          "Spotify-Einstellungen konnten nicht geladen werden"
+        );
+        const message = error instanceof Error ? error.message : fallback;
+        const lowerMessage = message.toLowerCase();
+        const isOffline = lowerMessage.includes("network") || lowerMessage.includes("abort");
+
+        setSpotifySettingsStatus(isOffline ? "offline" : "error");
+        setAccount({
+          status: isOffline ? "offline" : "error",
+          errorMessage: message || fallback
+        });
+        if (notifyOnError) {
+          pushToast("error", message || fallback);
+        }
+      }
+    }
+  }, [bootstrap.language, pushToast]);
+
   useEffect(() => {
     const timer = window.setInterval(() => {
       setClock(new Date());
@@ -948,51 +1117,11 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   }, []);
 
   useEffect(() => {
-    if (surface !== "settings" || account.status !== "idle") {
+    if (surface !== "settings") {
       return;
     }
-
-    let cancelled = false;
-
-    async function loadProfile() {
-      setAccount({ status: "loading" });
-      try {
-        const result = await getJson<SpotifyProfile>("/api/spotify/profile");
-        if (cancelled) {
-          return;
-        }
-        if (result.body?.success && result.body.data) {
-          setAccount({ status: "ready", profile: result.body.data });
-          return;
-        }
-        if (result.status === 401 || result.body?.error_code === "auth_required") {
-          setAccount({ status: "auth_required" });
-          return;
-        }
-        setAccount({
-          status: "error",
-          errorMessage:
-            result.body?.message ||
-            t("account_error", localized(bootstrap.language, "Error loading account", "Fehler beim Laden des Kontos"))
-        });
-      } catch (error) {
-        if (!cancelled) {
-          setAccount({
-            status: "offline",
-            errorMessage:
-              error instanceof Error
-                ? error.message
-                : localized(bootstrap.language, "Network error", "Netzwerkfehler")
-          });
-        }
-      }
-    }
-
-    void loadProfile();
-    return () => {
-      cancelled = true;
-    };
-  }, [surface, account.status, bootstrap.language, t]);
+    void loadSpotifySettings(false);
+  }, [surface, loadSpotifySettings]);
 
   useEffect(() => {
     if (dashboard.devices.length === 0) {
@@ -1113,6 +1242,178 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       setSleepForm((current) => ({ ...current, playlistUri: item.uri }));
     } else if (surface === "play") {
       setPlayForm((current) => ({ ...current, contextUri: item.uri }));
+    }
+  }
+
+  function handleSpotifyFieldChange(field: keyof SpotifyCredentialFormState, value: string) {
+    setSpotifyForm((current) => ({
+      ...current,
+      [field]: value
+    }));
+    setSpotifyTouched((current) => ({
+      ...current,
+      [field]: true
+    }));
+  }
+
+  async function handleSpotifySettingsSave() {
+    const payload: Record<string, string> = {};
+    if (spotifyTouched.clientId) {
+      payload.client_id = spotifyForm.clientId.trim();
+    }
+    if (spotifyTouched.clientSecret) {
+      payload.client_secret = spotifyForm.clientSecret.trim();
+    }
+    if (spotifyTouched.refreshToken) {
+      payload.refresh_token = spotifyForm.refreshToken.trim();
+    }
+    if (spotifyTouched.username) {
+      payload.username = spotifyForm.username.trim();
+    }
+
+    if (Object.keys(payload).length === 0) {
+      pushToast(
+        "info",
+        localized(
+          bootstrap.language,
+          "No Spotify credential changes to save.",
+          "Keine Spotify-Zugangsdaten geändert."
+        )
+      );
+      return;
+    }
+
+    setBusyAction("spotify-save");
+    try {
+      const result = await patchJson<{ spotify?: SpotifySettingsPayload; updated?: string[] }>(
+        "/api/settings/spotify",
+        { credentials: payload }
+      );
+
+      if (!result.body?.success) {
+        pushToast(
+          "error",
+          result.body?.message ||
+            localized(
+              bootstrap.language,
+              "Spotify settings could not be saved.",
+              "Spotify-Einstellungen konnten nicht gespeichert werden."
+            )
+        );
+        return;
+      }
+
+      if (result.body.data?.spotify) {
+        const nextSpotifySettings = result.body.data.spotify;
+        setSpotifySettings(nextSpotifySettings);
+        setSpotifyForm({
+          clientId: "",
+          clientSecret: "",
+          refreshToken: "",
+          username: nextSpotifySettings.credentials.username.value || ""
+        });
+        setSpotifyTouched(createEmptySpotifyCredentialTouched());
+        setShowClientSecret(false);
+        setShowRefreshToken(false);
+        setAccount(toAccountLoadState(nextSpotifySettings, bootstrap.language));
+      } else {
+        await loadSpotifySettings(false);
+      }
+
+      pushToast(
+        "success",
+        result.body.message ||
+          localized(bootstrap.language, "Spotify settings saved.", "Spotify-Einstellungen gespeichert.")
+      );
+    } catch (error) {
+      pushToast(
+        "error",
+        error instanceof Error
+          ? error.message
+          : localized(
+              bootstrap.language,
+              "Spotify settings could not be saved.",
+              "Spotify-Einstellungen konnten nicht gespeichert werden."
+            )
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function handleSpotifyConnect() {
+    if (spotifyTouched.clientId || spotifyTouched.clientSecret) {
+      pushToast(
+        "info",
+        localized(
+          bootstrap.language,
+          "Save Client ID and Client Secret before starting OAuth.",
+          "Bitte zuerst Client ID und Client Secret speichern."
+        )
+      );
+      return;
+    }
+
+    const startUrl = spotifySettings?.oauth.start_url || "/api/settings/spotify/oauth/start";
+    window.location.assign(startUrl);
+  }
+
+  async function handleSpotifyDisconnect() {
+    setBusyAction("spotify-disconnect");
+    try {
+      const result = await postForm<{ spotify?: SpotifySettingsPayload }>(
+        "/api/settings/spotify/disconnect",
+        new URLSearchParams()
+      );
+      if (!result.body?.success) {
+        pushToast(
+          "error",
+          result.body?.message ||
+            localized(bootstrap.language, "Spotify disconnect failed.", "Spotify-Trennung fehlgeschlagen.")
+        );
+        return;
+      }
+
+      if (result.body.data?.spotify) {
+        const nextSpotifySettings = result.body.data.spotify;
+        setSpotifySettings(nextSpotifySettings);
+        setSpotifyForm({
+          clientId: "",
+          clientSecret: "",
+          refreshToken: "",
+          username: nextSpotifySettings.credentials.username.value || ""
+        });
+        setSpotifyTouched(createEmptySpotifyCredentialTouched());
+        setShowClientSecret(false);
+        setShowRefreshToken(false);
+        setAccount(toAccountLoadState(nextSpotifySettings, bootstrap.language));
+      } else {
+        await loadSpotifySettings(false);
+      }
+
+      pushToast(
+        "success",
+        result.body.message ||
+          localized(bootstrap.language, "Spotify disconnected.", "Spotify getrennt.")
+      );
+    } catch (error) {
+      pushToast(
+        "error",
+        error instanceof Error
+          ? error.message
+          : localized(bootstrap.language, "Spotify disconnect failed.", "Spotify-Trennung fehlgeschlagen.")
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleSpotifyReload() {
+    setBusyAction("spotify-reload");
+    try {
+      await loadSpotifySettings(true);
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -1428,6 +1729,15 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const currentTrack = dashboard.playback.current_track;
   const safeCurrentTrackImage = normalizeImageUrl(currentTrack?.album_image);
   const safeAccountAvatar = normalizeImageUrl(account.profile?.avatar_url);
+  const maskedClientId = spotifySettings?.credentials.client_id.masked || "";
+  const maskedClientSecret = spotifySettings?.credentials.client_secret.masked || "";
+  const maskedRefreshToken = spotifySettings?.credentials.refresh_token.masked || "";
+  const hasSpotifyClientId = Boolean(spotifySettings?.credentials.client_id.set);
+  const hasSpotifyClientSecret = Boolean(spotifySettings?.credentials.client_secret.set);
+  const hasSpotifyRefreshToken = Boolean(spotifySettings?.credentials.refresh_token.set);
+  const spotifySaveDisabled = busyAction === "spotify-save";
+  const spotifyReloadDisabled = busyAction === "spotify-reload";
+  const spotifyDisconnectDisabled = busyAction === "spotify-disconnect";
   const dismissToastLabel = localized(bootstrap.language, "Dismiss notification", "Hinweis schließen");
   const closeSheetLabel = localized(bootstrap.language, "Close panel", "Panel schließen");
   const playerTitle = currentTrack?.name
@@ -1827,8 +2137,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             onEnsureSection={(section) => void ensureLibrarySection(section)}
             onRetrySection={(section) => void ensureLibrarySection(section)}
             onSelect={handleLibrarySelect}
-            onOpenArtist={(artist) => void openArtistAlbums(artist)}
-            onSearchCatalog={(value) => void searchCatalog(value)}
+            onOpenArtist={handleOpenArtist}
+            onSearchCatalog={handleCatalogSearch}
             onCloseArtist={resetArtistDrilldown}
             t={t}
             language={bootstrap.language}
@@ -2024,8 +2334,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 onEnsureSection={(section) => void ensureLibrarySection(section)}
                 onRetrySection={(section) => void ensureLibrarySection(section)}
                 onSelect={handleLibrarySelect}
-                onOpenArtist={(artist) => void openArtistAlbums(artist)}
-                onSearchCatalog={(value) => void searchCatalog(value)}
+                onOpenArtist={handleOpenArtist}
+                onSearchCatalog={handleCatalogSearch}
                 onCloseArtist={resetArtistDrilldown}
                 t={t}
                 language={bootstrap.language}
@@ -2109,8 +2419,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             onQuickPlay={(item) => void handlePlayNow(item.uri)}
             quickPlayBusy={busyAction === "play"}
             quickPlayDisabled={networkStatus === "offline" || !playForm.deviceId}
-            onOpenArtist={(artist) => void openArtistAlbums(artist)}
-            onSearchCatalog={(value) => void searchCatalog(value)}
+            onOpenArtist={handleOpenArtist}
+            onSearchCatalog={handleCatalogSearch}
             onCloseArtist={resetArtistDrilldown}
             t={t}
             language={bootstrap.language}
@@ -2140,14 +2450,29 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         <div class="sheet-stack" data-testid="settings-sheet">
           <section class="settings-group settings-group-account">
             <h3>{t("spotify_account", localized(bootstrap.language, "Spotify account", "Spotify-Konto"))}</h3>
-            {account.status === "loading" ? (
+            {spotifySettingsStatus === "loading" ? (
               <div class="state-card state-card-muted">
-                <p>{t("loading_account", localized(bootstrap.language, "Loading account...", "Lade Konto..."))}</p>
+                <p>{t("loading_account", localized(bootstrap.language, "Loading account...", "Lade Konto-Informationen..."))}</p>
+              </div>
+            ) : null}
+            {account.status === "missing_credentials" ? (
+              <div class="state-card state-card-muted">
+                <p>
+                  {account.errorMessage ||
+                    localized(
+                      bootstrap.language,
+                      "Client ID and Client Secret are missing.",
+                      "Client ID und Client Secret fehlen."
+                    )}
+                </p>
               </div>
             ) : null}
             {account.status === "auth_required" ? (
               <div class="state-card state-card-danger">
-                <p>{t("status_auth_required", localized(bootstrap.language, "Spotify sign-in required", "Spotify-Anmeldung erforderlich"))}</p>
+                <p>
+                  {account.errorMessage ||
+                    t("status_auth_required", localized(bootstrap.language, "Spotify sign-in required", "Spotify-Anmeldung erforderlich"))}
+                </p>
               </div>
             ) : null}
             {account.status === "offline" || account.status === "error" ? (
@@ -2155,7 +2480,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 <p>{account.errorMessage || t("account_error", localized(bootstrap.language, "Error loading account", "Fehler beim Laden des Kontos"))}</p>
               </div>
             ) : null}
-            {account.status === "ready" && account.profile ? (
+            {account.status === "connected" && account.profile ? (
               <div class="account-card">
                 <div class="account-avatar">
                   {safeAccountAvatar ? (
@@ -2173,6 +2498,148 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 ) : null}
               </div>
             ) : null}
+
+            <div class="field-group">
+              <label class="field-label" for="spotify-client-id">
+                {localized(bootstrap.language, "Spotify Client ID", "Spotify Client ID")}
+              </label>
+              <input
+                id="spotify-client-id"
+                class="field-input"
+                type="text"
+                autoComplete="off"
+                placeholder={
+                  hasSpotifyClientId
+                    ? maskedClientId
+                    : localized(bootstrap.language, "Not set", "Nicht gesetzt")
+                }
+                value={spotifyForm.clientId}
+                onInput={(event) =>
+                  handleSpotifyFieldChange("clientId", (event.currentTarget as HTMLInputElement).value)
+                }
+              />
+            </div>
+
+            <div class="field-group">
+              <div class="field-label-row">
+                <label class="field-label" for="spotify-client-secret">
+                  {localized(bootstrap.language, "Spotify Client Secret", "Spotify Client Secret")}
+                </label>
+                <button
+                  type="button"
+                  class="ghost-button"
+                  onClick={() => setShowClientSecret((current) => !current)}
+                >
+                  {showClientSecret
+                    ? localized(bootstrap.language, "Hide", "Ausblenden")
+                    : localized(bootstrap.language, "Show", "Anzeigen")}
+                </button>
+              </div>
+              <input
+                id="spotify-client-secret"
+                class="field-input"
+                type={showClientSecret ? "text" : "password"}
+                autoComplete="off"
+                placeholder={
+                  hasSpotifyClientSecret
+                    ? maskedClientSecret
+                    : localized(bootstrap.language, "Not set", "Nicht gesetzt")
+                }
+                value={spotifyForm.clientSecret}
+                onInput={(event) =>
+                  handleSpotifyFieldChange("clientSecret", (event.currentTarget as HTMLInputElement).value)
+                }
+              />
+            </div>
+
+            <div class="field-group">
+              <div class="field-label-row">
+                <label class="field-label" for="spotify-refresh-token">
+                  {localized(bootstrap.language, "Spotify Refresh Token", "Spotify Refresh Token")}
+                </label>
+                <button
+                  type="button"
+                  class="ghost-button"
+                  onClick={() => setShowRefreshToken((current) => !current)}
+                >
+                  {showRefreshToken
+                    ? localized(bootstrap.language, "Hide", "Ausblenden")
+                    : localized(bootstrap.language, "Show", "Anzeigen")}
+                </button>
+              </div>
+              <input
+                id="spotify-refresh-token"
+                class="field-input"
+                type={showRefreshToken ? "text" : "password"}
+                autoComplete="off"
+                placeholder={
+                  hasSpotifyRefreshToken
+                    ? maskedRefreshToken
+                    : localized(bootstrap.language, "Optional fallback: paste token manually", "Optional: Token manuell einfügen")
+                }
+                value={spotifyForm.refreshToken}
+                onInput={(event) =>
+                  handleSpotifyFieldChange("refreshToken", (event.currentTarget as HTMLInputElement).value)
+                }
+              />
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="spotify-username">
+                {localized(bootstrap.language, "Spotify Username", "Spotify Benutzername")}
+              </label>
+              <input
+                id="spotify-username"
+                class="field-input"
+                type="text"
+                autoComplete="off"
+                placeholder={localized(bootstrap.language, "Spotify username", "Spotify Benutzername")}
+                value={spotifyForm.username}
+                onInput={(event) =>
+                  handleSpotifyFieldChange("username", (event.currentTarget as HTMLInputElement).value)
+                }
+              />
+            </div>
+
+            <div class="sheet-actions">
+              <button
+                type="button"
+                class="secondary-button"
+                disabled={spotifyReloadDisabled}
+                onClick={() => void handleSpotifyReload()}
+              >
+                {spotifyReloadDisabled
+                  ? localized(bootstrap.language, "Reloading...", "Lädt neu...")
+                  : localized(bootstrap.language, "Reload status", "Status neu laden")}
+              </button>
+              <button
+                type="button"
+                class="secondary-button"
+                onClick={handleSpotifyConnect}
+              >
+                {localized(bootstrap.language, "Connect Spotify", "Mit Spotify verbinden")}
+              </button>
+              <button
+                type="button"
+                class="secondary-button"
+                disabled={spotifyDisconnectDisabled || !hasSpotifyRefreshToken}
+                onClick={() => void handleSpotifyDisconnect()}
+              >
+                {spotifyDisconnectDisabled
+                  ? localized(bootstrap.language, "Disconnecting...", "Trennt...")
+                  : localized(bootstrap.language, "Disconnect", "Trennen")}
+              </button>
+              <button
+                type="button"
+                class="primary-button"
+                disabled={spotifySaveDisabled}
+                onClick={() => void handleSpotifySettingsSave()}
+              >
+                {spotifySaveDisabled
+                  ? localized(bootstrap.language, "Saving...", "Speichert...")
+                  : localized(bootstrap.language, "Save credentials", "Zugangsdaten speichern")}
+              </button>
+            </div>
           </section>
 
           <section class="settings-group settings-group-features">
