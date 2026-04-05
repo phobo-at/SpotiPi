@@ -10,6 +10,10 @@ from src.utils import spotify_secrets
 
 def _bind_runtime_env(monkeypatch, env_path: Path) -> None:
     monkeypatch.setattr(spotify_secrets, "get_runtime_env_path", lambda: env_path)
+    # Clear env vars so os.environ fallback doesn't leak real credentials into tests
+    for env_key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET",
+                    "SPOTIFY_REFRESH_TOKEN", "SPOTIFY_USERNAME"):
+        monkeypatch.delenv(env_key, raising=False)
     spotify_secrets.invalidate_spotify_secrets_cache()
 
 

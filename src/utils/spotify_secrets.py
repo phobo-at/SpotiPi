@@ -120,12 +120,21 @@ def _read_runtime_env_cached(use_cache: bool = True) -> Dict[str, str]:
 
 
 def get_spotify_credentials(use_cache: bool = True) -> Dict[str, str]:
-    """Return Spotify credentials from runtime secrets as normalized strings."""
+    """Return Spotify credentials from runtime secrets, falling back to os.environ.
+
+    The runtime .env (~/.spotipi/.env) is authoritative, but credentials may also
+    be loaded into os.environ via load_dotenv() at startup (e.g. from the repo .env).
+    Fall back to os.environ so existing installations don't lose visibility of
+    credentials that haven't been migrated to the runtime file yet.
+    """
     env_values = _read_runtime_env_cached(use_cache=use_cache)
     result: Dict[str, str] = {}
 
     for field, env_key in _SPOTIFY_KEYS.items():
-        result[field] = str(env_values.get(env_key, "") or "").strip()
+        value = str(env_values.get(env_key, "") or "").strip()
+        if not value:
+            value = str(os.environ.get(env_key, "") or "").strip()
+        result[field] = value
 
     return result
 
