@@ -16,8 +16,8 @@
           },
           {
             "type": "command",
-            "command": "cmd=$(cat | jq -r '.tool_input.command'); echo \"$cmd\" | grep -qE '^git push' || exit 0; printf '{\"continue\":false,\"stopReason\":\"Direct git push blocked — use /ship for SpotiPi (runs quality gates, version check, doc sync).\"}\\n'",
-            "statusMessage": "Enforcing /ship workflow..."
+            "command": "cmd=$(cat | jq -r '.tool_input.command'); echo \"$cmd\" | grep -qE '^git push' || exit 0; printf '{\"decision\":\"ask\",\"message\":\"git push detected — bist du sicher? Normalerweise über /ship (Quality Gates, Version Check, Doc Sync).\"}\\n'",
+            "statusMessage": "Checking push workflow..."
           }
         ]
       }
