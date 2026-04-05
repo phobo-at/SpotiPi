@@ -74,14 +74,13 @@ This is the project-specific ship command — it extends the generic workflow wi
     - Push to every remote: `git push <remote> <branch>` for each remote from `git remote`
     - Report success or which remote failed
 
-## Phase 6: Optional Pi deployment
+## Phase 6: Pi deployment
 
-21. After successful push, ask: **"Auf den Pi deployen, Dude?"**
-22. If yes:
+21. After successful push, automatically deploy to the Pi:
     - Check if `scripts/deploy_to_pi.sh` exists (the local, non-example copy).
-    - If it doesn't exist: warn "Erstell dir erst eine lokale Kopie: `cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh && chmod +x scripts/deploy_to_pi.sh`" — then stop.
+    - If it doesn't exist: warn "Erstell dir erst eine lokale Kopie: `cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh && chmod +x scripts/deploy_to_pi.sh`" — then skip deploy.
     - If it exists: run `./scripts/deploy_to_pi.sh` and report the deployment summary.
-23. If no: done. Report ship complete.
+22. Report ship complete.
 
 ## Rules
 
