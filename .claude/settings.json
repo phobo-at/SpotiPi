@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(cat | jq -r '.tool_input.command'); echo \"$cmd\" | grep -qE 'git commit' || exit 0; changes=$(git diff --name-only HEAD 2>/dev/null; git diff --cached --name-only 2>/dev/null; git status --porcelain 2>/dev/null | awk '{print $2}'); echo \"$changes\" | grep -q '^frontend/src/' || exit 0; echo \"$changes\" | grep -q '^static/dist/' && exit 0; printf '{\"continue\":false,\"stopReason\":\"Frontend source changed but static/dist/ not rebuilt. Run: npm run build\"}\\n'",
+            "statusMessage": "Checking frontend rebuild..."
+          },
+          {
+            "type": "command",
+            "command": "cmd=$(cat | jq -r '.tool_input.command'); echo \"$cmd\" | grep -qE 'git commit' || exit 0; v=$(sed -n 's/^VERSION = \"\\(.*\\)\"/\\1/p' src/version.py 2>/dev/null); [ -z \"$v\" ] && exit 0; rv=$(sed -n 's/^# SpotiPi (v\\(.*\\))/\\1/p' Readme.MD 2>/dev/null); av=$(sed -n 's/^# SpotiPi Agent Guidelines (v\\(.*\\))/\\1/p' AGENTS.md 2>/dev/null); [ \"$v\" = \"$rv\" ] && [ \"$v\" = \"$av\" ] && exit 0; printf '{\"continue\":false,\"stopReason\":\"Version mismatch! version.py=%s Readme.MD=%s AGENTS.md=%s — sync before committing.\"}\\n' \"$v\" \"$rv\" \"$av\"",
+            "statusMessage": "Checking version consistency..."
+          },
+          {
+            "type": "command",
+            "command": "cmd=$(cat | jq -r '.tool_input.command'); echo \"$cmd\" | grep -qE '^git push' || exit 0; printf '{\"continue\":false,\"stopReason\":\"Direct git push blocked — use /ship for SpotiPi (runs quality gates, version check, doc sync).\"}\\n'",
+            "statusMessage": "Enforcing /ship workflow..."
+          }
+        ]
+      }
+    ]
+  }
+}

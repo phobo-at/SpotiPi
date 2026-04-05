@@ -31,6 +31,7 @@ npm run test:e2e                      # Playwright E2E tests
 ./scripts/local_server.sh logs -f
 
 # Deploy to Pi
+cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh  # first time only
 ./scripts/deploy_to_pi.sh
 ```
 

@@ -14,7 +14,9 @@ This file is the canonical source of AI coding instructions for this repository.
 - Route blueprints live in `src/routes/`.
 - Business logic belongs in `src/services/` and returns `ServiceResult`.
 - Alarm/scheduler flows are in `src/core/`.
-- Spotify integration lives in `src/api/spotify.py` and shared HTTP helpers in `src/api/http.py`.
+- Spotify integration lives in `src/api/spotify.py` (playback, search, queue, library) and shared HTTP helpers in `src/api/http.py`.
+- Spotify credential management lives in `src/utils/spotify_secrets.py`.
+- Input validation is centralized in `src/utils/validation.py`.
 - Config is centralized via `src/config.py` plus thread-safe helpers in `src/utils/thread_safety.py`.
 - Frontend shell lives in `frontend/src/` and is bundled into `static/dist/`.
 - `templates/index.html` is the shell entrypoint, not the place for new feature markup.
@@ -81,7 +83,7 @@ This file is the canonical source of AI coding instructions for this repository.
   - `npm run typecheck`
   - `npm run build`
   - `npm run test:e2e`
-- If deployment behavior is touched, verify `scripts/deploy_to_pi.sh` output format assumptions remain valid.
+- If deployment behavior is touched, verify `scripts/deploy_to_pi.sh.example` output format assumptions remain valid.
 
 ## Change Checklist
 

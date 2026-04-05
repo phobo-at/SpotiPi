@@ -52,6 +52,9 @@ wheels/
 .installed.cfg
 *.egg
 
+# Claude Code (local settings are user-specific, commands are shared)
+.claude/settings.local.json
+
 # IDE & Editors
 .vscode/
 .idea/
