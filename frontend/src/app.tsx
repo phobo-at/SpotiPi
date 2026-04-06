@@ -502,6 +502,76 @@ interface DevicePickerProps {
   language: string;
 }
 
+interface CustomSelectOption {
+  value: string;
+  label: string;
+}
+
+interface CustomSelectProps {
+  value: string;
+  options: CustomSelectOption[];
+  onChange: (value: string) => void;
+  id?: string;
+}
+
+function CustomSelect({ value, options, onChange, id }: CustomSelectProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <div class="device-dropdown" ref={containerRef} id={id}>
+      <button
+        type="button"
+        class={`field-input device-dropdown-trigger ${open ? "is-open" : ""}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span>{selected?.label ?? value}</span>
+        <span class={`device-dropdown-chevron ${open ? "is-open" : ""}`}>
+          {icon("chevron")}
+        </span>
+      </button>
+      {open ? (
+        <div class="device-dropdown-list" role="listbox">
+          {options.map((opt) => {
+            const isSelected = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                class={`device-dropdown-option ${isSelected ? "is-selected" : ""}`}
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+              >
+                <span class="device-dropdown-option-name">{opt.label}</span>
+                {isSelected ? icon("check", "icon device-dropdown-check") : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DevicePicker({
   title,
   devices,
@@ -2762,17 +2832,15 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               <label class="field-label" for="settings-language">
                 {t("language_label", localized(bootstrap.language, "Language", "Sprache"))}
               </label>
-              <select
+              <CustomSelect
                 id="settings-language"
-                class="field-input"
                 value={settings.app.language}
-                onChange={(event) =>
-                  void updateSetting("app.language", (event.currentTarget as HTMLSelectElement).value)
-                }
-              >
-                <option value="de">Deutsch</option>
-                <option value="en">English</option>
-              </select>
+                options={[
+                  { value: "de", label: "Deutsch" },
+                  { value: "en", label: "English" }
+                ]}
+                onChange={(val) => void updateSetting("app.language", val)}
+              />
             </div>
 
             <div class="range-field">
@@ -2816,23 +2884,20 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               checked={oledTheme}
               onChange={(checked) => setOledTheme(checked)}
             />
-          </section>
-
-          <section class="settings-group settings-group-maintenance">
-            <h3>{localized(bootstrap.language, "Maintenance", "Wartung")}</h3>
-            <button
-              type="button"
-              class="secondary-button"
-              disabled={busyAction === "clear-cache"}
-              onClick={() => void handleClearCache()}
-            >
-              {busyAction === "clear-cache"
-                ? localized(bootstrap.language, "Clearing cache...", "Cache wird geleert...")
-                : t("clear_cache_btn", localized(bootstrap.language, "Clear cache", "Cache leeren"))}
-            </button>
-            <div class="meta-list">
-              <span>{localized(bootstrap.language, "Environment", "Umgebung")}: {settings.environment}</span>
-              <span>{localized(bootstrap.language, "Version", "Version")}: {bootstrap.app.version}</span>
+            <div class="settings-maintenance-row">
+              <button
+                type="button"
+                class="secondary-button"
+                disabled={busyAction === "clear-cache"}
+                onClick={() => void handleClearCache()}
+              >
+                {busyAction === "clear-cache"
+                  ? localized(bootstrap.language, "Clearing cache...", "Cache wird geleert...")
+                  : t("clear_cache_btn", localized(bootstrap.language, "Clear cache", "Cache leeren"))}
+              </button>
+              <span class="settings-meta-inline">
+                {settings.environment} · v{bootstrap.app.version}
+              </span>
             </div>
           </section>
         </div>

@@ -1032,10 +1032,25 @@ input[type="range"] {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px;
-  border-radius: 20px;
+  padding: 12px 16px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settings-maintenance-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 4px;
+}
+
+.settings-meta-inline {
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  flex: 1;
 }
 
 .toggle-copy {
