@@ -63,15 +63,6 @@ def test_service_diagnostics(client):
     assert diagnostics["summary"]["overall_status"] == "healthy"
 
 
-def test_alarm_service_integration(client):
-    response = client.get('/alarm_status')
-    assert response.status_code == 200
-
-    alarm = response.get_json()["data"]
-    for field in ["enabled", "time", "alarm_volume", "next_alarm"]:
-        assert field in alarm
-
-
 def test_spotify_service_integration(client):
     response = client.get('/api/spotify/auth-status')
     if response.status_code == 401:
@@ -84,22 +75,11 @@ def test_spotify_service_integration(client):
         assert "spotify" in data["data"]
 
 
-def test_sleep_service_integration(client):
-    response = client.get('/sleep_status?advanced=true')
-    assert response.status_code == 200
-
-    sleep = response.get_json()["data"]["sleep"]
-    for field in ["active", "remaining_time", "total_duration"]:
-        assert field in sleep
-
-
 def test_service_response_times(client):
     endpoints = [
         '/api/services/health',
         '/api/services/performance',
-        '/alarm_status',
         '/api/spotify/auth-status',
-        '/sleep_status?advanced=true'
     ]
 
     timings = []
@@ -119,7 +99,7 @@ def test_service_error_handling(client):
     missing = client.get('/api/services/nonexistent')
     assert missing.status_code == 404
 
-    for endpoint in ['/api/services/health', '/api/services/performance', '/alarm_status', '/sleep_status?advanced=true']:
+    for endpoint in ['/api/services/health', '/api/services/performance']:
         response = client.get(endpoint)
         assert response.headers.get('Content-Type', '').startswith('application/json')
         data = response.get_json()

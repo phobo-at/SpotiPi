@@ -16,37 +16,6 @@ sleep_bp = Blueprint("sleep", __name__)
 logger = logging.getLogger(__name__)
 
 
-@sleep_bp.route("/sleep_status")
-@api_error_handler
-@rate_limit("status_check")
-def sleep_status_api():
-    """Get sleep timer status - supports both basic and advanced modes."""
-    advanced_mode = request.args.get('advanced', 'false').lower() == 'true'
-
-    sleep_service = get_service("sleep")
-    result = sleep_service.get_sleep_status()
-
-    if not result.success:
-        logger.error("Failed to load sleep status via service: %s", result.message)
-        return api_response(
-            False,
-            message=result.message or t_api("sleep_status_error", request),
-            status=500,
-            error_code=result.error_code or "sleep_status_error"
-        )
-
-    if advanced_mode:
-        return api_response(True, data={
-            "timestamp": result.timestamp.isoformat(),
-            "sleep": {k: v for k, v in (result.data or {}).items() if k != "raw_status"},
-            "mode": "advanced"
-        })
-
-    legacy_payload = (result.data or {}).get("raw_status")
-    if legacy_payload is None:
-        legacy_payload = result.data
-    return api_response(True, data=legacy_payload or {})
-
 
 @sleep_bp.route("/sleep", methods=["POST"])
 @api_error_handler

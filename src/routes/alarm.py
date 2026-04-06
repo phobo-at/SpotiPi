@@ -48,47 +48,6 @@ def save_alarm():
     return api_response(False, message=t_api("internal_error_saving", request), status=500, error_code="internal_error")
 
 
-@alarm_bp.route("/alarm_status")
-@api_error_handler
-@rate_limit("status_check")
-def alarm_status():
-    """Get alarm status - supports both basic and advanced modes."""
-    advanced_mode = request.args.get('advanced', 'false').lower() == 'true'
-
-    alarm_service = get_service("alarm")
-    result = alarm_service.get_alarm_status()
-
-    if not result.success:
-        logger.error("Failed to load alarm status via service: %s", result.message)
-        return api_response(
-            False,
-            message=result.message or t_api("alarm_status_error", request),
-            status=400,
-            error_code=result.error_code or "alarm_status_error"
-        )
-
-    alarm_data = result.data or {}
-
-    if advanced_mode:
-        return api_response(True, data={
-            "timestamp": result.timestamp.isoformat(),
-            "alarm": alarm_data,
-            "mode": "advanced"
-        })
-
-    payload = {
-        "enabled": bool(alarm_data.get("enabled", False)),
-        "time": alarm_data.get("time") or "07:00",
-        "alarm_volume": alarm_data.get("alarm_volume", alarm_data.get("volume", 50)),
-        "next_alarm": alarm_data.get("next_alarm", ""),
-        "playlist_uri": alarm_data.get("playlist_uri", ""),
-        "device_name": alarm_data.get("device_name", ""),
-        "fade_in": bool(alarm_data.get("fade_in", False)),
-        "shuffle": bool(alarm_data.get("shuffle", False)),
-        "mode": "basic"
-    }
-    return api_response(True, data=payload)
-
 
 @alarm_bp.route("/api/alarm/execute", methods=["POST"])
 @rate_limit("config_changes")

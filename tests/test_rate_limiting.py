@@ -43,7 +43,7 @@ def test_rate_limiting_status(client):
 
 
 def test_status_check_rate_limit(client):
-    responses = [client.get('/sleep_status') for _ in range(10)]
+    responses = [client.get('/api/services/health') for _ in range(10)]
     assert all(resp.status_code == 200 for resp in responses)
 
 
@@ -63,7 +63,7 @@ def test_concurrent_requests(app):
 
     def make_request() -> int:
         with app.test_client() as local_client:
-            return local_client.get('/sleep_status').status_code
+            return local_client.get('/api/services/health').status_code
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         results = list(executor.map(lambda _: make_request(), range(20)))
@@ -74,7 +74,7 @@ def test_concurrent_requests(app):
 
 def test_rate_limiting_reset(client):
     for _ in range(5):
-        client.get('/sleep_status')
+        client.get('/api/services/health')
 
     initial_stats = client.get('/api/rate-limiting/status').get_json()
     initial_total = initial_stats["data"]["rate_limiting"]["statistics"]["global_stats"]["total_requests"]

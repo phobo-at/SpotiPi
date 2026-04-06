@@ -103,7 +103,6 @@ button:disabled {
 .app-header,
 .player-card,
 .snapshot-card,
-.action-card,
 .banner,
 .sheet,
 .toast,
@@ -137,7 +136,6 @@ button:disabled {
 .snapshot-header h2,
 .settings-group h3,
 .sheet h2,
-.action-card h3,
 .player-copy h2 {
   margin: 0;
 }
@@ -447,7 +445,6 @@ button:disabled {
 .player-heading,
 .field-label-row,
 .snapshot-header,
-.action-card-header,
 .sheet-header {
   display: flex;
   align-items: flex-start;
@@ -473,12 +470,10 @@ button:disabled {
 
 .player-copy p,
 .snapshot-header p,
-.action-card p,
 .sheet-subtitle,
 .toggle-description,
 .meta-list,
 .snapshot-item small,
-.device-card-meta,
 .library-row-meta {
   color: var(--text-muted);
 }
@@ -497,8 +492,7 @@ button:disabled {
 .choice-chip,
 .section-tab,
 .library-row,
-.library-row-action,
-.device-card {
+.library-row-action {
   transition:
     transform 180ms ease,
     background-color 180ms ease,
@@ -530,7 +524,6 @@ button:disabled {
 .section-tab:hover,
 .library-row:hover,
 .library-row-action:hover,
-.device-card:hover,
 .secondary-button:hover {
   transform: translateY(-1px);
 }
@@ -1093,7 +1086,6 @@ input[type="range"] {
   transform: translateX(22px);
 }
 
-.device-grid,
 .library-list,
 .settings-group,
 .meta-list {
@@ -1101,39 +1093,18 @@ input[type="range"] {
   gap: 12px;
 }
 
-.device-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-}
-
-.device-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  min-height: 72px;
-  padding: 14px 16px;
-  text-align: left;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text);
-}
-
-.device-card.is-selected,
 .library-row.is-selected {
   border-color: rgba(76, 217, 100, 0.32);
   box-shadow: 0 0 0 1px rgba(76, 217, 100, 0.14);
   background: rgba(76, 217, 100, 0.1);
 }
 
-.device-card-copy,
 .library-row-copy {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-.device-card-title,
 .library-row-title {
   font-weight: 700;
 }
@@ -1306,8 +1277,7 @@ input[type="range"] {
 }
 
 @media (max-width: 1080px) {
-  .dashboard-grid,
-  .action-grid {
+  .dashboard-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1325,7 +1295,6 @@ input[type="range"] {
   .app-header,
   .player-card,
   .snapshot-card,
-  .action-card,
   .sheet {
     border-radius: 24px;
   }
@@ -1348,10 +1317,6 @@ input[type="range"] {
     min-width: 0;
     justify-content: flex-start;
     text-align: left;
-  }
-
-  .action-grid {
-    gap: 14px;
   }
 
   .banner-actions {

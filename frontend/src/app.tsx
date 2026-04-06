@@ -969,40 +969,6 @@ function LibraryPicker({
   );
 }
 
-interface ActionCardProps {
-  title: string;
-  summary: string;
-  actionLabel: string;
-  iconName: string;
-  disabled?: boolean;
-  onAction: () => void;
-  testId: string;
-}
-
-function ActionCard({
-  title,
-  summary,
-  actionLabel,
-  iconName,
-  disabled,
-  onAction,
-  testId
-}: ActionCardProps) {
-  return (
-    <article class={`action-card ${disabled ? "is-disabled" : ""}`} data-testid={testId}>
-      <div class="action-card-header">
-        <span class="action-card-icon">{icon(iconName)}</span>
-        <div>
-          <h3>{title}</h3>
-          <p>{summary}</p>
-        </div>
-      </div>
-      <button type="button" class="primary-button" disabled={disabled} onClick={onAction}>
-        {actionLabel}
-      </button>
-    </article>
-  );
-}
 
 export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const t = useMemo(

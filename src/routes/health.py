@@ -315,46 +315,6 @@ def api_dashboard_status():
     return api_response(True, data=response_payload, status=status_code)
 
 
-@health_bp.route("/playback_status")
-@api_error_handler
-@rate_limit("spotify_api")
-def playback_status():
-    """Get current Spotify playback status."""
-    if _playback_snapshot is None:
-        return api_response(False, message="Playback snapshot not initialized", status=500, error_code="init_error")
-    
-    force_refresh = request.args.get('refresh') in ('1', 'true', 'yes')
-    if force_refresh:
-        _playback_snapshot.mark_stale()
-
-    playback_data, meta = _playback_snapshot.snapshot()
-
-    if force_refresh or meta["pending"]:
-        _playback_snapshot.schedule_refresh(
-            _refresh_playback_snapshot,
-            force=force_refresh,
-            reason="api.playback"
-        )
-
-    payload = playback_data.get("playback") if playback_data else {}
-    status_flag = playback_data.get("status") if playback_data else "pending"
-    response_payload = {
-        "timestamp": _iso_timestamp_now(),
-        "playback": payload or {},
-        "status": status_flag,
-        "hydration": normalise_snapshot_meta(meta)
-    }
-    if playback_data and playback_data.get("error"):
-        response_payload["error"] = playback_data["error"]
-
-    status_code = 200
-    if response_payload["hydration"]["pending"] or status_flag in {"pending", "auth_required"}:
-        status_code = 202
-    elif status_flag == "error":
-        status_code = 503
-
-    return api_response(True, data=response_payload, status=status_code)
-
 
 @health_bp.route("/api/token-cache/status")
 @rate_limit("status_check")
