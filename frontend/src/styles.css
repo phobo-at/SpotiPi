@@ -688,6 +688,10 @@ button:disabled {
   border-radius: 12px;
 }
 
+.credential-visibility-toggle:hover {
+  transform: translateY(-50%);
+}
+
 .field-input-large {
   min-height: 68px;
   font-size: 1.3rem;
@@ -695,7 +699,19 @@ button:disabled {
 }
 
 select.field-input {
-  appearance: none;
+  appearance: auto;
+  cursor: pointer;
+}
+
+.device-select-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.device-select-row .device-select {
+  flex: 1;
+  min-width: 0;
 }
 
 input[type="range"] {

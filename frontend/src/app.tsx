@@ -524,41 +524,45 @@ function DevicePicker({
 
   return (
     <div class="field-group">
-      <div class="field-label-row">
-        <label class="field-label">{title}</label>
-        <button type="button" class="ghost-button" onClick={onRefresh}>
-          {icon("refresh")}
-          <span>{localized(language, "Refresh", "Aktualisieren")}</span>
-        </button>
-      </div>
+      <label class="field-label">{title}</label>
       {devices.length === 0 ? (
         <div class="state-card state-card-muted">
           <p>{emptyMessage}</p>
         </div>
       ) : (
-        <div class="device-grid" role="list">
-          {devices.map((device) => {
-            const deviceKey = device.id || device.name;
-            const selected = deviceKey === selectedKey;
-            return (
-              <button
-                key={deviceKey}
-                type="button"
-                class={`device-card ${selected ? "is-selected" : ""}`}
-                aria-pressed={selected}
-                onClick={() => onSelect(device)}
-              >
-                <div class="device-card-copy">
-                  <span class="device-card-title">{device.name}</span>
-                  <span class="device-card-meta">
-                    {device.type || localized(language, "Spotify device", "Spotify-Gerät")}
-                    {device.is_active ? ` · ${localized(language, "active", "aktiv")}` : ""}
-                  </span>
-                </div>
-                {selected ? icon("check", "icon icon-check") : icon("device", "icon icon-muted")}
-              </button>
-            );
-          })}
+        <div class="device-select-row">
+          <select
+            class="field-input device-select"
+            value={selectedKey}
+            onChange={(event) => {
+              const val = (event.currentTarget as HTMLSelectElement).value;
+              const device = devices.find((d) => (d.id || d.name) === val);
+              if (device) onSelect(device);
+            }}
+          >
+            {!selectedKey ? (
+              <option value="" disabled>
+                {localized(language, "Choose a speaker", "Lautsprecher wählen")}
+              </option>
+            ) : null}
+            {devices.map((device) => {
+              const key = device.id || device.name;
+              return (
+                <option key={key} value={key}>
+                  {device.name}
+                  {device.is_active ? ` · ${localized(language, "active", "aktiv")}` : ""}
+                </option>
+              );
+            })}
+          </select>
+          <button
+            type="button"
+            class="icon-button"
+            aria-label={localized(language, "Refresh speakers", "Lautsprecher aktualisieren")}
+            onClick={onRefresh}
+          >
+            {icon("refresh")}
+          </button>
         </div>
       )}
     </div>
@@ -1269,7 +1273,11 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
   function handleLibrarySelect(item: LibraryItem) {
     if (surface === "alarm") {
-      setAlarmForm((current) => ({ ...current, playlistUri: item.uri }));
+      setAlarmForm((current) => {
+        const next = { ...current, playlistUri: item.uri };
+        void handleAlarmSave(next);
+        return next;
+      });
     } else if (surface === "sleep") {
       setSleepForm((current) => ({ ...current, playlistUri: item.uri }));
     } else if (surface === "play") {
@@ -1451,7 +1459,9 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
   }
 
-  async function handleAlarmSave() {
+  async function handleAlarmSave(form?: AlarmFormState) {
+    const data = form ?? alarmForm;
+
     if (networkStatus === "offline") {
       pushToast(
         "error",
@@ -1464,7 +1474,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       return;
     }
 
-    if (!isValidTimeInput(alarmForm.time)) {
+    if (!isValidTimeInput(data.time)) {
       pushToast(
         "error",
         localized(
@@ -1476,7 +1486,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       return;
     }
 
-    if (!alarmForm.deviceName.trim()) {
+    if (!data.deviceName.trim()) {
       pushToast(
         "error",
         localized(
@@ -1488,7 +1498,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       return;
     }
 
-    if (alarmForm.enabled && hasPassedToday(alarmForm.time)) {
+    if (data.enabled && hasPassedToday(data.time)) {
       pushToast(
         "info",
         localized(
@@ -1502,14 +1512,14 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     setBusyAction("alarm");
 
     const payload = new URLSearchParams();
-    payload.set("enabled", alarmForm.enabled ? "on" : "off");
-    payload.set("time", alarmForm.time);
-    payload.set("device_name", alarmForm.deviceName);
-    payload.set("playlist_uri", alarmForm.playlistUri);
-    payload.set("alarm_volume", String(alarmForm.alarmVolume));
+    payload.set("enabled", data.enabled ? "on" : "off");
+    payload.set("time", data.time);
+    payload.set("device_name", data.deviceName);
+    payload.set("playlist_uri", data.playlistUri);
+    payload.set("alarm_volume", String(data.alarmVolume));
     payload.set("volume", String(playerVolume));
-    payload.set("fade_in", alarmForm.fadeIn ? "on" : "off");
-    payload.set("shuffle", alarmForm.shuffle ? "on" : "off");
+    payload.set("fade_in", data.fadeIn ? "on" : "off");
+    payload.set("shuffle", data.shuffle ? "on" : "off");
 
     try {
       const result = await postForm<AlarmSummary>("/save_alarm", payload);
@@ -1523,7 +1533,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           result.body.message ||
             t("alarm_settings_saved", localized(bootstrap.language, "Alarm saved", "Wecker gespeichert"))
         );
-        closeSurface();
         return;
       }
 
@@ -2109,12 +2118,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         open={surface === "alarm"}
         onClose={closeSurface}
         closeLabel={closeSheetLabel}
-        title={localized(bootstrap.language, "Alarm flow", "Wecker-Flow")}
-        subtitle={localized(
-          bootstrap.language,
-          "Everything required to create a reliable morning flow without tab-hopping.",
-          "Alles, was für einen verlässlichen Morgen-Flow nötig ist, ohne Tab-Hopping."
-        )}
+        title={localized(bootstrap.language, "Set alarm", "Wecker stellen")}
       >
         <div class="sheet-stack" data-testid="alarm-sheet">
           <div class="field-group">
@@ -2133,6 +2137,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                   time: (event.currentTarget as HTMLInputElement).value
                 }))
               }
+              onBlur={() => void handleAlarmSave()}
             />
           </div>
 
@@ -2142,9 +2147,11 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             selectedKey={alarmForm.deviceName}
             status={devicesStatus}
             offline={networkStatus === "offline"}
-            onSelect={(device) =>
-              setAlarmForm((current) => ({ ...current, deviceName: device.name }))
-            }
+            onSelect={(device) => {
+              const next = { ...alarmForm, deviceName: device.name };
+              setAlarmForm(next);
+              void handleAlarmSave(next);
+            }}
             onRefresh={() => void refreshDashboard(true)}
             t={t}
             language={bootstrap.language}
@@ -2169,6 +2176,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                   alarmVolume: Number((event.currentTarget as HTMLInputElement).value)
                 }))
               }
+              onMouseUp={() => void handleAlarmSave()}
+              onTouchEnd={() => void handleAlarmSave()}
             />
           </div>
 
@@ -2196,17 +2205,29 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           <ToggleField
             label={t("enable_alarm", localized(bootstrap.language, "Enable alarm", "Wecker aktivieren"))}
             checked={alarmForm.enabled}
-            onChange={(checked) => setAlarmForm((current) => ({ ...current, enabled: checked }))}
+            onChange={(checked) => {
+              const next = { ...alarmForm, enabled: checked };
+              setAlarmForm(next);
+              void handleAlarmSave(next);
+            }}
           />
           <ToggleField
             label={t("fade_in", localized(bootstrap.language, "Fade in", "Fade-In"))}
             checked={alarmForm.fadeIn}
-            onChange={(checked) => setAlarmForm((current) => ({ ...current, fadeIn: checked }))}
+            onChange={(checked) => {
+              const next = { ...alarmForm, fadeIn: checked };
+              setAlarmForm(next);
+              void handleAlarmSave(next);
+            }}
           />
           <ToggleField
             label={t("shuffle", localized(bootstrap.language, "Shuffle", "Shuffle"))}
             checked={alarmForm.shuffle}
-            onChange={(checked) => setAlarmForm((current) => ({ ...current, shuffle: checked }))}
+            onChange={(checked) => {
+              const next = { ...alarmForm, shuffle: checked };
+              setAlarmForm(next);
+              void handleAlarmSave(next);
+            }}
           />
 
           <div class={`state-card ${alarmForm.enabled ? "state-card-active" : "state-card-muted"}`}>
@@ -2225,21 +2246,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             </p>
           </div>
 
-          <div class="sheet-actions">
-            <button type="button" class="secondary-button" onClick={closeSurface}>
-              {localized(bootstrap.language, "Cancel", "Abbrechen")}
-            </button>
-            <button
-              type="button"
-              class="primary-button"
-              disabled={busyAction === "alarm"}
-              onClick={() => void handleAlarmSave()}
-            >
-              {busyAction === "alarm"
-                ? localized(bootstrap.language, "Saving...", "Speichert...")
-                : localized(bootstrap.language, "Save alarm", "Wecker speichern")}
-            </button>
-          </div>
         </div>
       </Sheet>
 
@@ -2567,7 +2573,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                   class="field-input credential-input"
                   type={showClientId ? "text" : "password"}
                   autoComplete="off"
-                  placeholder={localized(bootstrap.language, "Not set", "Nicht gesetzt")}
+                  placeholder={!hasSpotifyClientId ? localized(bootstrap.language, "Not set", "Nicht gesetzt") : ""}
                   value={spotifyForm.clientId}
                   onInput={(event) =>
                     handleSpotifyFieldChange("clientId", (event.currentTarget as HTMLInputElement).value)
@@ -2611,7 +2617,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                   class="field-input credential-input"
                   type={showClientSecret ? "text" : "password"}
                   autoComplete="off"
-                  placeholder={localized(bootstrap.language, "Not set", "Nicht gesetzt")}
+                  placeholder={!hasSpotifyClientSecret ? localized(bootstrap.language, "Not set", "Nicht gesetzt") : ""}
                   value={spotifyForm.clientSecret}
                   onInput={(event) =>
                     handleSpotifyFieldChange("clientSecret", (event.currentTarget as HTMLInputElement).value)
@@ -2655,11 +2661,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                   class="field-input credential-input"
                   type={showRefreshToken ? "text" : "password"}
                   autoComplete="off"
-                  placeholder={localized(
-                    bootstrap.language,
-                    "Optional fallback: paste token manually",
-                    "Optional: Token manuell einfügen"
-                  )}
+                  placeholder={!hasSpotifyRefreshToken ? localized(bootstrap.language, "Optional fallback: paste token manually", "Optional: Token manuell einfügen") : ""}
                   value={spotifyForm.refreshToken}
                   onInput={(event) =>
                     handleSpotifyFieldChange("refreshToken", (event.currentTarget as HTMLInputElement).value)

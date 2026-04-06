@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ship SpotiPi"
+  short_description: "Ship workflow for SpotiPi changes"
+  default_prompt: "Use $spotipi-ship to ship current SpotiPi changes with quality gates, version/docs sync, and explicit commit/push confirmation."
