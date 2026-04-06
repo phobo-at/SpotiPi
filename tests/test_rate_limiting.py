@@ -11,6 +11,8 @@ import concurrent.futures
 
 import pytest
 
+from src.utils.rate_limiting import SimpleRateLimiter
+
 
 @pytest.fixture(autouse=True)
 def reset_rate_limits(client):
@@ -29,7 +31,7 @@ def test_rate_limiting_status(client):
 
     rules = data["data"]["rate_limiting"]["rules"]
     expected_rules = {
-        "api_general", "api_strict", "config_changes",
+        "default", "api_general", "api_strict", "config_changes",
         "music_library", "spotify_api", "status_check"
     }
 
@@ -96,3 +98,11 @@ def test_different_algorithms(client):
 
     algorithms = {rule["limit_type"] for rule in rules.values()}
     assert {"sliding_window", "token_bucket"}.issubset(algorithms)
+
+
+def test_low_power_mode_keeps_rate_limiter_enabled(monkeypatch):
+    monkeypatch.setenv("SPOTIPI_LOW_POWER", "1")
+    monkeypatch.delenv("SPOTIPI_DISABLE_RATE_LIMIT", raising=False)
+
+    limiter = SimpleRateLimiter()
+    assert limiter.get_stats()["enabled"] is True

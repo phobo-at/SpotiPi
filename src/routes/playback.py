@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 @playback_bp.route("/toggle_play_pause", methods=["POST"])
 @api_error_handler
+@rate_limit("api_general")
 def toggle_play_pause():
     """Toggle Spotify play/pause - optimized for immediate response."""
     spotify_service = get_service("spotify")
@@ -39,6 +40,7 @@ def toggle_play_pause():
 
 @playback_bp.route("/volume", methods=["POST"])
 @api_error_handler
+@rate_limit("api_general")
 def volume_endpoint():
     """Volume endpoint - only sets Spotify volume (no config save)."""
     spotify_service = get_service("spotify")
@@ -63,6 +65,7 @@ def volume_endpoint():
 
 @playback_bp.route("/play", methods=["POST"])
 @api_error_handler
+@rate_limit("api_general")
 def play_endpoint():
     """Unified playback endpoint - supports both JSON and form data."""
     spotify_service = get_service("spotify")
@@ -102,6 +105,7 @@ def play_endpoint():
 
 @playback_bp.route("/api/playback/next", methods=["POST"])
 @api_error_handler
+@rate_limit("api_general")
 def playback_next():
     """Skip to next track."""
     spotify_service = get_service("spotify")
@@ -119,6 +123,7 @@ def playback_next():
 
 @playback_bp.route("/api/playback/previous", methods=["POST"])
 @api_error_handler
+@rate_limit("api_general")
 def playback_previous():
     """Skip to previous track."""
     spotify_service = get_service("spotify")

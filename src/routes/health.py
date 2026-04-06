@@ -381,6 +381,7 @@ def get_thread_safety_status():
 
 
 @health_bp.route("/api/thread-safety/invalidate-cache", methods=["POST"])
+@rate_limit("config_changes")
 def invalidate_thread_safe_cache():
     """🗑️ Force invalidation of thread-safe config cache."""
     try:
@@ -392,6 +393,7 @@ def invalidate_thread_safe_cache():
 
 
 @health_bp.route("/api/token-cache/performance")
+@rate_limit("status_check")
 def log_token_performance():
     """📈 Log token cache performance summary."""
     try:

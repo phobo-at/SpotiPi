@@ -11,9 +11,8 @@ import time
 from pathlib import Path
 from threading import Thread
 from typing import Any, Dict, Optional
-from urllib.parse import urlparse
 
-from flask import (Flask, Response, g, request)
+from flask import Flask, Response, g, request
 from flask_compress import Compress
 from werkzeug.local import LocalProxy
 
@@ -28,10 +27,22 @@ from .utils.cache_migration import get_cache_migration_layer
 from .utils.async_snapshot import AsyncSnapshot
 from .utils.logger import setup_logger, setup_logging
 from .utils.perf_monitor import perf_monitor
+from .utils.request_security import (
+    authenticate_admin_request,
+    get_admin_realm,
+    has_admin_auth_config,
+    is_loopback_request,
+    is_protected_request,
+    is_same_origin_submission,
+    matches_origin,
+    requires_same_origin_protection,
+    resolve_cors_allow_origin,
+)
 from .utils.translations import get_translations, get_user_language
 from .utils.wsgi_logging import TidyRequestHandler
 from .version import VERSION, get_app_info
 from .routes.errors import register_error_handlers
+from .routes.helpers import api_response
 from .routes.alarm import alarm_bp
 from .routes.cache import cache_bp
 from .routes.devices import devices_bp, init_snapshots as init_devices_snapshots
@@ -64,6 +75,10 @@ def _configure_app(app: Flask) -> None:
     app.jinja_env.auto_reload = not LOW_POWER_MODE
 
     app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
+    app.config.setdefault('SESSION_COOKIE_NAME', 'spotipi_session')
+    app.config.setdefault('SESSION_COOKIE_HTTPONLY', True)
+    app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
+    app.config.setdefault('SESSION_REFRESH_EACH_REQUEST', True)
 
     app.config.setdefault('COMPRESS_REGISTER', True)
     app.config.setdefault('COMPRESS_ALGORITHM', os.getenv('SPOTIPI_COMPRESS_ALGO', 'gzip'))
@@ -188,40 +203,52 @@ def _register_request_hooks(app: Flask) -> None:
         except Exception:
             g.perf_started = None
 
+    @app.before_request
+    def _enforce_request_security():
+        """Apply auth and same-origin protections before route handlers run."""
+        if request.method == 'OPTIONS':
+            return None
+
+        if is_protected_request(request):
+            if has_admin_auth_config():
+                if not authenticate_admin_request(request):
+                    response = api_response(
+                        False,
+                        message="Admin authentication required.",
+                        status=401,
+                        error_code="admin_auth_required",
+                    )
+                    response.headers['WWW-Authenticate'] = (
+                        f'Basic realm="{get_admin_realm()}", charset="UTF-8"'
+                    )
+                    return response
+            elif not is_loopback_request(request):
+                return api_response(
+                    False,
+                    message="Remote admin access is disabled until SPOTIPI_ADMIN_PASSWORD is configured.",
+                    status=403,
+                    error_code="admin_auth_required",
+                )
+
+        if requires_same_origin_protection(request) and not is_same_origin_submission(request):
+            return api_response(
+                False,
+                message="Cross-site request rejected.",
+                status=403,
+                error_code="invalid_origin",
+            )
+
+        return None
+
     @app.after_request
     def after_request(response: Response):
         """Add CORS headers + (optional) gzip compression & cache related headers."""
         # ---- CORS ----
-        allowed_origins_env = os.getenv('SPOTIPI_CORS_ORIGINS')
         request_origin = request.headers.get('Origin')
-
-        if allowed_origins_env:
-            allowed_entries = [entry.strip() for entry in allowed_origins_env.split(',') if entry.strip()]
-
-            if any(entry == '*' for entry in allowed_entries):
-                acao_value = request_origin or '*'
-                response.headers['Access-Control-Allow-Origin'] = acao_value
-                if request_origin:
-                    response.headers.setdefault('Vary', 'Origin')
-            elif request_origin and any(_matches_origin(request_origin, entry) for entry in allowed_entries):
-                response.headers['Access-Control-Allow-Origin'] = request_origin
-                response.headers.setdefault('Vary', 'Origin')
-            elif request_origin == 'null' and any(entry.lower() == 'null' for entry in allowed_entries):
-                response.headers['Access-Control-Allow-Origin'] = 'null'
-        else:
-            # Default: allow same-origin and spotipi.local (with any port)
-            default_host = os.getenv('SPOTIPI_DEFAULT_HOST', 'spotipi.local')
-            if request_origin:
-                parsed_origin = urlparse(request_origin)
-                # Allow if hostname matches (ignore port difference)
-                if parsed_origin.hostname and parsed_origin.hostname.endswith(default_host):
-                    response.headers['Access-Control-Allow-Origin'] = request_origin
-                    response.headers.setdefault('Vary', 'Origin')
-                else:
-                    # Fallback to default origin
-                    response.headers['Access-Control-Allow-Origin'] = f'http://{default_host}'
-                    response.headers.setdefault('Vary', 'Origin')
-            # No Origin header = same-origin request, no CORS needed
+        allowed_origin = resolve_cors_allow_origin(request)
+        if request_origin and allowed_origin:
+            response.headers['Access-Control-Allow-Origin'] = allowed_origin
+            response.headers.setdefault('Vary', 'Origin')
 
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
         response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
@@ -243,6 +270,7 @@ def _register_request_hooks(app: Flask) -> None:
         response.headers.setdefault('X-Content-Type-Options', 'nosniff')
         response.headers.setdefault('X-Frame-Options', 'DENY')
         response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        response.headers.setdefault('Cross-Origin-Resource-Policy', 'same-origin')
 
         # ---- Static asset caching ----
         try:
@@ -521,52 +549,7 @@ def _build_devices_snapshot(token: Optional[str], *, timestamp: Optional[str] = 
 
 def _matches_origin(origin: str, allowed_entry: str) -> bool:
     """Check if a request origin matches an allowed CORS entry."""
-    if not allowed_entry:
-        return False
-
-    allowed_entry = allowed_entry.strip()
-    if allowed_entry == '*':
-        return True
-
-    if origin == 'null':
-        # Allow explicit "null" entries for local file / PWA contexts
-        return allowed_entry.lower() == 'null'
-
-    if not origin:
-        return False
-
-    parsed_origin = urlparse(origin)
-    origin_host = parsed_origin.hostname
-    origin_port = parsed_origin.port or (443 if parsed_origin.scheme == 'https' else 80)
-
-    # Allow host entries without scheme ("example.com" or "example.com:5000")
-    if '://' not in allowed_entry:
-        host, _, port = allowed_entry.partition(':')
-        if host and host.lower() == (origin_host or '').lower():
-            if not port:
-                return True
-            try:
-                return int(port) == origin_port
-            except ValueError:
-                return False
-        return False
-
-    parsed_allowed = urlparse(allowed_entry)
-
-    if parsed_allowed.scheme and parsed_allowed.scheme != parsed_origin.scheme:
-        return False
-
-    if parsed_allowed.hostname and (parsed_allowed.hostname.lower() != (origin_host or '').lower()):
-        return False
-
-    allowed_port = parsed_allowed.port or (
-        443 if parsed_allowed.scheme == 'https' else 80 if parsed_allowed.scheme == 'http' else None
-    )
-
-    if parsed_allowed.port and allowed_port != origin_port:
-        return False
-
-    return True
+    return matches_origin(origin, allowed_entry)
 
 
 ## Legacy minute-based alarm_scheduler removed; replaced by event-driven version in core.alarm_scheduler

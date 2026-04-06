@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 
 from flask import g, jsonify, request
 
-LOW_POWER_MODE = os.getenv("SPOTIPI_LOW_POWER", "").lower() in ("1", "true", "yes", "on")
+from .request_security import get_effective_client_ip
 
 
 @dataclass(frozen=True)
@@ -54,13 +54,14 @@ class SimpleRateLimiter:
         self._start_wall = time.time()
         self._total_requests = 0
         self._blocked_requests = 0
-        self._enabled = os.getenv("SPOTIPI_DISABLE_RATE_LIMIT", "0") != "1" and not LOW_POWER_MODE
+        self._enabled = os.getenv("SPOTIPI_DISABLE_RATE_LIMIT", "0") != "1"
         self._install_default_rules()
 
     # ------------------------------------------------------------------
     # Rule management
     # ------------------------------------------------------------------
     def _install_default_rules(self) -> None:
+        self.add_rule(RateLimitRule("default", 180, 60.0, 30.0, "sliding_window"))
         self.add_rule(RateLimitRule("api_general", 300, 60.0, 30.0, "sliding_window"))
         self.add_rule(RateLimitRule("api_strict", 80, 60.0, 30.0, "sliding_window"))
         self.add_rule(RateLimitRule("config_changes", 60, 60.0, 30.0, "sliding_window"))
@@ -89,8 +90,7 @@ class SimpleRateLimiter:
     # Core limiter
     # ------------------------------------------------------------------
     def _resolve_client_id(self) -> str:
-        forwarded = request.headers.get("X-Forwarded-For")
-        ip = forwarded.split(",")[0].strip() if forwarded else request.remote_addr or "127.0.0.1"
+        ip = get_effective_client_ip(request)
         user_agent = request.headers.get("User-Agent", "")[:64]
         ua_hash = hash(user_agent) & 0xFFFF
         return f"{ip}:{ua_hash:x}"

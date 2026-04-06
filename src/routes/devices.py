@@ -166,6 +166,7 @@ def api_spotify_devices():
 
 @devices_bp.route("/api/devices/refresh")
 @api_error_handler
+@rate_limit("api_general")
 def api_devices_refresh():
     """Fast device refresh endpoint - bypasses cache for immediate updates."""
     token = get_access_token()
