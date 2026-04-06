@@ -2048,10 +2048,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           </section>
 
           <section class="snapshot-card">
-            <div class="snapshot-header">
-              <h2>{localized(bootstrap.language, "Today at a glance", "Heute auf einen Blick")}</h2>
-            </div>
-
             <div class="snapshot-grid">
               <button
                 type="button"
