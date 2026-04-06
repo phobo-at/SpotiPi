@@ -2087,69 +2087,52 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             </div>
 
             <div class="snapshot-grid">
-              <div class="snapshot-item">
+              <button
+                type="button"
+                class="snapshot-item snapshot-item-action"
+                onClick={() => openSurface("alarm")}
+                data-testid="alarm-card"
+              >
                 <span>{icon("alarm")}</span>
                 <div>
                   <small>{localized(bootstrap.language, "Alarm", "Wecker")}</small>
                   <strong>{alarmSummary}</strong>
                 </div>
-              </div>
+                <span class="snapshot-item-caret">{icon("chevron")}</span>
+              </button>
               {sleepSurfaceVisible ? (
-                <div class="snapshot-item" data-testid="sleep-snapshot">
+                <button
+                  type="button"
+                  class="snapshot-item snapshot-item-action"
+                  onClick={() => openSurface("sleep")}
+                  data-testid="sleep-snapshot"
+                >
                   <span>{icon("sleep")}</span>
                   <div>
                     <small>{localized(bootstrap.language, "Sleep", "Sleep")}</small>
                     <strong>{sleepSummary}</strong>
                   </div>
-                </div>
+                  <span class="snapshot-item-caret">{icon("chevron")}</span>
+                </button>
               ) : null}
-              <div class="snapshot-item">
-                <span>{icon("device")}</span>
+              <button
+                type="button"
+                class={`snapshot-item snapshot-item-action ${!settings.feature_flags.music_library ? "is-disabled" : ""}`}
+                disabled={!settings.feature_flags.music_library}
+                onClick={() => openSurface("play")}
+                data-testid="play-card"
+              >
+                <span>{icon("play")}</span>
                 <div>
-                  <small>{localized(bootstrap.language, "Devices", "Geräte")}</small>
+                  <small>{localized(bootstrap.language, "Play now", "Jetzt abspielen")}</small>
                   <strong>{playSummary}</strong>
                 </div>
-              </div>
+                <span class="snapshot-item-caret">{icon("chevron")}</span>
+              </button>
             </div>
 
           </section>
         </main>
-
-        <section class="actions-section">
-          <div class="action-grid">
-            <ActionCard
-              title={localized(bootstrap.language, "Set alarm", "Wecker setzen")}
-              summary={alarmSummary}
-              actionLabel={localized(bootstrap.language, "Edit alarm", "Wecker bearbeiten")}
-              iconName="alarm"
-              onAction={() => openSurface("alarm")}
-              testId="alarm-card"
-            />
-            {sleepSurfaceVisible ? (
-              <ActionCard
-                title={localized(bootstrap.language, "Start sleep", "Sleep starten")}
-                summary={sleepSummary}
-                actionLabel={
-                  dashboard.sleep.active
-                    ? localized(bootstrap.language, "Manage sleep", "Sleep verwalten")
-                    : localized(bootstrap.language, "Open sleep flow", "Sleep-Flow öffnen")
-                }
-                iconName="sleep"
-                onAction={() => openSurface("sleep")}
-                testId="sleep-card"
-              />
-            ) : null}
-            <ActionCard
-              title={localized(bootstrap.language, "Play now", "Jetzt abspielen")}
-              summary={playSummary}
-              actionLabel={localized(bootstrap.language, "Choose music", "Musik wählen")}
-              iconName="play"
-              disabled={!settings.feature_flags.music_library}
-              onAction={() => openSurface("play")}
-              testId="play-card"
-            />
-          </div>
-        </section>
 
         <footer class="app-footer">
           <span>{bootstrap.app.info}</span>

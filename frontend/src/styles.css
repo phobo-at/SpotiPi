@@ -848,6 +848,9 @@ input[type="range"] {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.04);
+  width: 100%;
+  text-align: left;
+  color: var(--text);
 }
 
 .snapshot-item span:first-child {
@@ -857,54 +860,56 @@ input[type="range"] {
   height: 44px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.snapshot-item > div {
+  flex: 1;
+  min-width: 0;
 }
 
 .snapshot-item strong {
   display: block;
   margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.actions-section {
-  padding-top: 8px;
+.snapshot-item-action {
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
 }
 
-.action-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+.snapshot-item-action:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
-.action-card {
+.snapshot-item-action:disabled,
+.snapshot-item-action.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.snapshot-item-caret {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 100%;
-  padding: 22px 24px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--surface-outline);
-  background: linear-gradient(180deg, rgba(13, 22, 32, 0.9), rgba(10, 16, 24, 0.82));
-  box-shadow: var(--shadow-lg);
-}
-
-.action-card.is-disabled {
-  filter: saturate(0.7);
-}
-
-.action-card-header {
   align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+  opacity: 0.5;
+  transition: opacity 150ms ease, transform 150ms ease;
 }
 
-.action-card-icon {
-  display: grid;
-  place-items: center;
-  width: 54px;
-  height: 54px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.06);
+.snapshot-item-caret .icon {
+  width: 18px;
+  height: 18px;
 }
 
-.action-card .primary-button {
-  margin-top: auto;
+.snapshot-item-action:hover .snapshot-item-caret {
+  opacity: 0.9;
+  transform: rotate(-90deg) translateY(-1px);
 }
 
 .app-footer {
