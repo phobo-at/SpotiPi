@@ -106,6 +106,7 @@ const ICONS: Record<string, string> = {
     "m4.8 4 14.4 16-1.4 1.4-2.7-3A12.5 12.5 0 0 1 12 19c-5 0-9-4-10-7 .7-2 2.3-4 4.7-5.6L3.4 2.6 4.8 4Zm8.7 9.7-3.3-3.6a2 2 0 0 0 3.3 3.6ZM12 5c5 0 9 4 10 7-.5 1.3-1.4 2.8-2.9 4.1l-1.4-1.6A9.6 9.6 0 0 0 20 12c-1-2.3-4.2-5-8-5-1 0-1.9.2-2.7.4L7.8 5.8A12.2 12.2 0 0 1 12 5Zm-.2 2.8a4 4 0 0 1 4 4c0 .5-.1 1-.3 1.4l-1.6-1.7a2.1 2.1 0 0 0-2-2l-1.7-1.8c.5-.1 1-.2 1.6-.2Z",
   lightning: "M13 2 5 13h5l-1 9 8-11h-5l1-9Z",
   arrow: "m8 5 8 7-8 7V5Z",
+  chevron: "M12 15.4 4.6 8 6 6.6l6 6 6-6 1.4 1.4L12 15.4Z",
   spotify: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm4.5 14.5a.7.7 0 0 1-1 .2c-2.7-1.7-6.1-2.1-10-.9a.7.7 0 1 1-.4-1.4c4.3-1.3 8.1-.9 11.2 1.1.3.2.4.7.2 1Zm1.4-3a.9.9 0 0 1-1.2.3c-3.1-1.9-7.8-2.5-11.5-1.2a.9.9 0 0 1-.6-1.7c4.3-1.4 9.5-.8 13.1 1.4.4.3.6.8.2 1.2Zm.1-3.2C14.2 8.1 8 7.8 4.8 8.8A1 1 0 0 1 4.2 7c3.8-1.2 10.7-.9 14.8 1.7a1 1 0 1 1-1 1.6Z"
 };
 
@@ -512,6 +513,20 @@ function DevicePicker({
   t,
   language
 }: DevicePickerProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
   const emptyMessage = offline
     ? t("status_offline", localized(language, "Offline mode", "Offline-Modus"))
     : status === "auth_required"
@@ -522,6 +537,8 @@ function DevicePicker({
           ? t("speaker_error", localized(language, "Error loading speakers", "Fehler beim Laden der Lautsprecher"))
           : t("no_devices_found", localized(language, "No speakers found", "Keine Lautsprecher gefunden"));
 
+  const selectedDevice = devices.find((d) => (d.id || d.name) === selectedKey);
+
   return (
     <div class="field-group">
       <label class="field-label">{title}</label>
@@ -530,31 +547,57 @@ function DevicePicker({
           <p>{emptyMessage}</p>
         </div>
       ) : (
-        <div class="device-select-row">
-          <select
-            class="field-input device-select"
-            value={selectedKey}
-            onChange={(event) => {
-              const val = (event.currentTarget as HTMLSelectElement).value;
-              const device = devices.find((d) => (d.id || d.name) === val);
-              if (device) onSelect(device);
-            }}
-          >
-            {!selectedKey ? (
-              <option value="" disabled>
-                {localized(language, "Choose a speaker", "Lautsprecher wählen")}
-              </option>
+        <div class="device-select-row" ref={containerRef}>
+          <div class="device-dropdown">
+            <button
+              type="button"
+              class={`field-input device-dropdown-trigger ${open ? "is-open" : ""}`}
+              aria-haspopup="listbox"
+              aria-expanded={open}
+              onClick={() => setOpen((v) => !v)}
+            >
+              <span class={selectedDevice ? "" : "device-dropdown-placeholder"}>
+                {selectedDevice
+                  ? selectedDevice.name
+                  : localized(language, "Choose a speaker", "Lautsprecher wählen")}
+              </span>
+              {selectedDevice?.is_active ? (
+                <span class="device-dropdown-active-dot" />
+              ) : null}
+              <span class={`device-dropdown-chevron ${open ? "is-open" : ""}`}>
+                {icon("chevron")}
+              </span>
+            </button>
+            {open ? (
+              <div class="device-dropdown-list" role="listbox">
+                {devices.map((device) => {
+                  const key = device.id || device.name;
+                  const isSelected = key === selectedKey;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      class={`device-dropdown-option ${isSelected ? "is-selected" : ""}`}
+                      onClick={() => {
+                        onSelect(device);
+                        setOpen(false);
+                      }}
+                    >
+                      <span class="device-dropdown-option-name">{device.name}</span>
+                      {device.is_active ? (
+                        <span class="device-dropdown-option-meta">
+                          {localized(language, "active", "aktiv")}
+                        </span>
+                      ) : null}
+                      {isSelected ? icon("check", "icon device-dropdown-check") : null}
+                    </button>
+                  );
+                })}
+              </div>
             ) : null}
-            {devices.map((device) => {
-              const key = device.id || device.name;
-              return (
-                <option key={key} value={key}>
-                  {device.name}
-                  {device.is_active ? ` · ${localized(language, "active", "aktiv")}` : ""}
-                </option>
-              );
-            })}
-          </select>
+          </div>
           <button
             type="button"
             class="icon-button"
