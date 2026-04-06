@@ -3,7 +3,7 @@ const { expect, test } = require("@playwright/test");
 
 const BOOTSTRAP_SCRIPT_RE = /(<script id="spotipi-bootstrap" type="application\/json">)([\s\S]*?)(<\/script>)/;
 
-async function gotoWithDashboardOverride(page, overrideDashboard) {
+async function gotoWithBootstrapOverride(page, overrideBootstrap) {
   await page.route("**/*", async (route, request) => {
     const url = new URL(request.url());
     if (request.resourceType() !== "document" || url.pathname !== "/") {
@@ -20,8 +20,8 @@ async function gotoWithDashboardOverride(page, overrideDashboard) {
     }
 
     const bootstrap = JSON.parse(match[2]);
-    bootstrap.dashboard = overrideDashboard(bootstrap.dashboard);
-    const bootstrapJson = JSON.stringify(bootstrap).replace(/</g, "\\u003c");
+    const nextBootstrap = overrideBootstrap(bootstrap);
+    const bootstrapJson = JSON.stringify(nextBootstrap).replace(/</g, "\\u003c");
     const patchedHtml = html.replace(BOOTSTRAP_SCRIPT_RE, `$1${bootstrapJson}$3`);
     await route.fulfill({ response, body: patchedHtml });
   });
@@ -29,12 +29,18 @@ async function gotoWithDashboardOverride(page, overrideDashboard) {
   await page.goto("/");
 }
 
+async function gotoWithDashboardOverride(page, overrideDashboard) {
+  await gotoWithBootstrapOverride(page, (bootstrap) => ({
+    ...bootstrap,
+    dashboard: overrideDashboard(bootstrap.dashboard)
+  }));
+}
+
 test("dashboard shell renders primary surfaces without critical accessibility issues", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByTestId("player-card")).toBeVisible();
   await expect(page.getByTestId("alarm-card")).toBeVisible();
-  await expect(page.getByTestId("sleep-card")).toBeVisible();
   await expect(page.getByTestId("play-card")).toBeVisible();
 
   const results = await new AxeBuilder({ page }).analyze();
@@ -43,6 +49,38 @@ test("dashboard shell renders primary surfaces without critical accessibility is
   );
 
   expect(blockingViolations).toEqual([]);
+});
+
+test("sleep tiles are hidden when sleep feature is disabled", async ({ page }) => {
+  await gotoWithBootstrapOverride(page, (bootstrap) => ({
+    ...bootstrap,
+    settings: {
+      ...bootstrap.settings,
+      feature_flags: {
+        ...bootstrap.settings.feature_flags,
+        sleep_timer: false
+      }
+    }
+  }));
+
+  await expect(page.getByTestId("sleep-card")).toHaveCount(0);
+  await expect(page.getByTestId("sleep-snapshot")).toHaveCount(0);
+});
+
+test("sleep tiles are visible when sleep feature is enabled", async ({ page }) => {
+  await gotoWithBootstrapOverride(page, (bootstrap) => ({
+    ...bootstrap,
+    settings: {
+      ...bootstrap.settings,
+      feature_flags: {
+        ...bootstrap.settings.feature_flags,
+        sleep_timer: true
+      }
+    }
+  }));
+
+  await expect(page.getByTestId("sleep-card")).toBeVisible();
+  await expect(page.getByTestId("sleep-snapshot")).toBeVisible();
 });
 
 test("settings surface opens from the header action", async ({ page }) => {
@@ -100,6 +138,11 @@ test("sheet traps keyboard focus", async ({ page }) => {
 
   await page.locator('[data-testid="alarm-card"] button').click();
   await expect(page.getByTestId("alarm-sheet")).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => {
+    const active = document.activeElement;
+    const dialog = document.querySelector("#alarm-sheet");
+    return Boolean(active && dialog && dialog.contains(active));
+  })).toBeTruthy();
 
   for (let i = 0; i < 20; i += 1) {
     await page.keyboard.press("Tab");
@@ -111,6 +154,105 @@ test("sheet traps keyboard focus", async ({ page }) => {
     return Boolean(active && dialog && dialog.contains(active));
   });
   expect(focusStaysInside).toBeTruthy();
+});
+
+test("open sheet locks document scroll and uses internal sheet scroll container", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByTestId("settings-trigger").click();
+  await expect(page.getByTestId("settings-sheet")).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => getComputedStyle(document.body).overflow)).toBe("hidden");
+  await expect.poll(async () => page.evaluate(() => getComputedStyle(document.documentElement).overflow)).toBe("hidden");
+
+  const styles = await page.evaluate(() => {
+    const sheetBody = document.querySelector("#settings-sheet .sheet-body");
+    const sheetBackdrop = document.querySelector(".sheet-backdrop");
+    return {
+      bodyOverflow: getComputedStyle(document.body).overflow,
+      htmlOverflow: getComputedStyle(document.documentElement).overflow,
+      sheetBodyOverflowY: sheetBody ? getComputedStyle(sheetBody).overflowY : "",
+      backdropOverflow: sheetBackdrop ? getComputedStyle(sheetBackdrop).overflow : ""
+    };
+  });
+
+  expect(styles.bodyOverflow).toBe("hidden");
+  expect(styles.htmlOverflow).toBe("hidden");
+  expect(["auto", "scroll"]).toContain(styles.sheetBodyOverflowY);
+  expect(styles.backdropOverflow).toBe("hidden");
+});
+
+test("settings sheet content does not overflow horizontally on small screens", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByTestId("settings-trigger").click();
+  await expect(page.getByTestId("settings-sheet")).toBeVisible();
+
+  const overflowing = await page.evaluate(() => {
+    const selectors = [
+      "#settings-sheet .sheet-header",
+      "#settings-sheet .sheet-body",
+      "#settings-sheet .sheet-stack",
+      "#settings-sheet .settings-group",
+      "#settings-sheet .account-card",
+      "#settings-sheet .sheet-actions",
+      "#settings-sheet .toggle-field"
+    ];
+
+    return selectors.flatMap((selector) =>
+      Array.from(document.querySelectorAll(selector)).flatMap((element) => {
+        const htmlElement = /** @type {HTMLElement} */ (element);
+        const style = getComputedStyle(htmlElement);
+        if (style.display === "none" || style.visibility === "hidden") {
+          return [];
+        }
+
+        if (htmlElement.scrollWidth <= htmlElement.clientWidth + 1) {
+          return [];
+        }
+
+        return [`${selector}:${htmlElement.scrollWidth}>${htmlElement.clientWidth}`];
+      })
+    );
+  });
+
+  expect(overflowing).toEqual([]);
+});
+
+test("credential toggles switch aria-pressed and stored preview value", async ({ page }) => {
+  await page.route("**/api/settings/spotify", async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.credentials.client_id.set = true;
+    payload.data.credentials.client_id.value = "demo-client-id-1234";
+    payload.data.credentials.client_id.masked = "demo...1234";
+    payload.data.credentials.client_secret.set = true;
+    payload.data.credentials.client_secret.masked = "abcd...wxyz";
+    payload.data.credentials.refresh_token.set = true;
+    payload.data.credentials.refresh_token.masked = "tokn...z999";
+    await route.fulfill({ response, json: payload });
+  });
+
+  await page.goto("/");
+  await page.getByTestId("settings-trigger").click();
+  await expect(page.getByTestId("settings-sheet")).toBeVisible();
+
+  const clientIdToggle = page.locator('button[aria-controls*="spotify-client-id"]');
+  const clientIdDisplay = page.locator("#spotify-client-id-display");
+  const secretToggle = page.locator('button[aria-controls*="spotify-client-secret"]');
+  const secretDisplay = page.locator("#spotify-client-secret-display");
+
+  await expect(clientIdDisplay).toHaveText("************");
+  await expect(clientIdToggle).toHaveAttribute("aria-pressed", "false");
+  await expect(secretToggle).toHaveAttribute("aria-pressed", "false");
+  await expect(secretDisplay).toHaveText("************");
+
+  await clientIdToggle.click();
+  await expect(clientIdToggle).toHaveAttribute("aria-pressed", "true");
+  await expect(clientIdDisplay).toHaveText("demo-client-id-1234");
+
+  await secretToggle.click();
+  await expect(secretToggle).toHaveAttribute("aria-pressed", "true");
+  await expect(secretDisplay).toHaveText("abcd...wxyz");
 });
 
 test("library picker supports keyboard tab switching and offline retry state", async ({ page }) => {
@@ -174,15 +316,14 @@ test("search tab does not refetch unchanged query on unrelated rerenders", async
   await page.locator('[data-testid="play-card"] button').click();
   await expect(page.locator("#play-sheet")).toBeVisible();
 
-  await page.locator("#library-tab-search").click();
+  const searchTab = page.locator("#library-tab-search");
+  await searchTab.click();
+  await expect(searchTab).toHaveAttribute("aria-selected", "true");
+  await page.waitForTimeout(350);
   const searchInput = page.locator("#play-sheet input[type='search']");
-  await searchInput.evaluate((node) => {
-    const element = /** @type {HTMLInputElement} */ (node);
-    element.value = "red ho";
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await searchInput.fill("red ho");
 
-  await expect(page.locator("#play-sheet .library-list")).toContainText(/can't stop/i);
+  await expect.poll(() => searchCalls, { timeout: 10000 }).toBe(1);
   await page.waitForTimeout(2600);
 
   expect(searchCalls).toBe(1);
@@ -261,4 +402,37 @@ test("player shows waking copy only during initial playback hydration", async ({
   }));
 
   await expect(page.getByTestId("player-card")).toContainText(/spotify is waking up|spotify wacht auf/i);
+});
+
+test("player shows dummy cover when no artwork is available", async ({ page }) => {
+  await gotoWithDashboardOverride(page, (dashboard) => ({
+    ...dashboard,
+    playback_status: "empty",
+    playback: {
+      ...dashboard.playback,
+      current_track: null,
+      is_playing: false
+    }
+  }));
+
+  await expect(page.getByTestId("player-fallback-artwork")).toBeVisible();
+});
+
+test("player shows track artwork when image is available", async ({ page }) => {
+  await gotoWithDashboardOverride(page, (dashboard) => ({
+    ...dashboard,
+    playback_status: "ready",
+    playback: {
+      ...dashboard.playback,
+      current_track: {
+        name: "Demo Track",
+        artist: "Demo Artist",
+        album_image: "https://example.com/cover.jpg"
+      },
+      is_playing: true
+    }
+  }));
+
+  await expect(page.getByTestId("player-fallback-artwork")).toHaveCount(0);
+  await expect(page.locator("[data-testid='player-card'] .player-artwork img")).toBeVisible();
 });

@@ -101,6 +101,9 @@ const ICONS: Record<string, string> = {
   refresh: "M18.4 8A7 7 0 1 0 19 12h-2a5 5 0 1 1-1.4-3.5L13 11h7V4l-1.6 4Z",
   close: "M6.7 5.3 12 10.6l5.3-5.3 1.4 1.4L13.4 12l5.3 5.3-1.4 1.4L12 13.4l-5.3 5.3-1.4-1.4L10.6 12 5.3 6.7l1.4-1.4Z",
   check: "M9.5 16.2 5.3 12l1.4-1.4 2.8 2.8 7.8-7.8 1.4 1.4-9.2 9.2Z",
+  eye: "M12 5c-5 0-9 4-10 7 1 3 5 7 10 7s9-4 10-7c-1-3-5-7-10-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-2.2a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6Z",
+  "eye-off":
+    "m4.8 4 14.4 16-1.4 1.4-2.7-3A12.5 12.5 0 0 1 12 19c-5 0-9-4-10-7 .7-2 2.3-4 4.7-5.6L3.4 2.6 4.8 4Zm8.7 9.7-3.3-3.6a2 2 0 0 0 3.3 3.6ZM12 5c5 0 9 4 10 7-.5 1.3-1.4 2.8-2.9 4.1l-1.4-1.6A9.6 9.6 0 0 0 20 12c-1-2.3-4.2-5-8-5-1 0-1.9.2-2.7.4L7.8 5.8A12.2 12.2 0 0 1 12 5Zm-.2 2.8a4 4 0 0 1 4 4c0 .5-.1 1-.3 1.4l-1.6-1.7a2.1 2.1 0 0 0-2-2l-1.7-1.8c.5-.1 1-.2 1.6-.2Z",
   lightning: "M13 2 5 13h5l-1 9 8-11h-5l1-9Z",
   arrow: "m8 5 8 7-8 7V5Z",
   spotify: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm4.5 14.5a.7.7 0 0 1-1 .2c-2.7-1.7-6.1-2.1-10-.9a.7.7 0 1 1-.4-1.4c4.3-1.3 8.1-.9 11.2 1.1.3.2.4.7.2 1Zm1.4-3a.9.9 0 0 1-1.2.3c-3.1-1.9-7.8-2.5-11.5-1.2a.9.9 0 0 1-.6-1.7c4.3-1.4 9.5-.8 13.1 1.4.4.3.6.8.2 1.2Zm.1-3.2C14.2 8.1 8 7.8 4.8 8.8A1 1 0 0 1 4.2 7c3.8-1.2 10.7-.9 14.8 1.7a1 1 0 1 1-1 1.6Z"
@@ -922,7 +925,6 @@ function LibraryPicker({
 interface ActionCardProps {
   title: string;
   summary: string;
-  description: string;
   actionLabel: string;
   iconName: string;
   disabled?: boolean;
@@ -933,7 +935,6 @@ interface ActionCardProps {
 function ActionCard({
   title,
   summary,
-  description,
   actionLabel,
   iconName,
   disabled,
@@ -949,7 +950,6 @@ function ActionCard({
           <p>{summary}</p>
         </div>
       </div>
-      <p class="action-card-description">{description}</p>
       <button type="button" class="primary-button" disabled={disabled} onClick={onAction}>
         {actionLabel}
       </button>
@@ -980,6 +980,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const [spotifyForm, setSpotifyForm] = useState<SpotifyCredentialFormState>(createEmptySpotifyCredentialForm);
   const [spotifyTouched, setSpotifyTouched] = useState<SpotifyCredentialTouchedState>(createEmptySpotifyCredentialTouched);
   const [spotifySettingsStatus, setSpotifySettingsStatus] = useState<AsyncStatus>("idle");
+  const [showClientId, setShowClientId] = useState<boolean>(false);
   const [showClientSecret, setShowClientSecret] = useState<boolean>(false);
   const [showRefreshToken, setShowRefreshToken] = useState<boolean>(false);
   const [playbackQueue, setPlaybackQueue] = useState<LibraryItem[]>([]);
@@ -1073,6 +1074,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           username: payload.credentials.username.value || ""
         });
         setSpotifyTouched(createEmptySpotifyCredentialTouched());
+        setShowClientId(false);
         setShowClientSecret(false);
         setShowRefreshToken(false);
         setAccount(toAccountLoadState(payload, bootstrap.language));
@@ -1122,6 +1124,36 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
     void loadSpotifySettings(false);
   }, [surface, loadSpotifySettings]);
+
+  useEffect(() => {
+    if (surface === "none") {
+      return;
+    }
+
+    const { body, documentElement } = document;
+    const previousBodyOverflow = body.style.overflow;
+    const previousBodyPaddingRight = body.style.paddingRight;
+    const previousHtmlOverflow = documentElement.style.overflow;
+    const scrollbarWidth = window.innerWidth - documentElement.clientWidth;
+
+    body.style.overflow = "hidden";
+    documentElement.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      body.style.overflow = previousBodyOverflow;
+      body.style.paddingRight = previousBodyPaddingRight;
+      documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [surface]);
+
+  useEffect(() => {
+    if (surface === "sleep" && !settings.feature_flags.sleep_timer && !dashboard.sleep.active) {
+      setSurface("none");
+    }
+  }, [dashboard.sleep.active, settings.feature_flags.sleep_timer, surface]);
 
   useEffect(() => {
     if (dashboard.devices.length === 0) {
@@ -1210,7 +1242,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   }, [dashboard.playback.current_track?.name, dashboard.playback_status, networkStatus]);
 
   function openSurface(nextSurface: SurfaceName) {
-    if (nextSurface === "sleep" && !settings.feature_flags.sleep_timer) {
+    if (nextSurface === "sleep" && !settings.feature_flags.sleep_timer && !dashboard.sleep.active) {
       return;
     }
     if (nextSurface === "play" && !settings.feature_flags.music_library) {
@@ -1313,6 +1345,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           username: nextSpotifySettings.credentials.username.value || ""
         });
         setSpotifyTouched(createEmptySpotifyCredentialTouched());
+        setShowClientId(false);
         setShowClientSecret(false);
         setShowRefreshToken(false);
         setAccount(toAccountLoadState(nextSpotifySettings, bootstrap.language));
@@ -1384,6 +1417,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           username: nextSpotifySettings.credentials.username.value || ""
         });
         setSpotifyTouched(createEmptySpotifyCredentialTouched());
+        setShowClientId(false);
         setShowClientSecret(false);
         setShowRefreshToken(false);
         setAccount(toAccountLoadState(nextSpotifySettings, bootstrap.language));
@@ -1729,6 +1763,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const currentTrack = dashboard.playback.current_track;
   const safeCurrentTrackImage = normalizeImageUrl(currentTrack?.album_image);
   const safeAccountAvatar = normalizeImageUrl(account.profile?.avatar_url);
+  const storedClientId = spotifySettings?.credentials.client_id.value || "";
   const maskedClientId = spotifySettings?.credentials.client_id.masked || "";
   const maskedClientSecret = spotifySettings?.credentials.client_secret.masked || "";
   const maskedRefreshToken = spotifySettings?.credentials.refresh_token.masked || "";
@@ -1738,6 +1773,14 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const spotifySaveDisabled = busyAction === "spotify-save";
   const spotifyReloadDisabled = busyAction === "spotify-reload";
   const spotifyDisconnectDisabled = busyAction === "spotify-disconnect";
+  const sleepSurfaceVisible = settings.feature_flags.sleep_timer;
+  const hiddenCredentialPreview = "************";
+  const clientIdStoredPreview = showClientId ? storedClientId || maskedClientId : hiddenCredentialPreview;
+  const clientSecretStoredPreview = showClientSecret ? maskedClientSecret : hiddenCredentialPreview;
+  const refreshTokenStoredPreview = showRefreshToken ? maskedRefreshToken : hiddenCredentialPreview;
+  const canToggleClientIdVisibility = hasSpotifyClientId || Boolean(spotifyForm.clientId);
+  const canToggleClientSecretVisibility = hasSpotifyClientSecret || Boolean(spotifyForm.clientSecret);
+  const canToggleRefreshTokenVisibility = hasSpotifyRefreshToken || Boolean(spotifyForm.refreshToken);
   const dismissToastLabel = localized(bootstrap.language, "Dismiss notification", "Hinweis schließen");
   const closeSheetLabel = localized(bootstrap.language, "Close panel", "Panel schließen");
   const playerTitle = currentTrack?.name
@@ -1881,7 +1924,25 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               {safeCurrentTrackImage ? (
                 <img src={safeCurrentTrackImage} alt="" loading="lazy" referrerPolicy="no-referrer" />
               ) : (
-                <span class="artwork-fallback">{icon("library", "icon icon-xl")}</span>
+                <div
+                  class="artwork-fallback player-artwork-fallback"
+                  role="img"
+                  aria-label={localized(bootstrap.language, "No active Spotify playback", "Keine aktive Spotify-Wiedergabe")}
+                  data-testid="player-fallback-artwork"
+                >
+                  <span class="player-artwork-ring" aria-hidden="true">
+                    <span class="player-artwork-ring-core" />
+                  </span>
+                  <div class="player-artwork-fallback-copy">
+                    <strong>{localized(bootstrap.language, "DJ off duty", "DJ macht Pause")}</strong>
+                    <span>{localized(bootstrap.language, "Spotify is not active yet.", "Spotify ist gerade noch nicht aktiv.")}</span>
+                  </div>
+                  <div class="player-artwork-fallback-bars" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </div>
               )}
             </div>
 
@@ -1981,13 +2042,15 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                   <strong>{alarmSummary}</strong>
                 </div>
               </div>
-              <div class="snapshot-item">
-                <span>{icon("sleep")}</span>
-                <div>
-                  <small>{localized(bootstrap.language, "Sleep", "Sleep")}</small>
-                  <strong>{sleepSummary}</strong>
+              {sleepSurfaceVisible ? (
+                <div class="snapshot-item" data-testid="sleep-snapshot">
+                  <span>{icon("sleep")}</span>
+                  <div>
+                    <small>{localized(bootstrap.language, "Sleep", "Sleep")}</small>
+                    <strong>{sleepSummary}</strong>
+                  </div>
                 </div>
-              </div>
+              ) : null}
               <div class="snapshot-item">
                 <span>{icon("device")}</span>
                 <div>
@@ -2005,42 +2068,28 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             <ActionCard
               title={localized(bootstrap.language, "Set alarm", "Wecker setzen")}
               summary={alarmSummary}
-              description={localized(
-                bootstrap.language,
-                "Tune time, speaker, volume and wake-up music in one focused flow.",
-                "Zeit, Lautsprecher, Lautstärke und Weckmusik in einem fokussierten Flow einstellen."
-              )}
               actionLabel={localized(bootstrap.language, "Edit alarm", "Wecker bearbeiten")}
               iconName="alarm"
               onAction={() => openSurface("alarm")}
               testId="alarm-card"
             />
-            <ActionCard
-              title={localized(bootstrap.language, "Start sleep", "Sleep starten")}
-              summary={sleepSummary}
-              description={localized(
-                bootstrap.language,
-                "Kick off a timer without leaving the home surface, then stop it from the same sheet.",
-                "Einen Timer starten, ohne die Startseite zu verlassen, und im selben Sheet wieder stoppen."
-              )}
-              actionLabel={
-                dashboard.sleep.active
-                  ? localized(bootstrap.language, "Manage sleep", "Sleep verwalten")
-                  : localized(bootstrap.language, "Open sleep flow", "Sleep-Flow öffnen")
-              }
-              iconName="sleep"
-              disabled={!settings.feature_flags.sleep_timer}
-              onAction={() => openSurface("sleep")}
-              testId="sleep-card"
-            />
+            {sleepSurfaceVisible ? (
+              <ActionCard
+                title={localized(bootstrap.language, "Start sleep", "Sleep starten")}
+                summary={sleepSummary}
+                actionLabel={
+                  dashboard.sleep.active
+                    ? localized(bootstrap.language, "Manage sleep", "Sleep verwalten")
+                    : localized(bootstrap.language, "Open sleep flow", "Sleep-Flow öffnen")
+                }
+                iconName="sleep"
+                onAction={() => openSurface("sleep")}
+                testId="sleep-card"
+              />
+            ) : null}
             <ActionCard
               title={localized(bootstrap.language, "Play now", "Jetzt abspielen")}
               summary={playSummary}
-              description={localized(
-                bootstrap.language,
-                "Choose music and a device inside a mobile-friendly sheet, then start playback instantly.",
-                "Musik und Gerät in einem mobilen Sheet wählen und die Wiedergabe sofort starten."
-              )}
               actionLabel={localized(bootstrap.language, "Choose music", "Musik wählen")}
               iconName="play"
               disabled={!settings.feature_flags.music_library}
@@ -2503,85 +2552,136 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               <label class="field-label" for="spotify-client-id">
                 {localized(bootstrap.language, "Spotify Client ID", "Spotify Client ID")}
               </label>
-              <input
-                id="spotify-client-id"
-                class="field-input"
-                type="text"
-                autoComplete="off"
-                placeholder={
-                  hasSpotifyClientId
-                    ? maskedClientId
-                    : localized(bootstrap.language, "Not set", "Nicht gesetzt")
-                }
-                value={spotifyForm.clientId}
-                onInput={(event) =>
-                  handleSpotifyFieldChange("clientId", (event.currentTarget as HTMLInputElement).value)
-                }
-              />
+              <div class="credential-input-shell">
+                {!spotifyForm.clientId && hasSpotifyClientId ? (
+                  <span
+                    id="spotify-client-id-display"
+                    class={`credential-display ${showClientId ? "is-revealed" : "is-masked"}`}
+                    aria-live="polite"
+                  >
+                    {clientIdStoredPreview}
+                  </span>
+                ) : null}
+                <input
+                  id="spotify-client-id"
+                  class="field-input credential-input"
+                  type={showClientId ? "text" : "password"}
+                  autoComplete="off"
+                  placeholder={localized(bootstrap.language, "Not set", "Nicht gesetzt")}
+                  value={spotifyForm.clientId}
+                  onInput={(event) =>
+                    handleSpotifyFieldChange("clientId", (event.currentTarget as HTMLInputElement).value)
+                  }
+                />
+                {canToggleClientIdVisibility ? (
+                  <button
+                    type="button"
+                    class="icon-button credential-visibility-toggle"
+                    aria-label={
+                      showClientId
+                        ? localized(bootstrap.language, "Hide Spotify Client ID", "Spotify Client ID ausblenden")
+                        : localized(bootstrap.language, "Show Spotify Client ID", "Spotify Client ID anzeigen")
+                    }
+                    aria-pressed={showClientId}
+                    aria-controls="spotify-client-id spotify-client-id-display"
+                    onClick={() => setShowClientId((current) => !current)}
+                  >
+                    {icon(showClientId ? "eye-off" : "eye")}
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <div class="field-group">
-              <div class="field-label-row">
-                <label class="field-label" for="spotify-client-secret">
-                  {localized(bootstrap.language, "Spotify Client Secret", "Spotify Client Secret")}
-                </label>
-                <button
-                  type="button"
-                  class="ghost-button"
-                  onClick={() => setShowClientSecret((current) => !current)}
-                >
-                  {showClientSecret
-                    ? localized(bootstrap.language, "Hide", "Ausblenden")
-                    : localized(bootstrap.language, "Show", "Anzeigen")}
-                </button>
+              <label class="field-label" for="spotify-client-secret">
+                {localized(bootstrap.language, "Spotify Client Secret", "Spotify Client Secret")}
+              </label>
+              <div class="credential-input-shell">
+                {!spotifyForm.clientSecret && hasSpotifyClientSecret ? (
+                  <span
+                    id="spotify-client-secret-display"
+                    class={`credential-display ${showClientSecret ? "is-revealed" : "is-masked"}`}
+                    aria-live="polite"
+                  >
+                    {clientSecretStoredPreview}
+                  </span>
+                ) : null}
+                <input
+                  id="spotify-client-secret"
+                  class="field-input credential-input"
+                  type={showClientSecret ? "text" : "password"}
+                  autoComplete="off"
+                  placeholder={localized(bootstrap.language, "Not set", "Nicht gesetzt")}
+                  value={spotifyForm.clientSecret}
+                  onInput={(event) =>
+                    handleSpotifyFieldChange("clientSecret", (event.currentTarget as HTMLInputElement).value)
+                  }
+                />
+                {canToggleClientSecretVisibility ? (
+                  <button
+                    type="button"
+                    class="icon-button credential-visibility-toggle"
+                    aria-label={
+                      showClientSecret
+                        ? localized(bootstrap.language, "Hide Spotify Client Secret", "Spotify Client Secret ausblenden")
+                        : localized(bootstrap.language, "Show Spotify Client Secret", "Spotify Client Secret anzeigen")
+                    }
+                    aria-pressed={showClientSecret}
+                    aria-controls="spotify-client-secret spotify-client-secret-display"
+                    onClick={() => setShowClientSecret((current) => !current)}
+                  >
+                    {icon(showClientSecret ? "eye-off" : "eye")}
+                  </button>
+                ) : null}
               </div>
-              <input
-                id="spotify-client-secret"
-                class="field-input"
-                type={showClientSecret ? "text" : "password"}
-                autoComplete="off"
-                placeholder={
-                  hasSpotifyClientSecret
-                    ? maskedClientSecret
-                    : localized(bootstrap.language, "Not set", "Nicht gesetzt")
-                }
-                value={spotifyForm.clientSecret}
-                onInput={(event) =>
-                  handleSpotifyFieldChange("clientSecret", (event.currentTarget as HTMLInputElement).value)
-                }
-              />
             </div>
 
             <div class="field-group">
-              <div class="field-label-row">
-                <label class="field-label" for="spotify-refresh-token">
-                  {localized(bootstrap.language, "Spotify Refresh Token", "Spotify Refresh Token")}
-                </label>
-                <button
-                  type="button"
-                  class="ghost-button"
-                  onClick={() => setShowRefreshToken((current) => !current)}
-                >
-                  {showRefreshToken
-                    ? localized(bootstrap.language, "Hide", "Ausblenden")
-                    : localized(bootstrap.language, "Show", "Anzeigen")}
-                </button>
+              <label class="field-label" for="spotify-refresh-token">
+                {localized(bootstrap.language, "Spotify Refresh Token", "Spotify Refresh Token")}
+              </label>
+              <div class="credential-input-shell">
+                {!spotifyForm.refreshToken && hasSpotifyRefreshToken ? (
+                  <span
+                    id="spotify-refresh-token-display"
+                    class={`credential-display ${showRefreshToken ? "is-revealed" : "is-masked"}`}
+                    aria-live="polite"
+                  >
+                    {refreshTokenStoredPreview}
+                  </span>
+                ) : null}
+                <input
+                  id="spotify-refresh-token"
+                  class="field-input credential-input"
+                  type={showRefreshToken ? "text" : "password"}
+                  autoComplete="off"
+                  placeholder={localized(
+                    bootstrap.language,
+                    "Optional fallback: paste token manually",
+                    "Optional: Token manuell einfügen"
+                  )}
+                  value={spotifyForm.refreshToken}
+                  onInput={(event) =>
+                    handleSpotifyFieldChange("refreshToken", (event.currentTarget as HTMLInputElement).value)
+                  }
+                />
+                {canToggleRefreshTokenVisibility ? (
+                  <button
+                    type="button"
+                    class="icon-button credential-visibility-toggle"
+                    aria-label={
+                      showRefreshToken
+                        ? localized(bootstrap.language, "Hide Spotify Refresh Token", "Spotify Refresh Token ausblenden")
+                        : localized(bootstrap.language, "Show Spotify Refresh Token", "Spotify Refresh Token anzeigen")
+                    }
+                    aria-pressed={showRefreshToken}
+                    aria-controls="spotify-refresh-token spotify-refresh-token-display"
+                    onClick={() => setShowRefreshToken((current) => !current)}
+                  >
+                    {icon(showRefreshToken ? "eye-off" : "eye")}
+                  </button>
+                ) : null}
               </div>
-              <input
-                id="spotify-refresh-token"
-                class="field-input"
-                type={showRefreshToken ? "text" : "password"}
-                autoComplete="off"
-                placeholder={
-                  hasSpotifyRefreshToken
-                    ? maskedRefreshToken
-                    : localized(bootstrap.language, "Optional fallback: paste token manually", "Optional: Token manuell einfügen")
-                }
-                value={spotifyForm.refreshToken}
-                onInput={(event) =>
-                  handleSpotifyFieldChange("refreshToken", (event.currentTarget as HTMLInputElement).value)
-                }
-              />
             </div>
 
             <div class="field-group">

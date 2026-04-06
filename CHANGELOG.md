@@ -5,6 +5,36 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-04-06
+
+### 🔐 Security & Access
+- Protected routes now remain usable from loopback and trusted private/LAN clients by default, avoiding browser auth prompts for common home-WLAN setups.
+- JSON/XHR requests no longer trigger unwanted HTTP Basic auth browser popups when admin auth is required.
+
+### 🎨 UI/UX
+- Dashboard sleep tiles now disappear when the sleep feature flag is disabled, while active timers remain manageable.
+- Removed secondary filler copy from action cards and tightened the card layout.
+- Settings credentials now use inline eye toggles with masked defaults, and the settings sheet no longer overflows horizontally on small screens.
+- Added a playful fallback cover for the player when Spotify artwork is unavailable.
+
+### ⚙️ Config
+- Environment-specific config files are now saved as sparse overrides over `default_config.json`, keeping shared defaults single-source and reducing drift.
+
+### 🐛 Fixes
+- `get_spotify_credentials()` now falls back to `os.environ` so credentials loaded
+  at startup via `load_dotenv()` (e.g. from a repo-level `.env`) remain visible in
+  the settings UI without requiring re-entry.
+- `update_spotify_credentials()` now keeps `os.environ` in sync on every write,
+  so disconnect and field-level deletions can no longer be masked by stale
+  startup values (regression-tested).
+
+### 🧪 Tests
+- New regression tests covering the `os.environ` fallback and sync behavior, request-security trust rules, sparse config persistence, and responsive settings overflow.
+- Shared `bind_spotify_runtime_env` fixture in `tests/conftest.py` — removes the
+  duplicated credential test helpers.
+- `pytest`: `171 passed, 2 skipped`.
+- `npm run test:e2e`: `54 passed`.
+
 ## [1.6.0] - 2026-04-04
 
 ### ✨ New Features

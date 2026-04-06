@@ -14,8 +14,20 @@ def _remote_request() -> dict[str, str]:
     return {"REMOTE_ADDR": "10.0.0.42"}
 
 
-def test_remote_protected_route_is_blocked_without_admin_auth(client):
+def _public_request() -> dict[str, str]:
+    return {"REMOTE_ADDR": "8.8.8.8"}
+
+
+def test_private_network_protected_route_is_allowed_without_admin_auth(client):
     response = client.get("/api/settings/spotify", environ_overrides=_remote_request())
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+
+
+def test_public_protected_route_is_blocked_without_admin_auth(client):
+    response = client.get("/api/settings/spotify", environ_overrides=_public_request())
 
     assert response.status_code == 403
     payload = response.get_json()
@@ -29,26 +41,40 @@ def test_remote_protected_route_accepts_basic_auth_and_persists_session(client, 
     response = client.get(
         "/api/settings",
         headers=_basic_auth_headers("spotipi", "correct horse battery staple"),
-        environ_overrides=_remote_request(),
+        environ_overrides=_public_request(),
     )
 
     assert response.status_code == 200
 
-    follow_up = client.get("/api/settings/spotify", environ_overrides=_remote_request())
+    follow_up = client.get("/api/settings/spotify", environ_overrides=_public_request())
     assert follow_up.status_code == 200
 
 
-def test_remote_protected_route_challenges_invalid_basic_auth(client, monkeypatch):
+def test_public_settings_page_challenges_invalid_basic_auth(client, monkeypatch):
     monkeypatch.setenv("SPOTIPI_ADMIN_PASSWORD", "expected-secret")
 
     response = client.get(
-        "/api/settings",
+        "/settings",
         headers=_basic_auth_headers("spotipi", "wrong-secret"),
-        environ_overrides=_remote_request(),
+        environ_overrides=_public_request(),
     )
 
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"].startswith('Basic realm="SpotiPi Admin"')
+
+
+def test_public_api_returns_json_error_without_basic_auth_challenge(client, monkeypatch):
+    monkeypatch.setenv("SPOTIPI_ADMIN_PASSWORD", "expected-secret")
+
+    response = client.get(
+        "/api/settings",
+        environ_overrides=_public_request(),
+    )
+
+    assert response.status_code == 403
+    assert "WWW-Authenticate" not in response.headers
+    payload = response.get_json()
+    assert payload["error_code"] == "admin_auth_required"
 
 
 def test_cross_site_post_is_rejected_even_with_valid_admin_auth(client, monkeypatch):
@@ -60,7 +86,7 @@ def test_cross_site_post_is_rejected_even_with_valid_admin_auth(client, monkeypa
             **_basic_auth_headers("spotipi", "csrf-test-secret"),
             "Origin": "https://evil.example",
         },
-        environ_overrides=_remote_request(),
+        environ_overrides=_public_request(),
     )
 
     assert response.status_code == 403
@@ -75,7 +101,7 @@ def test_remote_cli_request_without_origin_is_allowed_with_basic_auth(client, mo
     response = client.post(
         "/api/rate-limiting/reset",
         headers=_basic_auth_headers("spotipi", "cli-secret"),
-        environ_overrides=_remote_request(),
+        environ_overrides=_public_request(),
     )
 
     assert response.status_code == 200

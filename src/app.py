@@ -34,7 +34,10 @@ from .utils.request_security import (
     is_loopback_request,
     is_protected_request,
     is_same_origin_submission,
+    is_trusted_local_request,
     matches_origin,
+    should_send_basic_auth_challenge,
+    trusted_private_network_enabled,
     requires_same_origin_protection,
     resolve_cors_allow_origin,
 )
@@ -210,22 +213,27 @@ def _register_request_hooks(app: Flask) -> None:
             return None
 
         if is_protected_request(request):
+            if trusted_private_network_enabled() and is_trusted_local_request(request):
+                return None
+
             if has_admin_auth_config():
                 if not authenticate_admin_request(request):
+                    status_code = 401 if should_send_basic_auth_challenge(request) else 403
                     response = api_response(
                         False,
                         message="Admin authentication required.",
-                        status=401,
+                        status=status_code,
                         error_code="admin_auth_required",
                     )
-                    response.headers['WWW-Authenticate'] = (
-                        f'Basic realm="{get_admin_realm()}", charset="UTF-8"'
-                    )
+                    if status_code == 401:
+                        response.headers['WWW-Authenticate'] = (
+                            f'Basic realm="{get_admin_realm()}", charset="UTF-8"'
+                        )
                     return response
             elif not is_loopback_request(request):
                 return api_response(
                     False,
-                    message="Remote admin access is disabled until SPOTIPI_ADMIN_PASSWORD is configured.",
+                    message="Protected routes are only available from loopback or the trusted local network.",
                     status=403,
                     error_code="admin_auth_required",
                 )

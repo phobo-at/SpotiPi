@@ -238,26 +238,48 @@ class ConfigManager:
 
         return config
     
+    def _load_raw_default_config(self) -> Dict[str, Any]:
+        """Load default_config.json without any merge or validation.
+
+        Used by save_config() to compute a sparse override file so env configs
+        stay single-source-of-truth over default_config.json. Returns an empty
+        dict if the file is missing or unreadable.
+        """
+        default_config_file = self.config_dir / "default_config.json"
+        if not default_config_file.exists():
+            return {}
+        try:
+            with open(default_config_file, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+
     def save_config(self, config: Dict[str, Any], config_name: Optional[str] = None) -> bool:
         """
-        Save configuration to file
-        
+        Save configuration to file as a sparse override over default_config.json.
+
         Performance: Validates config on write (v1.3.9+) to ensure only valid
         configs are persisted. This catches errors early and allows load_config()
         to skip validation entirely.
-        
+
+        Sparse-save (v1.7.1+): Keys whose value matches default_config.json are
+        stripped before writing, so env-specific files only contain genuine
+        overrides. This keeps default_config.json as the single source of truth
+        for values shared across environments. Saving default_config itself
+        still writes the full dict.
+
         Args:
             config: Configuration to save
             config_name: Config file name (without .json)
-        
+
         Returns:
             True if saved successfully, False if validation failed
         """
         if config_name is None:
             config_name = self.environment
-            
+
         config_file = self.config_dir / f"{config_name}.json"
-        
+
         try:
             # VALIDATE ON WRITE (fail fast if invalid)
             if SCHEMA_VALIDATION_AVAILABLE:
@@ -274,14 +296,26 @@ class ConfigManager:
                 save_data = self._legacy_validate_config(config)
                 # Remove runtime keys
                 save_data = {k: v for k, v in save_data.items() if not k.startswith("_")}
-            
+
+            # Sparse override: strip keys that match default_config.json so env
+            # files only contain genuine deltas. Skip this for default_config
+            # itself to avoid emptying the source of truth.
+            if config_name != "default_config":
+                raw_default = self._load_raw_default_config()
+                if raw_default:
+                    save_data = {
+                        key: value
+                        for key, value in save_data.items()
+                        if key not in raw_default or raw_default[key] != value
+                    }
+
             config_file.parent.mkdir(parents=True, exist_ok=True)
             with open(config_file, 'w') as f:
                 json.dump(save_data, f, indent=2)
-            
+
             logging.getLogger(__name__).debug(f"Config saved and validated: {config_file}")
             return True
-            
+
         except (IOError, json.JSONDecodeError) as e:
             logging.getLogger(__name__).error(f"Failed to save config: {e}")
             return False

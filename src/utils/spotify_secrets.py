@@ -125,15 +125,17 @@ def get_spotify_credentials(use_cache: bool = True) -> Dict[str, str]:
     The runtime .env (~/.spotipi/.env) is authoritative, but credentials may also
     be loaded into os.environ via load_dotenv() at startup (e.g. from the repo .env).
     Fall back to os.environ so existing installations don't lose visibility of
-    credentials that haven't been migrated to the runtime file yet.
+    credentials that haven't been migrated to the runtime file yet. Writes via
+    update_spotify_credentials() keep os.environ in sync so explicit deletions
+    (e.g. disconnect) are never masked by stale startup values.
     """
     env_values = _read_runtime_env_cached(use_cache=use_cache)
     result: Dict[str, str] = {}
 
     for field, env_key in _SPOTIFY_KEYS.items():
-        value = str(env_values.get(env_key, "") or "").strip()
+        value = (env_values.get(env_key) or "").strip()
         if not value:
-            value = str(os.environ.get(env_key, "") or "").strip()
+            value = (os.environ.get(env_key) or "").strip()
         result[field] = value
 
     return result
@@ -223,6 +225,15 @@ def update_spotify_credentials(updates: Dict[str, Optional[str]]) -> bool:
         except OSError:
             pass
 
+        # Keep os.environ in sync with the runtime .env so the fallback in
+        # get_spotify_credentials() never serves stale values after explicit
+        # updates or deletions (e.g. disconnect removes the refresh token).
+        for env_key, next_value in normalized_updates.items():
+            if next_value is None:
+                os.environ.pop(env_key, None)
+            else:
+                os.environ[env_key] = next_value
+
         _cache = None
         _cache_ts = 0.0
 
@@ -249,6 +260,8 @@ def build_masked_credentials_payload(credentials: Dict[str, str]) -> Dict[str, D
             "set": bool(value),
             "masked": mask_secret(value),
         }
+        if field == "client_id":
+            payload[field]["value"] = value
 
     username_value = str(credentials.get("username", "") or "")
     payload["username"] = {

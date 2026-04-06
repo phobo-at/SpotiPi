@@ -1,4 +1,4 @@
-# SpotiPi Agent Guidelines (v1.7.0)
+# SpotiPi Agent Guidelines (v1.7.1)
 
 This file is the canonical source of AI coding instructions for this repository.
 
@@ -58,7 +58,7 @@ This file is the canonical source of AI coding instructions for this repository.
 
 - Keep Spotify token handling within `src/utils/token_encryption.py` patterns.
 - Maintain restricted token file permissions (`0o600`).
-- Treat `~/.spotipi/.env` as the canonical runtime secret path; repo-root `.env` is only a local dev override.
+- Treat `~/.spotipi/.env` as the canonical runtime secret path; repo-root `.env` is only a local dev override. `get_spotify_credentials()` falls back to `os.environ` so values loaded via `load_dotenv()` from a repo-level `.env` remain visible until migrated to the runtime file.
 - Escape user-controlled strings in JS template literals.
 - Preserve input sanitization rules, including device-name validation constraints.
 

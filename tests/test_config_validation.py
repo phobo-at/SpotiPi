@@ -277,33 +277,111 @@ class TestConfigManagerIntegration:
         assert validated["alarm_volume"] == 50
     
     def test_save_config_with_pydantic(self, tmp_path, mock_config_manager):
-        """Test that save_config() uses Pydantic serialization"""
+        """Test that save_config() uses Pydantic serialization and sparse override.
+
+        Sparse save (v1.7.1+) strips keys whose value matches default_config.json,
+        so env files only persist genuine overrides. Runtime metadata is always
+        stripped regardless.
+        """
         from src.config import ConfigManager
-        
+
         cm = ConfigManager(base_path=tmp_path)
-        
+
         config = {
-            "time": "07:00",
-            "enabled": True,
-            "playlist_uri": "spotify:playlist:test",
-            "device_name": "Test",
-            "alarm_volume": 50,
-            "timezone": "Europe/Vienna",
-            "_runtime": "should_not_be_saved"  # Runtime metadata
+            "time": "07:00",                              # matches default → stripped
+            "enabled": True,                              # differs from default → kept
+            "playlist_uri": "spotify:playlist:test",      # differs → kept
+            "device_name": "Test",                        # differs → kept
+            "alarm_volume": 50,                           # matches default → stripped
+            "timezone": "Europe/Vienna",                  # matches default → stripped
+            "_runtime": "should_not_be_saved",            # runtime metadata → stripped
         }
-        
+
         success = cm.save_config(config, config_name="test")
-        
+
         assert success is True
-        
-        # Verify runtime metadata was stripped
+
         import json
         saved_file = tmp_path / "config" / "test.json"
         with open(saved_file) as f:
             saved_data = json.load(f)
-        
+
+        # Runtime metadata always stripped
         assert "_runtime" not in saved_data
-        assert "time" in saved_data
+        # Sparse: keys matching default are stripped
+        assert "time" not in saved_data
+        assert "alarm_volume" not in saved_data
+        assert "timezone" not in saved_data
+        # Sparse: genuine overrides are persisted
+        assert saved_data["enabled"] is True
+        assert saved_data["playlist_uri"] == "spotify:playlist:test"
+        assert saved_data["device_name"] == "Test"
+
+    def test_sparse_save_inheritance_roundtrip(self, tmp_path, mock_config_manager):
+        """After sparse save, load_config() should still return the full merged
+        view: stripped keys come back from default_config.json, overrides stay."""
+        from src.config import ConfigManager
+
+        cm = ConfigManager(base_path=tmp_path)
+
+        config = {
+            "time": "07:00",                              # matches default → stripped
+            "enabled": True,                              # override → kept
+            "playlist_uri": "",                           # matches default → stripped
+            "device_name": "Override-Device",             # override → kept
+            "alarm_volume": 50,                           # matches default → stripped
+            "timezone": "Europe/Vienna",                  # matches default → stripped
+        }
+
+        assert cm.save_config(config, config_name="development") is True
+
+        # The on-disk file must only contain genuine overrides
+        import json
+        saved_file = tmp_path / "config" / "development.json"
+        with open(saved_file) as f:
+            raw_saved = json.load(f)
+        assert "time" not in raw_saved
+        assert "playlist_uri" not in raw_saved
+        assert "timezone" not in raw_saved
+        assert raw_saved["enabled"] is True
+        assert raw_saved["device_name"] == "Override-Device"
+
+        # But load_config() must still reconstitute the full merged view
+        cm.set_environment("development")
+        merged = cm.load_config()
+        assert merged["time"] == "07:00"
+        assert merged["playlist_uri"] == ""
+        assert merged["timezone"] == "Europe/Vienna"
+        assert merged["alarm_volume"] == 50
+        assert merged["enabled"] is True
+        assert merged["device_name"] == "Override-Device"
+
+    def test_sparse_save_skips_default_config_itself(self, tmp_path, mock_config_manager):
+        """Saving default_config must still write the full dict — it's the
+        single source of truth and must not be emptied by the sparse filter."""
+        from src.config import ConfigManager
+
+        cm = ConfigManager(base_path=tmp_path)
+
+        config = {
+            "time": "07:00",
+            "enabled": False,
+            "playlist_uri": "",
+            "device_name": "",
+            "alarm_volume": 50,
+            "timezone": "Europe/Vienna",
+        }
+
+        assert cm.save_config(config, config_name="default_config") is True
+
+        import json
+        saved_file = tmp_path / "config" / "default_config.json"
+        with open(saved_file) as f:
+            saved = json.load(f)
+
+        # default_config is never stripped against itself
+        for key in ("time", "enabled", "playlist_uri", "device_name", "alarm_volume", "timezone"):
+            assert key in saved
 
 
 @pytest.fixture

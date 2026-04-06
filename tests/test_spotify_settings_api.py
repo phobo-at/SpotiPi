@@ -1,28 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from src.api import spotify as spotify_api
 from src.utils import spotify_secrets
 
 
-def _bind_runtime_env(monkeypatch, env_path: Path) -> None:
-    monkeypatch.setattr(spotify_secrets, "get_runtime_env_path", lambda: env_path)
-    # Clear env vars so os.environ fallback doesn't leak real credentials into tests
-    for env_key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET",
-                    "SPOTIFY_REFRESH_TOKEN", "SPOTIFY_USERNAME"):
-        monkeypatch.delenv(env_key, raising=False)
-    spotify_secrets.invalidate_spotify_secrets_cache()
-
-
 @pytest.fixture
-def runtime_paths(monkeypatch, tmp_path):
+def runtime_paths(bind_spotify_runtime_env, monkeypatch, tmp_path):
     env_path = tmp_path / ".spotipi-test" / ".env"
     token_state_path = tmp_path / "spotify_token.json"
 
-    _bind_runtime_env(monkeypatch, env_path)
+    bind_spotify_runtime_env(env_path)
     monkeypatch.setattr(spotify_api, "TOKEN_STATE_PATH", token_state_path)
     return env_path, token_state_path
 
@@ -61,7 +50,9 @@ def test_patch_spotify_settings_updates_runtime_env_and_masks(client, runtime_pa
     spotify_data = payload["data"]["spotify"]
     assert spotify_data["connection"]["status"] == "auth_required"
     assert spotify_data["credentials"]["username"]["value"] == "demo-user"
+    assert spotify_data["credentials"]["client_id"]["value"] == "clientid12345678901234567890"
     assert spotify_data["credentials"]["client_secret"]["masked"] != "secret12345678901234567890"
+    assert "value" not in spotify_data["credentials"]["client_secret"]
 
     env_contents = env_path.read_text(encoding="utf-8")
     assert "SPOTIFY_CLIENT_ID=clientid12345678901234567890" in env_contents

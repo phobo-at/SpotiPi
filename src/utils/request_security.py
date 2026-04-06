@@ -45,6 +45,11 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def trusted_private_network_enabled() -> bool:
+    """Allow private/LAN clients to use protected routes without admin auth by default."""
+    return _env_flag("SPOTIPI_TRUST_PRIVATE_NETWORK", default=True)
+
+
 def _parse_ip(value: str | None) -> ipaddress._BaseAddress | None:
     if not value:
         return None
@@ -109,6 +114,14 @@ def get_effective_client_ip(request_obj: Request) -> str:
 def is_loopback_request(request_obj: Request) -> bool:
     client_ip = _parse_ip(get_effective_client_ip(request_obj))
     return bool(client_ip and client_ip.is_loopback)
+
+
+def is_trusted_local_request(request_obj: Request) -> bool:
+    """Return True for loopback and private/LAN source addresses."""
+    client_ip = _parse_ip(get_effective_client_ip(request_obj))
+    if client_ip is None:
+        return False
+    return bool(client_ip.is_loopback or client_ip.is_private or client_ip.is_link_local)
 
 
 def matches_origin(origin: str, allowed_entry: str) -> bool:
@@ -257,6 +270,22 @@ def authenticate_admin_request(request_obj: Request) -> bool:
     session[_ADMIN_SESSION_KEY] = True
     session[_ADMIN_SESSION_FINGERPRINT_KEY] = _admin_fingerprint()
     session.modified = True
+    return True
+
+
+def should_send_basic_auth_challenge(request_obj: Request) -> bool:
+    """Avoid browser auth popups for JSON/XHR API calls."""
+    if request_obj.path.startswith("/api/"):
+        return False
+
+    requested_with = (request_obj.headers.get("X-Requested-With") or "").strip().lower()
+    if requested_with == "xmlhttprequest":
+        return False
+
+    accept_header = (request_obj.headers.get("Accept") or "").lower()
+    if "application/json" in accept_header:
+        return False
+
     return True
 
 

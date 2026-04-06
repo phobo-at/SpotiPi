@@ -1,4 +1,4 @@
-# SpotiPi (v1.7.0)
+# SpotiPi (v1.7.1)
 
 Smart Spotify alarm clock and sleep timer for Raspberry Pi.
 
@@ -142,6 +142,25 @@ SPOTIPI_SPOTIFY_REDIRECT_URI=
 SPOTIPI_SPOTIFY_SECRETS_CACHE_TTL=2.0
 ```
 
+Protected routes stay local-first by default.
+Loopback and private home/LAN clients can open settings without browser auth prompts unless you explicitly disable that trust path.
+
+```env
+SPOTIPI_ADMIN_USERNAME=spotipi
+SPOTIPI_ADMIN_PASSWORD=replace-with-a-long-random-password
+# Alternative to the plaintext password:
+# SPOTIPI_ADMIN_PASSWORD_HASH=pbkdf2:sha256:...
+SPOTIPI_TRUST_PRIVATE_NETWORK=1
+SPOTIPI_TRUST_PROXY_HEADERS=0
+SPOTIPI_TRUSTED_PROXIES=
+```
+
+Notes:
+
+- `SPOTIPI_ADMIN_PASSWORD` or `SPOTIPI_ADMIN_PASSWORD_HASH` enables HTTP Basic auth plus a hardened session cookie for protected routes.
+- `SPOTIPI_TRUST_PRIVATE_NETWORK=1` keeps private/LAN clients usable without auth prompts; set it to `0` if you want strict auth outside loopback.
+- Leave `SPOTIPI_TRUST_PROXY_HEADERS=0` unless the app is behind a trusted reverse proxy and `SPOTIPI_TRUSTED_PROXIES` is explicitly set.
+
 Additional runtime and Spotify resilience knobs:
 
 ```env
@@ -197,10 +216,10 @@ npm run test:e2e
 
 Performance budget details: [`docs/FRONTEND_PERFORMANCE_BUDGET.md`](docs/FRONTEND_PERFORMANCE_BUDGET.md)
 
-Current baseline as of 2026-04-05:
+Current baseline as of 2026-04-06:
 
-- `pytest`: `154 passed, 2 skipped`
-- `npm run test:e2e`: `9 passed`
+- `pytest`: `171 passed, 2 skipped`
+- `npm run test:e2e`: `54 passed`
 
 Optional local quality checks:
 
