@@ -512,20 +512,30 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 }
 
 def get_language(request: Optional[Any] = None) -> str:
-    """Determine language based on Accept-Language header, then config.
+    """Determine language based on config, then Accept-Language header.
 
     Priority:
-    1. Accept-Language header from browser (if present)
-    2. Config file setting (language field)
+    1. Config file setting (explicit user choice)
+    2. Accept-Language header from browser (fallback)
     3. Default to English
-    
+
     Args:
         request: Flask request object with headers
-        
+
     Returns:
         str: Language code ('de' or 'en')
     """
-    # Prefer explicit Accept-Language when provided.
+    # Explicit user setting takes priority.
+    try:
+        from src.config import load_config
+        config = load_config()
+        config_lang = config.get('language', '').lower()
+        if config_lang in ('de', 'en'):
+            return config_lang
+    except Exception:
+        pass
+
+    # Fall back to browser preference.
     if request and hasattr(request, 'headers'):
         try:
             accept_language = request.headers.get('Accept-Language', '').lower()
@@ -535,16 +545,6 @@ def get_language(request: Optional[Any] = None) -> str:
                 return 'en'
         except (AttributeError, TypeError):
             pass
-
-    # Fallback to config for server-side defaults.
-    try:
-        from src.config import load_config
-        config = load_config()
-        config_lang = config.get('language', '').lower()
-        if config_lang in ('de', 'en'):
-            return config_lang
-    except Exception:
-        pass
 
     return 'en'
 

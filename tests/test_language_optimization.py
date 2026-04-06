@@ -34,7 +34,9 @@ def request_en() -> MockRequest:
         (None, "en"),
     ],
 )
-def test_get_user_language_detection(header: str | None, expected: str) -> None:
+def test_get_user_language_detection(header: str | None, expected: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Config is empty → browser header is used as fallback
+    monkeypatch.setattr("src.config.load_config", lambda: {})
     request = MockRequest(header)
     assert get_user_language(request) == expected
 

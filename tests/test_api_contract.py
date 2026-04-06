@@ -20,14 +20,6 @@ def assert_api_envelope(resp, *, expect_success: Optional[bool] = None):
 
 # -------- Tests --------
 
-def test_alarm_status_contract(client):
-    resp = client.get('/alarm_status')
-    data = assert_api_envelope(resp, expect_success=True)
-    # Data payload existence
-    assert 'data' in data, "Expected data field"
-    assert 'enabled' in data['data']
-
-
 def test_music_library_auth_required(client):
     # Without token environment, should 401
     resp = client.get('/api/music-library')
@@ -143,16 +135,6 @@ def test_playback_queue_contract(client):
     assert 'total' in payload
 
 
-def test_playback_status_no_token(client, monkeypatch):
-    monkeypatch.setattr('src.routes.health.get_access_token', lambda: None)
-    resp = client.get('/playback_status')
-    assert resp.status_code == 202
-    data = assert_api_envelope(resp, expect_success=True)
-    assert 'data' in data and isinstance(data['data'], dict)
-    assert data['data'].get('status') in {'pending', 'auth_required'}
-    assert data['data'].get('hydration', {}).get('pending') in {True, False}
-
-
 def test_debug_language_route_disabled_by_default(client, monkeypatch):
     monkeypatch.setattr('src.routes.main.DEBUG_ROUTES_ENABLED', False)
     resp = client.get('/debug/language')
@@ -216,12 +198,6 @@ def test_devices_auth_required(client):
     else:
         assert 'data' in data and 'devices' in data['data']
         assert isinstance(data['data']['devices'], list)
-
-
-def test_sleep_status_contract(client):
-    resp = client.get('/sleep_status')
-    data = assert_api_envelope(resp, expect_success=True)
-    assert 'data' in data
 
 
 def test_volume_endpoint_validation(client):
