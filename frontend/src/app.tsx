@@ -703,6 +703,8 @@ interface LibraryPickerProps {
   language: string;
 }
 
+const LIBRARY_PAGE_SIZE = 30;
+
 function LibraryPicker({
   enabled,
   offline,
@@ -724,12 +726,18 @@ function LibraryPicker({
   language
 }: LibraryPickerProps) {
   const [query, setQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(LIBRARY_PAGE_SIZE);
   const searchDebounceRef = useRef<number | null>(null);
   const lastSearchRequestRef = useRef<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setQuery("");
   }, [currentSection, artistDrilldown.artist?.uri]);
+
+  useEffect(() => {
+    setVisibleCount(LIBRARY_PAGE_SIZE);
+  }, [currentSection, query, artistDrilldown.artist?.uri]);
 
   useEffect(() => {
     if (currentSection !== "search") {
@@ -791,6 +799,10 @@ function LibraryPicker({
           return haystack.includes(query.toLowerCase());
         });
 
+  const visibleItems =
+    currentSection === "search" ? filteredItems : filteredItems.slice(0, visibleCount);
+  const hasMoreItems = currentSection !== "search" && visibleCount < filteredItems.length;
+
   const currentSectionIndex = Math.max(0, LIBRARY_SECTIONS.indexOf(currentSection));
   const resultRegionId = `library-results-${currentSection}`;
   const showOfflineState = offline || currentCollection.status === "offline";
@@ -807,6 +819,41 @@ function LibraryPicker({
       items: filteredItems.filter((item) => item.type === group.type)
     }))
     .filter((group) => group.items.length > 0);
+
+  useEffect(() => {
+    if (!hasMoreItems) {
+      return;
+    }
+    const sentinel = sentinelRef.current;
+    if (!sentinel) {
+      return;
+    }
+
+    let scrollableParent: HTMLElement | null = sentinel.parentElement;
+    while (scrollableParent && scrollableParent !== document.body) {
+      const overflowY = window.getComputedStyle(scrollableParent).overflowY;
+      if (overflowY === "auto" || overflowY === "scroll") {
+        break;
+      }
+      scrollableParent = scrollableParent.parentElement;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((current) =>
+            Math.min(current + LIBRARY_PAGE_SIZE, filteredItems.length)
+          );
+        }
+      },
+      {
+        root: scrollableParent ?? null,
+        rootMargin: "300px"
+      }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreItems, filteredItems.length]);
 
   function activateSection(section: LibrarySection) {
     onSectionChange(section);
@@ -1030,7 +1077,14 @@ function LibraryPicker({
                       {group.items.map((item) => renderLibraryRow(item, group.type))}
                     </Fragment>
                   ))
-                : filteredItems.map((item) => renderLibraryRow(item))}
+                : visibleItems.map((item) => renderLibraryRow(item))}
+              {hasMoreItems ? (
+                <div
+                  ref={sentinelRef}
+                  class="library-list-sentinel"
+                  aria-hidden="true"
+                />
+              ) : null}
             </div>
           )
         ) : null}
@@ -1439,12 +1493,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       } else {
         await loadSpotifySettings(false);
       }
-
-      pushToast(
-        "success",
-        result.body.message ||
-          localized(bootstrap.language, "Spotify settings saved.", "Spotify-Einstellungen gespeichert.")
-      );
     } catch (error) {
       pushToast(
         "error",
@@ -1511,12 +1559,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       } else {
         await loadSpotifySettings(false);
       }
-
-      pushToast(
-        "success",
-        result.body.message ||
-          localized(bootstrap.language, "Spotify disconnected.", "Spotify getrennt.")
-      );
     } catch (error) {
       pushToast(
         "error",
@@ -1538,46 +1580,53 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
   }
 
-  async function handleAlarmSave(form?: AlarmFormState) {
+  async function handleAlarmSave(form?: AlarmFormState, intent?: "activate") {
     const data = form ?? alarmForm;
+    const isActivating = intent === "activate";
 
     if (networkStatus === "offline") {
-      pushToast(
-        "error",
-        localized(
-          bootstrap.language,
-          "You are offline. Reconnect before saving the alarm.",
-          "Du bist offline. Bitte vor dem Speichern des Weckers wieder verbinden."
-        )
-      );
+      if (isActivating) {
+        pushToast(
+          "error",
+          localized(
+            bootstrap.language,
+            "You are offline. Reconnect before saving the alarm.",
+            "Du bist offline. Bitte vor dem Speichern des Weckers wieder verbinden."
+          )
+        );
+      }
       return;
     }
 
     if (!isValidTimeInput(data.time)) {
-      pushToast(
-        "error",
-        localized(
-          bootstrap.language,
-          "Enter a valid alarm time (HH:MM).",
-          "Bitte eine gültige Weckzeit eingeben (HH:MM)."
-        )
-      );
+      if (isActivating) {
+        pushToast(
+          "error",
+          localized(
+            bootstrap.language,
+            "Enter a valid alarm time (HH:MM).",
+            "Bitte eine gültige Weckzeit eingeben (HH:MM)."
+          )
+        );
+      }
       return;
     }
 
     if (!data.deviceName.trim()) {
-      pushToast(
-        "error",
-        localized(
-          bootstrap.language,
-          "Choose a speaker for the alarm.",
-          "Bitte einen Lautsprecher für den Wecker auswählen."
-        )
-      );
+      if (isActivating) {
+        pushToast(
+          "error",
+          localized(
+            bootstrap.language,
+            "Choose a speaker for the alarm.",
+            "Bitte einen Lautsprecher für den Wecker auswählen."
+          )
+        );
+      }
       return;
     }
 
-    if (data.enabled && hasPassedToday(data.time)) {
+    if (isActivating && data.enabled && hasPassedToday(data.time)) {
       pushToast(
         "info",
         localized(
@@ -1607,11 +1656,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           ...current,
           alarm: { ...current.alarm, ...result.body!.data! }
         }));
-        pushToast(
-          "success",
-          result.body.message ||
-            t("alarm_settings_saved", localized(bootstrap.language, "Alarm saved", "Wecker gespeichert"))
-        );
         return;
       }
 
@@ -1685,11 +1729,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     try {
       const result = await postForm<Record<string, unknown>>("/sleep", payload);
       if (result.body?.success) {
-        pushToast(
-          "success",
-          result.body.message ||
-            t("sleep_start", localized(bootstrap.language, "Sleep started", "Sleep gestartet"))
-        );
         await refreshDashboard(true);
         closeSurface();
         return;
@@ -1715,11 +1754,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     try {
       const result = await postForm<Record<string, unknown>>("/stop_sleep", new URLSearchParams());
       if (result.body?.success) {
-        pushToast(
-          "success",
-          result.body.message ||
-            t("sleep_stopped", localized(bootstrap.language, "Sleep stopped", "Sleep-Timer gestoppt"))
-        );
         await refreshDashboard(true);
         closeSurface();
         return;
@@ -1779,11 +1813,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       });
       if (result.body?.success) {
         writeLastDeviceId(deviceId);
-        pushToast(
-          "success",
-          result.body.message ||
-            t("playback_started", localized(bootstrap.language, "Playback started", "Wiedergabe gestartet"))
-        );
         await refreshDashboard(true);
         closeSurface();
         return;
@@ -1882,37 +1911,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           : isPlaybackInitialHydration
             ? localized(bootstrap.language, "Spotify is waking up", "Spotify wacht auf")
             : localized(bootstrap.language, "Ready to play", "Bereit zum Abspielen");
-  const playerSubtitle = currentTrack?.artist
-    ? currentTrack.artist
-    : networkStatus === "offline"
-      ? localized(
-          bootstrap.language,
-          "Your last snapshot stays visible while the next connection check runs.",
-          "Der letzte Snapshot bleibt sichtbar, während die nächste Verbindungsprüfung läuft."
-        )
-      : dashboard.playback_status === "auth_required"
-        ? localized(
-            bootstrap.language,
-            "Connect Spotify in Settings, then playback controls become active here.",
-            "Verbinde Spotify in den Einstellungen, dann wird die Wiedergabe hier aktiv."
-          )
-        : dashboard.playback_status === "error"
-          ? localized(
-              bootstrap.language,
-              "Try syncing again or switch devices once Spotify responds.",
-              "Synchronisiere erneut oder wechsle das Gerät, sobald Spotify wieder antwortet."
-            )
-          : isPlaybackInitialHydration
-            ? localized(
-                bootstrap.language,
-                "Playback controls appear here as soon as the next Spotify snapshot lands.",
-                "Die Wiedergabe erscheint hier, sobald der nächste Spotify-Snapshot angekommen ist."
-              )
-            : localized(
-                bootstrap.language,
-                "Use Alarm, Sleep or Play now to start music from the home surface.",
-                "Starte Musik direkt über Alarm, Sleep oder Jetzt abspielen auf der Startseite."
-              );
+  const playerSubtitle = currentTrack?.artist || "";
   const playerHasPlaceholderCopy = !currentTrack?.name;
   const primaryFlows: PrimaryFlowSnapshot = toPrimaryFlowSnapshot(dashboard);
   const devicesStatus = dashboard.devices_meta.status || "pending";
@@ -1970,13 +1969,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         {networkStatus === "offline" ? (
           <section class="banner banner-warning">
             <strong>{localized(bootstrap.language, "Offline", "Offline")}</strong>
-            <span>
-              {localized(
-                bootstrap.language,
-                "The dashboard stays usable while the next connection check runs.",
-                "Das Dashboard bleibt nutzbar, während die nächste Verbindungsprüfung läuft."
-              )}
-            </span>
           </section>
         ) : null}
 
@@ -2040,7 +2032,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               </div>
 
               <h2 class={playerHasPlaceholderCopy ? "player-title-placeholder" : undefined}>{playerTitle}</h2>
-              <p class={playerHasPlaceholderCopy ? "player-subtitle-placeholder" : undefined}>{playerSubtitle}</p>
+              {playerSubtitle ? <p>{playerSubtitle}</p> : null}
 
               <div class="player-controls" role="group" aria-label={t("playback_controls", localized(bootstrap.language, "Playback controls", "Wiedergabe-Steuerung"))}>
                 <button
@@ -2266,7 +2258,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             onChange={(checked) => {
               const next = { ...alarmForm, enabled: checked };
               setAlarmForm(next);
-              void handleAlarmSave(next);
+              void handleAlarmSave(next, checked ? "activate" : undefined);
             }}
           />
           <ToggleField
@@ -2313,11 +2305,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         onClose={closeSurface}
         closeLabel={closeSheetLabel}
         title={localized(bootstrap.language, "Sleep flow", "Sleep-Flow")}
-        subtitle={localized(
-          bootstrap.language,
-          "Fast setup for tonight, plus an obvious stop path when the timer is already running.",
-          "Schnelles Setup für heute Abend und ein klarer Stop-Pfad, wenn der Timer bereits läuft."
-        )}
       >
         <div class="sheet-stack">
           {dashboard.sleep.active ? (
@@ -2486,11 +2473,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         onClose={closeSurface}
         closeLabel={closeSheetLabel}
         title={localized(bootstrap.language, "Play now", "Jetzt abspielen")}
-        subtitle={localized(
-          bootstrap.language,
-          "A single sheet for speaker selection and instant playback.",
-          "Ein einziges Sheet für Lautsprecher-Auswahl und sofortige Wiedergabe."
-        )}
       >
         <div class="sheet-stack">
           <DevicePicker
@@ -2554,11 +2536,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         closeLabel={closeSheetLabel}
         variant="settings"
         title={localized(bootstrap.language, "Settings", "Einstellungen")}
-        subtitle={localized(
-          bootstrap.language,
-          "Secondary controls stay here so the home surface keeps its focus.",
-          "Sekundäre Steuerung bleibt hier, damit die Startseite fokussiert bleibt."
-        )}
       >
         <div class="sheet-stack" data-testid="settings-sheet">
           <section class="settings-group settings-group-account">
