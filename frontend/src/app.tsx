@@ -607,7 +607,9 @@ function DevicePicker({
           ? t("speaker_error", localized(language, "Error loading speakers", "Fehler beim Laden der Lautsprecher"))
           : t("no_devices_found", localized(language, "No speakers found", "Keine Lautsprecher gefunden"));
 
-  const selectedDevice = devices.find((d) => (d.id || d.name) === selectedKey);
+  const selectedDevice = devices.find(
+    (d) => d.id === selectedKey || d.name === selectedKey
+  );
 
   return (
     <div class="field-group">
@@ -642,7 +644,8 @@ function DevicePicker({
               <div class="device-dropdown-list" role="listbox">
                 {devices.map((device) => {
                   const key = device.id || device.name;
-                  const isSelected = key === selectedKey;
+                  const isSelected =
+                    device.id === selectedKey || device.name === selectedKey;
                   return (
                     <button
                       key={key}
@@ -2191,6 +2194,29 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             />
           </div>
 
+          <ToggleField
+            label={t("enable_alarm", localized(bootstrap.language, "Enable alarm", "Wecker aktivieren"))}
+            description={
+              alarmForm.enabled
+                ? localized(
+                    bootstrap.language,
+                    `Alarm active for ${formatTimeLabel(alarmForm.time, bootstrap.language)}.`,
+                    `Wecker aktiv für ${formatTimeLabel(alarmForm.time, bootstrap.language)}.`
+                  )
+                : localized(
+                    bootstrap.language,
+                    "Alarm is currently disabled.",
+                    "Der Wecker ist aktuell deaktiviert."
+                  )
+            }
+            checked={alarmForm.enabled}
+            onChange={(checked) => {
+              const next = { ...alarmForm, enabled: checked };
+              setAlarmForm(next);
+              void handleAlarmSave(next, checked ? "activate" : undefined);
+            }}
+          />
+
           <DevicePicker
             title={t("device_label", localized(bootstrap.language, "Speaker", "Lautsprecher"))}
             devices={dashboard.devices}
@@ -2231,6 +2257,25 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             />
           </div>
 
+          <ToggleField
+            label={t("fade_in", localized(bootstrap.language, "Fade in", "Fade-In"))}
+            checked={alarmForm.fadeIn}
+            onChange={(checked) => {
+              const next = { ...alarmForm, fadeIn: checked };
+              setAlarmForm(next);
+              void handleAlarmSave(next);
+            }}
+          />
+          <ToggleField
+            label={t("shuffle", localized(bootstrap.language, "Shuffle", "Shuffle"))}
+            checked={alarmForm.shuffle}
+            onChange={(checked) => {
+              const next = { ...alarmForm, shuffle: checked };
+              setAlarmForm(next);
+              void handleAlarmSave(next);
+            }}
+          />
+
           <LibraryPicker
             enabled={settings.feature_flags.music_library}
             offline={networkStatus === "offline"}
@@ -2251,50 +2296,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             t={t}
             language={bootstrap.language}
           />
-
-          <ToggleField
-            label={t("enable_alarm", localized(bootstrap.language, "Enable alarm", "Wecker aktivieren"))}
-            checked={alarmForm.enabled}
-            onChange={(checked) => {
-              const next = { ...alarmForm, enabled: checked };
-              setAlarmForm(next);
-              void handleAlarmSave(next, checked ? "activate" : undefined);
-            }}
-          />
-          <ToggleField
-            label={t("fade_in", localized(bootstrap.language, "Fade in", "Fade-In"))}
-            checked={alarmForm.fadeIn}
-            onChange={(checked) => {
-              const next = { ...alarmForm, fadeIn: checked };
-              setAlarmForm(next);
-              void handleAlarmSave(next);
-            }}
-          />
-          <ToggleField
-            label={t("shuffle", localized(bootstrap.language, "Shuffle", "Shuffle"))}
-            checked={alarmForm.shuffle}
-            onChange={(checked) => {
-              const next = { ...alarmForm, shuffle: checked };
-              setAlarmForm(next);
-              void handleAlarmSave(next);
-            }}
-          />
-
-          <div class={`state-card ${alarmForm.enabled ? "state-card-active" : "state-card-muted"}`}>
-            <p>
-              {alarmForm.enabled
-                ? localized(
-                    bootstrap.language,
-                    `Alarm active for ${formatTimeLabel(alarmForm.time, bootstrap.language)}.`,
-                    `Wecker aktiv für ${formatTimeLabel(alarmForm.time, bootstrap.language)}.`
-                  )
-                : localized(
-                    bootstrap.language,
-                    "Alarm is currently disabled.",
-                    "Der Wecker ist aktuell deaktiviert."
-                  )}
-            </p>
-          </div>
 
         </div>
       </Sheet>
@@ -2420,6 +2421,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 />
               </div>
 
+              <ToggleField
+                label={t("shuffle", localized(bootstrap.language, "Shuffle", "Shuffle"))}
+                checked={sleepForm.shuffle}
+                onChange={(checked) => setSleepForm((current) => ({ ...current, shuffle: checked }))}
+              />
+
               <LibraryPicker
                 enabled={settings.feature_flags.music_library}
                 offline={networkStatus === "offline"}
@@ -2439,12 +2446,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 onCloseArtist={resetArtistDrilldown}
                 t={t}
                 language={bootstrap.language}
-              />
-
-              <ToggleField
-                label={t("shuffle", localized(bootstrap.language, "Shuffle", "Shuffle"))}
-                checked={sleepForm.shuffle}
-                onChange={(checked) => setSleepForm((current) => ({ ...current, shuffle: checked }))}
               />
 
               <div class="sheet-actions">
