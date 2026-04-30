@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { getJson, patchJson, postForm, postJson } from "./lib/api";
 import { useDashboardPolling } from "./hooks/useDashboardPolling";
 import { useLibraryData } from "./hooks/useLibraryData";
+import { useLibraryRecents, type RecentEntry } from "./hooks/useLibraryRecents";
 import { useNetworkStatus } from "./hooks/useNetworkStatus";
 import { usePlaybackActions } from "./hooks/usePlaybackActions";
 import { useSettingsMutations } from "./hooks/useSettingsMutations";
@@ -199,6 +200,16 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
     }
     return element.tabIndex >= 0 && element.offsetParent !== null;
   });
+}
+
+function buildRecentMeta(item: LibraryItem, language: string): string {
+  if (item.artist) {
+    return item.artist;
+  }
+  if (item.track_count) {
+    return localized(language, `${item.track_count} tracks`, `${item.track_count} Titel`);
+  }
+  return item.type || "";
 }
 
 function formatTimeLabel(value: string, language: string): string {
@@ -702,6 +713,7 @@ interface LibraryPickerProps {
   onOpenArtist: (artist: LibraryItem) => void;
   onSearchCatalog: (query: string, force?: boolean) => void;
   onCloseArtist: () => void;
+  recents?: RecentEntry[];
   t: TranslateFn;
   language: string;
 }
@@ -725,6 +737,7 @@ function LibraryPicker({
   onOpenArtist,
   onSearchCatalog,
   onCloseArtist,
+  recents = [],
   t,
   language
 }: LibraryPickerProps) {
@@ -962,6 +975,51 @@ function LibraryPicker({
         {localized(language, "Choose music", "Musik auswählen")}
       </label>
       <div class="library-picker" data-testid="library-picker">
+        {recents.length > 0 && currentSection !== "search" && !artistDrilldown.artist ? (
+          <section class="library-recents" data-testid="library-recents" aria-label={localized(language, "Recently picked", "Zuletzt gewählt")}>
+            <span class="library-recents-heading">
+              {localized(language, "Recently picked", "Zuletzt gewählt")}
+            </span>
+            <div class="library-recents-strip">
+              {recents.map((entry) => {
+                const safeImageUrl = normalizeImageUrl(entry.image_url);
+                const isSelected = selectedUri === entry.uri;
+                return (
+                  <button
+                    key={`recent-${entry.uri}`}
+                    type="button"
+                    class={`library-recent-chip ${isSelected ? "is-selected" : ""}`}
+                    aria-pressed={isSelected}
+                    onClick={() => onSelect({
+                      uri: entry.uri,
+                      name: entry.name,
+                      image_url: entry.image_url,
+                      type: entry.type
+                    })}
+                  >
+                    {safeImageUrl ? (
+                      <img
+                        class="library-artwork"
+                        src={safeImageUrl}
+                        alt=""
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <span class="artwork-fallback artwork-fallback-compact" aria-hidden="true">
+                        {icon("library")}
+                      </span>
+                    )}
+                    <span class="library-recent-chip-copy">
+                      <span class="library-recent-chip-title">{entry.name}</span>
+                      <span class="library-recent-chip-meta">{entry.meta}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
         <div class="section-tabs" role="tablist" aria-label={localized(language, "Music sections", "Musikbereiche")}>
           {LIBRARY_SECTIONS.map((section) => {
             const active = section === currentSection;
@@ -1159,6 +1217,14 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     void searchCatalog(query, force);
   }, [searchCatalog]);
   const { oledTheme, setOledTheme } = useTheme();
+  const alarmRecents = useLibraryRecents("alarm");
+  const sleepRecents = useLibraryRecents("sleep");
+  const playRecents = useLibraryRecents("play");
+  const pendingRecentRef = useRef<{ alarm: LibraryItem | null; sleep: LibraryItem | null; play: LibraryItem | null }>({
+    alarm: null,
+    sleep: null,
+    play: null
+  });
   const {
     playerVolume,
     isPlayerReady: playerReady,
@@ -1409,14 +1475,17 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
   function handleLibrarySelect(item: LibraryItem) {
     if (surface === "alarm") {
+      pendingRecentRef.current.alarm = item;
       setAlarmForm((current) => {
         const next = { ...current, playlistUri: item.uri };
         void handleAlarmSave(next);
         return next;
       });
     } else if (surface === "sleep") {
+      pendingRecentRef.current.sleep = item;
       setSleepForm((current) => ({ ...current, playlistUri: item.uri }));
     } else if (surface === "play") {
+      pendingRecentRef.current.play = item;
       setPlayForm((current) => ({ ...current, contextUri: item.uri }));
     }
   }
@@ -1659,6 +1728,10 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           ...current,
           alarm: { ...current.alarm, ...result.body!.data! }
         }));
+        const pendingItem = pendingRecentRef.current.alarm;
+        if (pendingItem && pendingItem.uri === data.playlistUri) {
+          alarmRecents.recordRecent(pendingItem, buildRecentMeta(pendingItem, bootstrap.language));
+        }
         return;
       }
 
@@ -1732,6 +1805,10 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     try {
       const result = await postForm<Record<string, unknown>>("/sleep", payload);
       if (result.body?.success) {
+        const pendingItem = pendingRecentRef.current.sleep;
+        if (pendingItem && pendingItem.uri === sleepForm.playlistUri) {
+          sleepRecents.recordRecent(pendingItem, buildRecentMeta(pendingItem, bootstrap.language));
+        }
         await refreshDashboard(true);
         closeSurface();
         return;
@@ -1816,6 +1893,10 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       });
       if (result.body?.success) {
         writeLastDeviceId(deviceId);
+        const pendingItem = pendingRecentRef.current.play;
+        if (pendingItem && pendingItem.uri === contextUri) {
+          playRecents.recordRecent(pendingItem, buildRecentMeta(pendingItem, bootstrap.language));
+        }
         await refreshDashboard(true);
         closeSurface();
         return;
@@ -2293,6 +2374,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             onOpenArtist={handleOpenArtist}
             onSearchCatalog={handleCatalogSearch}
             onCloseArtist={resetArtistDrilldown}
+            recents={alarmRecents.recents}
             t={t}
             language={bootstrap.language}
           />
@@ -2444,6 +2526,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 onOpenArtist={handleOpenArtist}
                 onSearchCatalog={handleCatalogSearch}
                 onCloseArtist={resetArtistDrilldown}
+                recents={sleepRecents.recents}
                 t={t}
                 language={bootstrap.language}
               />
@@ -2512,12 +2595,16 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             onEnsureSection={(section) => void ensureLibrarySection(section)}
             onRetrySection={(section) => void ensureLibrarySection(section)}
             onSelect={handleLibrarySelect}
-            onQuickPlay={(item) => void handlePlayNow(item.uri)}
+            onQuickPlay={(item) => {
+              pendingRecentRef.current.play = item;
+              void handlePlayNow(item.uri);
+            }}
             quickPlayBusy={busyAction === "play"}
             quickPlayDisabled={networkStatus === "offline" || !playForm.deviceId}
             onOpenArtist={handleOpenArtist}
             onSearchCatalog={handleCatalogSearch}
             onCloseArtist={resetArtistDrilldown}
+            recents={playRecents.recents}
             t={t}
             language={bootstrap.language}
           />

@@ -104,8 +104,37 @@ test("settings surface exposes Spotify credential controls", async ({ page }) =>
 test("alarm flow opens from the primary action card", async ({ page }) => {
   await page.goto("/");
 
-  await page.locator('[data-testid="alarm-card"] button').click();
+  await page.getByTestId("alarm-card").click();
   await expect(page.getByTestId("alarm-sheet")).toBeVisible();
+});
+
+test("alarm sheet surfaces recently picked playlists from localStorage", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "spotipi.recents.alarm",
+      JSON.stringify({
+        v: 1,
+        items: [
+          {
+            uri: "spotify:playlist:test-recent-1",
+            name: "Wake Up Mix",
+            image_url: null,
+            meta: "phobo",
+            type: "playlist",
+            picked_at: Date.now()
+          }
+        ]
+      })
+    );
+  });
+
+  await page.goto("/");
+  await page.getByTestId("alarm-card").click();
+  await expect(page.getByTestId("alarm-sheet")).toBeVisible();
+
+  const recents = page.locator('#alarm-sheet [data-testid="library-recents"]');
+  await expect(recents).toBeVisible();
+  await expect(recents).toContainText("Wake Up Mix");
 });
 
 test("sheet closes with Escape and restores focus to trigger", async ({ page }) => {
@@ -136,7 +165,7 @@ test("sheet closes with Escape and restores focus to trigger", async ({ page }) 
 test("sheet traps keyboard focus", async ({ page }) => {
   await page.goto("/");
 
-  await page.locator('[data-testid="alarm-card"] button').click();
+  await page.getByTestId("alarm-card").click();
   await expect(page.getByTestId("alarm-sheet")).toBeVisible();
   await expect.poll(async () => page.evaluate(() => {
     const active = document.activeElement;
@@ -258,7 +287,7 @@ test("credential toggles switch aria-pressed and stored preview value", async ({
 test("library picker supports keyboard tab switching and offline retry state", async ({ page }) => {
   await page.goto("/");
 
-  await page.locator('[data-testid="play-card"] button').click();
+  await page.getByTestId("play-card").click();
   await expect(page.locator("#play-sheet")).toBeVisible();
   await expect(page.getByRole("button", { name: /start playback|wiedergabe starten/i })).toHaveCount(0);
 
@@ -313,7 +342,7 @@ test("search tab does not refetch unchanged query on unrelated rerenders", async
   });
 
   await page.goto("/");
-  await page.locator('[data-testid="play-card"] button').click();
+  await page.getByTestId("play-card").click();
   await expect(page.locator("#play-sheet")).toBeVisible();
 
   const searchTab = page.locator("#library-tab-search");
