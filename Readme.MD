@@ -1,4 +1,4 @@
-# SpotiPi (v1.7.1)
+# SpotiPi (v1.8.0)
 
 Smart Spotify alarm clock and sleep timer for Raspberry Pi.
 
@@ -217,10 +217,10 @@ npm run test:e2e
 
 Performance budget details: [`docs/FRONTEND_PERFORMANCE_BUDGET.md`](docs/FRONTEND_PERFORMANCE_BUDGET.md)
 
-Current baseline as of 2026-04-06:
+Current baseline as of 2026-05-31:
 
-- `pytest`: `171 passed, 2 skipped`
-- `npm run test:e2e`: `54 passed`
+- `pytest`: `186 passed, 2 skipped`
+- `npm run test:e2e`: `57 passed`
 
 Optional local quality checks:
 

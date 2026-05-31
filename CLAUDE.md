@@ -42,6 +42,20 @@ cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh  # first time only
 - `npm run test:e2e` if UI behavior changed
 - Commit rebuilt `static/dist/` together with frontend source changes (Pi can't rebuild)
 
+## Shipping
+
+`/ship` (the global workflow) reads this section. Requirements for a SpotiPi release:
+
+- **Pre-ship gates:** the quality gates above — `pytest`; for `frontend/src/` changes also
+  `npm run typecheck && npm run build && npm run budget:check`, commit the rebuilt `static/dist/`,
+  and run `npm run screenshot:readme` (updates `docs/images/spotipi.png`).
+- **Version source of truth:** `src/version.py` (`VERSION` string **and** the `VERSION_INFO`
+  major/minor/patch fields). Mirror the version in the title line of `Readme.MD`
+  (`# SpotiPi (vX.Y.Z)`) and `AGENTS.md` (`# SpotiPi Agent Guidelines (vX.Y.Z)`), and add a
+  `CHANGELOG.md` entry. The frontend footer and `/api/health` read the version from `version.py` at
+  runtime via the bootstrap payload — no frontend rebuild needed for a version change.
+- **Post-push deploy:** run `./scripts/deploy_to_pi.sh` (local copy of `deploy_to_pi.sh.example`).
+
 ## Architecture
 
 **Backend layers** (keep route handlers thin, logic goes deeper):

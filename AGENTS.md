@@ -1,4 +1,4 @@
-# SpotiPi Agent Guidelines (v1.7.1)
+# SpotiPi Agent Guidelines (v1.8.0)
 
 This file is the canonical source of AI coding instructions for this repository.
 

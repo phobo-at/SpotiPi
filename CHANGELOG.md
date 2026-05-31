@@ -5,6 +5,28 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-05-31
+
+### ✨ New Features
+- Alarms can now repeat: choose **daily**, **weekdays only**, or **individual days of the week** via a weekday picker. No days selected keeps the previous one-time behavior; recurring alarms stay enabled after firing.
+- The music library now paginates instead of loading everything at once, and surfaces recently picked playlists for quick reuse.
+
+### 🎨 UI/UX
+- Alarm sheet auto-saves on change and shows the selected speaker; controls sit above the library.
+- Native selects replaced with a custom styled device dropdown.
+- Compacter library rows and settings toggles, unified dropdowns, merged maintenance controls, leaner toasts, and trimmed copy.
+- Action cards moved into the snapshot panel; removed the standalone bottom section and the snapshot panel header.
+- PWA: added `safe-area-inset-top` padding so the iPhone Dynamic Island no longer overlaps the header.
+
+### 🐛 Fixes
+- Config language now takes priority over the `Accept-Language` header.
+
+### 🧹 Maintenance
+- Removed dead code: legacy routes, the old `ActionCard`, and unused device-card CSS.
+
+### 🧪 Tests
+- `186 passed, 2 skipped` (backend) · `57 passed` (E2E).
+
 ## [1.7.1] - 2026-04-06
 
 ### 🔐 Security & Access
