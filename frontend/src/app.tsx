@@ -501,6 +501,104 @@ function ToggleField({ label, description, checked, onChange }: ToggleFieldProps
   );
 }
 
+// Weekday order is 0=Monday … 6=Sunday, matching the backend config schema.
+const WEEKDAY_ORDER = [0, 1, 2, 3, 4, 5, 6] as const;
+const WEEKDAYS_PRESET_DAILY = [0, 1, 2, 3, 4, 5, 6];
+const WEEKDAYS_PRESET_WORKDAYS = [0, 1, 2, 3, 4];
+
+function weekdayShortLabel(day: number, language: string): string {
+  const de = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+  const en = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return (language === "de" ? de : en)[day] ?? String(day);
+}
+
+function sameWeekdaySet(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort((x, y) => x - y);
+  const sortedB = [...b].sort((x, y) => x - y);
+  return sortedA.every((value, index) => value === sortedB[index]);
+}
+
+interface WeekdayPickerProps {
+  value: number[];
+  language: string;
+  onChange: (weekdays: number[]) => void;
+}
+
+function WeekdayPicker({ value, language, onChange }: WeekdayPickerProps) {
+  const selected = new Set(value);
+  const isDaily = sameWeekdaySet(value, WEEKDAYS_PRESET_DAILY);
+  const isWorkdays = sameWeekdaySet(value, WEEKDAYS_PRESET_WORKDAYS);
+
+  let summary: string;
+  if (value.length === 0) {
+    summary = localized(language, "Once", "Einmal");
+  } else if (isDaily) {
+    summary = localized(language, "Daily", "Täglich");
+  } else if (isWorkdays) {
+    summary = localized(language, "Weekdays", "Werktags");
+  } else {
+    summary = WEEKDAY_ORDER.filter((day) => selected.has(day))
+      .map((day) => weekdayShortLabel(day, language))
+      .join(", ");
+  }
+
+  function toggleDay(day: number) {
+    const next = selected.has(day)
+      ? value.filter((existing) => existing !== day)
+      : [...value, day].sort((a, b) => a - b);
+    onChange(next);
+  }
+
+  function applyPreset(preset: number[]) {
+    // Tapping the active preset clears it back to a single-use alarm.
+    onChange(sameWeekdaySet(value, preset) ? [] : [...preset]);
+  }
+
+  return (
+    <div class="weekday-picker">
+      <div class="field-label-row">
+        <label class="field-label">{localized(language, "Repeat", "Wiederholen")}</label>
+        <strong>{summary}</strong>
+      </div>
+      <div class="weekday-chips" role="group" aria-label={localized(language, "Repeat on weekdays", "An Wochentagen wiederholen")}>
+        {WEEKDAY_ORDER.map((day) => {
+          const active = selected.has(day);
+          return (
+            <button
+              key={day}
+              type="button"
+              class={`weekday-chip ${active ? "is-active" : ""}`}
+              aria-pressed={active}
+              onClick={() => toggleDay(day)}
+            >
+              {weekdayShortLabel(day, language)}
+            </button>
+          );
+        })}
+      </div>
+      <div class="weekday-presets">
+        <button
+          type="button"
+          class={`weekday-preset ${isDaily ? "is-active" : ""}`}
+          aria-pressed={isDaily}
+          onClick={() => applyPreset(WEEKDAYS_PRESET_DAILY)}
+        >
+          {localized(language, "Daily", "Täglich")}
+        </button>
+        <button
+          type="button"
+          class={`weekday-preset ${isWorkdays ? "is-active" : ""}`}
+          aria-pressed={isWorkdays}
+          onClick={() => applyPreset(WEEKDAYS_PRESET_WORKDAYS)}
+        >
+          {localized(language, "Weekdays", "Werktags")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface DevicePickerProps {
   title: string;
   devices: SpotifyDevice[];
@@ -1698,7 +1796,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       return;
     }
 
-    if (isActivating && data.enabled && hasPassedToday(data.time)) {
+    if (isActivating && data.enabled && data.weekdays.length === 0 && hasPassedToday(data.time)) {
       pushToast(
         "info",
         localized(
@@ -1720,6 +1818,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     payload.set("volume", String(playerVolume));
     payload.set("fade_in", data.fadeIn ? "on" : "off");
     payload.set("shuffle", data.shuffle ? "on" : "off");
+    payload.set("weekdays", JSON.stringify(data.weekdays));
 
     try {
       const result = await postForm<AlarmSummary>("/save_alarm", payload);
@@ -2295,6 +2394,16 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               const next = { ...alarmForm, enabled: checked };
               setAlarmForm(next);
               void handleAlarmSave(next, checked ? "activate" : undefined);
+            }}
+          />
+
+          <WeekdayPicker
+            value={alarmForm.weekdays}
+            language={bootstrap.language}
+            onChange={(weekdays) => {
+              const next = { ...alarmForm, weekdays };
+              setAlarmForm(next);
+              void handleAlarmSave(next);
             }}
           />
 

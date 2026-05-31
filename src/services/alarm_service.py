@@ -31,6 +31,7 @@ class AlarmInfo:
     is_scheduled: bool
     next_alarm_text: Optional[str]
     next_execution_iso: Optional[str]
+    weekdays: Optional[list]
 
 class AlarmService(BaseService):
     """Service for managing alarms and scheduling."""
@@ -44,18 +45,20 @@ class AlarmService(BaseService):
         try:
             config = load_config()
             
+            weekdays = config.get("weekdays")
+
             # Calculate next alarm execution
             next_alarm = None
             is_scheduled = False
             if config.get("enabled") and config.get("time"):
-                next_alarm = AlarmTimeValidator.get_next_alarm_date(config["time"])
+                next_alarm = AlarmTimeValidator.get_next_alarm_date(config["time"], weekdays=weekdays)
                 is_scheduled = next_alarm is not None
 
             next_alarm_text = ""
             next_execution_iso = None
             if config.get("enabled") and config.get("time"):
                 try:
-                    next_alarm_text = AlarmTimeValidator.format_time_until_alarm(config["time"])
+                    next_alarm_text = AlarmTimeValidator.format_time_until_alarm(config["time"], weekdays=weekdays)
                 except Exception:
                     next_alarm_text = "Next alarm calculation error"
 
@@ -74,7 +77,8 @@ class AlarmService(BaseService):
                 next_execution=next_alarm,
                 is_scheduled=is_scheduled,
                 next_alarm_text=next_alarm_text,
-                next_execution_iso=next_execution_iso
+                next_execution_iso=next_execution_iso,
+                weekdays=weekdays,
             )
 
             data = {
@@ -135,7 +139,9 @@ class AlarmService(BaseService):
             next_alarm_text = ""
             if config.get("enabled") and config.get("time"):
                 try:
-                    next_alarm_text = AlarmTimeValidator.format_time_until_alarm(config["time"])
+                    next_alarm_text = AlarmTimeValidator.format_time_until_alarm(
+                        config["time"], weekdays=config.get("weekdays")
+                    )
                 except Exception:
                     next_alarm_text = "Next alarm calculation error"
 
@@ -148,6 +154,7 @@ class AlarmService(BaseService):
                 "device_name": config.get("device_name", ""),
                 "fade_in": config.get("fade_in", False),
                 "shuffle": config.get("shuffle", False),
+                "weekdays": config.get("weekdays"),
             }
 
             return self._success_result(

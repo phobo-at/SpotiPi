@@ -137,6 +137,71 @@ test("alarm sheet surfaces recently picked playlists from localStorage", async (
   await expect(recents).toContainText("Wake Up Mix");
 });
 
+test("alarm weekday picker sends selected weekdays to the backend", async ({ page }) => {
+  let savedWeekdays;
+
+  // Ensure the save handler's guards pass (needs a device + valid time).
+  await gotoWithDashboardOverride(page, (dashboard) => ({
+    ...dashboard,
+    alarm: {
+      ...dashboard.alarm,
+      enabled: false,
+      time: "07:00",
+      device_name: "Test Speaker",
+      weekdays: []
+    }
+  }));
+
+  // Registered AFTER the bootstrap catch-all so this handler wins for /save_alarm
+  // (Playwright runs the most recently registered matching route first).
+  await page.route("**/save_alarm", async (route, request) => {
+    const params = new URLSearchParams(request.postData() || "");
+    savedWeekdays = JSON.parse(params.get("weekdays") || "null");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        message: "ok",
+        data: {
+          enabled: false,
+          time: "07:00",
+          alarm_volume: 20,
+          next_alarm: "",
+          playlist_uri: "",
+          device_name: "Test Speaker",
+          fade_in: false,
+          shuffle: false,
+          weekdays: savedWeekdays
+        }
+      })
+    });
+  });
+
+  await page.getByTestId("alarm-card").click();
+  await expect(page.getByTestId("alarm-sheet")).toBeVisible();
+
+  const picker = page.locator("#alarm-sheet .weekday-picker");
+  await expect(picker).toBeVisible();
+
+  // Preset "Weekdays" -> Monday..Friday.
+  await picker.getByRole("button", { name: /weekdays|werktags/i }).click();
+  await expect.poll(() => savedWeekdays).toEqual([0, 1, 2, 3, 4]);
+  await expect(
+    picker.getByRole("button", { name: /weekdays|werktags/i })
+  ).toHaveAttribute("aria-pressed", "true");
+
+  // Toggling Saturday adds day 5 to the selection.
+  await picker.locator(".weekday-chip", { hasText: /^(Sa|Sat)$/ }).click();
+  await expect.poll(() => savedWeekdays).toEqual([0, 1, 2, 3, 4, 5]);
+
+  // Tapping the active "Daily" preset clears back to a single-use alarm.
+  await picker.getByRole("button", { name: /^(daily|täglich)$/i }).click();
+  await expect.poll(() => savedWeekdays).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  await picker.getByRole("button", { name: /^(daily|täglich)$/i }).click();
+  await expect.poll(() => savedWeekdays).toEqual([]);
+});
+
 test("sheet closes with Escape and restores focus to trigger", async ({ page }) => {
   await page.goto("/");
 

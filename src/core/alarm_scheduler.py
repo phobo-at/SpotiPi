@@ -127,7 +127,9 @@ class AlarmScheduler:
             pending = self._pending_state_alarm()
             if pending:
                 return pending
-            next_dt = AlarmTimeValidator.get_next_alarm_date(alarm_time)
+            next_dt = AlarmTimeValidator.get_next_alarm_date(
+                alarm_time, weekdays=cfg.get("weekdays")
+            )
             return next_dt
         except Exception as e:
             _logger.warning(f"Failed to compute next alarm: {e}")

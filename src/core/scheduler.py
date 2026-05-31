@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
 """
-Alarm time utilities for single-use alarms.
+Alarm time utilities for single-use and recurring (weekday) alarms.
 """
 
 from __future__ import annotations
 
 import datetime
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 from ..utils.timezone import get_local_timezone
 
 LOCAL_TZ = get_local_timezone()
+
+
+def _normalize_weekdays(weekdays: Optional[Sequence[int]]) -> Optional[set[int]]:
+    """Return a set of valid 0-6 weekday ints, or ``None`` for daily/once.
+
+    Empty or ``None`` means "no weekday restriction" (single-use semantics).
+    Invalid entries are silently dropped; callers validate stricter upstream.
+    """
+    if not weekdays:
+        return None
+    valid = {day for day in weekdays if isinstance(day, int) and 0 <= day <= 6}
+    return valid or None
 
 
 def _coerce_time_components(alarm_time: str) -> Optional[Tuple[int, int]]:
@@ -24,13 +36,23 @@ def _coerce_time_components(alarm_time: str) -> Optional[Tuple[int, int]]:
     return None
 
 
-def next_alarm_datetime(alarm_time: str, reference: Optional[datetime.datetime] = None) -> Optional[datetime.datetime]:
-    """Return the next datetime that matches ``alarm_time`` in the local timezone."""
+def next_alarm_datetime(
+    alarm_time: str,
+    reference: Optional[datetime.datetime] = None,
+    weekdays: Optional[Sequence[int]] = None,
+) -> Optional[datetime.datetime]:
+    """Return the next datetime that matches ``alarm_time`` in the local timezone.
+
+    When ``weekdays`` is a non-empty list of ints (0=Monday … 6=Sunday), the
+    result is advanced to the next day whose weekday is in the set. ``None`` or
+    an empty list keeps the original single-use behaviour (today or tomorrow).
+    """
     components = _coerce_time_components(alarm_time)
     if components is None:
         return None
 
     hour, minute = components
+    allowed_days = _normalize_weekdays(weekdays)
     now = reference.astimezone(LOCAL_TZ) if reference is not None else datetime.datetime.now(tz=LOCAL_TZ)
 
     def _normalize(target: datetime.datetime) -> datetime.datetime:
@@ -47,35 +69,27 @@ def next_alarm_datetime(alarm_time: str, reference: Optional[datetime.datetime] 
             return roundtrip
         return target
 
-    try:
-        target = datetime.datetime(
-            now.year,
-            now.month,
-            now.day,
-            hour,
-            minute,
-            tzinfo=LOCAL_TZ,
-        )
-    except ValueError:
-        return None
-
-    target = _normalize(target)
-
-    if target <= now:
+    def _at(day: datetime.date) -> Optional[datetime.datetime]:
         try:
-            next_day = now + datetime.timedelta(days=1)
-            target = datetime.datetime(
-                next_day.year,
-                next_day.month,
-                next_day.day,
-                hour,
-                minute,
-                tzinfo=LOCAL_TZ,
+            return _normalize(
+                datetime.datetime(day.year, day.month, day.day, hour, minute, tzinfo=LOCAL_TZ)
             )
-            target = _normalize(target)
         except ValueError:
             return None
-    return target
+
+    # Search forward day-by-day for the first matching, future occurrence.
+    # 8-day cap guarantees a full week is covered (plus today) even with DST.
+    base = now.date()
+    for offset in range(0, 9):
+        candidate = _at(base + datetime.timedelta(days=offset))
+        if candidate is None:
+            continue
+        if candidate <= now:
+            continue
+        if allowed_days is not None and candidate.weekday() not in allowed_days:
+            continue
+        return candidate
+    return None
 
 
 class AlarmTimeValidator:
@@ -100,9 +114,11 @@ class AlarmTimeValidator:
         return diff_minutes <= tolerance_minutes
 
     @staticmethod
-    def format_time_until_alarm(alarm_time: str) -> str:
+    def format_time_until_alarm(
+        alarm_time: str, weekdays: Optional[Sequence[int]] = None
+    ) -> str:
         """Return human-readable delta until the next alarm."""
-        next_dt = next_alarm_datetime(alarm_time)
+        next_dt = next_alarm_datetime(alarm_time, weekdays=weekdays)
         if not next_dt:
             return "Invalid alarm time"
 
@@ -128,7 +144,9 @@ class AlarmTimeValidator:
 
     @staticmethod
     def get_next_alarm_date(
-        alarm_time: str, reference: Optional[datetime.datetime] = None
+        alarm_time: str,
+        reference: Optional[datetime.datetime] = None,
+        weekdays: Optional[Sequence[int]] = None,
     ) -> Optional[datetime.datetime]:
         """Backwards-compatible wrapper for legacy imports."""
-        return next_alarm_datetime(alarm_time, reference=reference)
+        return next_alarm_datetime(alarm_time, reference=reference, weekdays=weekdays)

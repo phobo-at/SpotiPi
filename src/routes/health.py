@@ -222,7 +222,9 @@ def api_dashboard_status():
     next_alarm_time = ""
     if config.get("enabled") and config.get("time"):
         try:
-            next_alarm_time = AlarmTimeValidator.format_time_until_alarm(config["time"])
+            next_alarm_time = AlarmTimeValidator.format_time_until_alarm(
+                config["time"], weekdays=config.get("weekdays")
+            )
         except Exception:
             next_alarm_time = "Next alarm calculation error"
 
@@ -235,6 +237,7 @@ def api_dashboard_status():
         "device_name": config.get("device_name", ""),
         "fade_in": config.get("fade_in", False),
         "shuffle": config.get("shuffle", False),
+        "weekdays": config.get("weekdays"),
     }
 
     sleep_service = get_service("sleep")

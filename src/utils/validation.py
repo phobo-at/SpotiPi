@@ -11,6 +11,7 @@ Provides comprehensive input validation for all user inputs including:
 """
 
 import datetime
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Union
@@ -251,6 +252,55 @@ class InputValidator:
         return ValidationResult(True, bool(value), "", field_name)
 
     @classmethod
+    def validate_weekdays(
+        cls, value: Any, field_name: str = "weekdays"
+    ) -> ValidationResult:
+        """Validate recurring-alarm weekday selection.
+
+        Accepts ``None``/missing, an empty value, a JSON array string
+        (e.g. ``"[0,1,2]"``), or a list of ints. Returns ``None`` for
+        "no repeat" (single-use), or a sorted, deduplicated list of ints
+        in the 0-6 range (0=Monday … 6=Sunday).
+        """
+        if value is None:
+            return ValidationResult(True, None, "", field_name)
+
+        # Form data arrives as a string; parse JSON arrays / empty values.
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped == "":
+                return ValidationResult(True, None, "", field_name)
+            try:
+                value = json.loads(stripped)
+            except (ValueError, TypeError):
+                return ValidationResult(
+                    False, None, "weekdays must be a JSON array of integers 0-6", field_name
+                )
+
+        if not isinstance(value, (list, tuple)):
+            return ValidationResult(
+                False, None, "weekdays must be a list of integers 0-6", field_name
+            )
+
+        if len(value) == 0:
+            return ValidationResult(True, None, "", field_name)
+
+        days: set[int] = set()
+        for day in value:
+            # Reject bools (bool is a subclass of int) and non-integers.
+            if isinstance(day, bool) or not isinstance(day, int):
+                return ValidationResult(
+                    False, None, f"Invalid weekday value: {day!r}. Must be 0-6.", field_name
+                )
+            if day < 0 or day > 6:
+                return ValidationResult(
+                    False, None, f"Invalid weekday value: {day}. Must be 0-6 (0=Mon, 6=Sun).", field_name
+                )
+            days.add(day)
+
+        return ValidationResult(True, sorted(days), "", field_name)
+
+    @classmethod
     def validate_spotify_client_id(
         cls,
         value: Union[str, None],
@@ -422,11 +472,17 @@ def validate_alarm_config(form_data: Dict[str, Any]) -> Dict[str, Any]:
         raise ValidationError(device_result.field_name, device_result.error)
     validated['device_name'] = device_result.value
     
+    # Weekdays validation (optional, recurring alarms)
+    weekdays_result = InputValidator.validate_weekdays(form_data.get('weekdays'), 'weekdays')
+    if not weekdays_result.is_valid:
+        raise ValidationError(weekdays_result.field_name, weekdays_result.error)
+    validated['weekdays'] = weekdays_result.value
+
     # Boolean fields
     for field in ['enabled', 'fade_in', 'shuffle']:
         bool_result = InputValidator.validate_boolean(form_data.get(field), field)
         validated[field] = bool_result.value
-    
+
     return validated
 
 def validate_sleep_config(form_data: Dict[str, Any]) -> Dict[str, Any]:

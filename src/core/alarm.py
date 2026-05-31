@@ -91,7 +91,7 @@ def execute_alarm(
     # Log only key fields to reduce noise
     safe_cfg = {
         k: config.get(k)
-        for k in ["enabled", "time", "device_name", "playlist_uri", "alarm_volume", "fade_in", "shuffle"]
+        for k in ["enabled", "time", "device_name", "playlist_uri", "alarm_volume", "fade_in", "shuffle", "weekdays"]
     }
     safe_cfg["has_cached_device"] = bool(config.get("last_known_devices"))
     log(f"📄 Loaded config (sanitized): {safe_cfg}")
@@ -176,6 +176,19 @@ def execute_alarm(
                 force=True,
             )
             return False
+
+    # Weekday check (recurring alarms): only fire on selected days.
+    # Empty/None weekdays = single-use alarm, no restriction.
+    weekdays = config.get("weekdays")
+    if weekdays and not force and now.weekday() not in weekdays:
+        debug(f"Not a scheduled weekday (today={now.weekday()}, weekdays={weekdays}) -> skip")
+        log_alarm_probe(
+            probe,
+            "execute_wrong_weekday",
+            extra={"weekday": now.weekday(), "weekdays": weekdays},
+            force=True,
+        )
+        return False
 
     # Start playback
     try:
@@ -287,8 +300,9 @@ def execute_alarm(
         log("✅ Playback started.")
         log_alarm_probe(probe, "execute_playback_started", extra={"fade_in": fade_in})
 
-        # Auto-disable alarm
-        if not force:
+        # Auto-disable single-use alarms only. Recurring alarms (weekdays set)
+        # stay enabled so they fire again on the next selected day.
+        if not force and not config.get("weekdays"):
             try:
                 with config_transaction() as transaction:
                     current_config = transaction.load()
@@ -298,6 +312,8 @@ def execute_alarm(
             except Exception as e:
                 log(f"❌ Error disabling the alarm: {e}")
                 log_alarm_probe(probe, "execute_disable_error", extra={"error": str(e)}, force=True)
+        elif config.get("weekdays"):
+            log("🔁 Recurring alarm stays enabled for the next selected weekday")
 
         log_alarm_probe(probe, "execute_complete", extra={"success": True}, force=True)
         return True

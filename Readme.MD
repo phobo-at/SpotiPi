@@ -14,6 +14,7 @@ Smart Spotify alarm clock and sleep timer for Raspberry Pi.
 - Local server profile for safe development testing
 - Raspberry Pi optimized defaults and low-power toggles
 - Resilient alarm scheduler with catch-up behavior
+- One-time or recurring alarms (daily, weekdays, or individual days of the week)
 - Encrypted token storage and restricted token file permissions
 
 ## Current Runtime Contract
