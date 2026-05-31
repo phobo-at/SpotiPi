@@ -1,6 +1,6 @@
 ---
 name: spotipi-ship
-description: Ship SpotiPi changes using the project-specific release workflow in `.claude/commands/ship.md`. Use when the user asks to ship/release/publish all pending repo changes, including quality gates, version/docs sync, commit/push, and optional Pi deployment.
+description: Ship SpotiPi changes using the project release requirements documented in the "Shipping" section of `CLAUDE.md`. Use when the user asks to ship/release/publish all pending repo changes, including quality gates, version/docs sync, commit/push, and optional Pi deployment.
 ---
 
 # Spotipi Ship
@@ -9,7 +9,7 @@ Use this skill to ship repository changes in a repeatable, fail-fast flow.
 
 ## Workflow
 
-1. Read `.claude/commands/ship.md` at runtime and treat it as the canonical project workflow.
+1. Read the "Shipping" section of `CLAUDE.md` at runtime and treat it as the canonical project ship requirements (quality gates, version source, deploy).
 2. Execute phases in order: Preflight, Quality gates, Version management, Documentation sync, Commit and push, Pi deployment.
 3. Stop immediately on any failed quality gate. Do not continue to docs, commit, or push.
 4. Keep commit/push behind explicit user confirmation.
@@ -41,4 +41,4 @@ Use this skill to ship repository changes in a repeatable, fail-fast flow.
 
 ## Reference
 
-- Canonical phase-by-phase checklist: `.claude/commands/ship.md`
+- Canonical project ship requirements: the "Shipping" section of `CLAUDE.md` (version source `src/version.py`, quality gates, `./scripts/deploy_to_pi.sh`).

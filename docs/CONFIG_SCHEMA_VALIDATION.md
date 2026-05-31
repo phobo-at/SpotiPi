@@ -50,7 +50,7 @@ print(validated_model.alarm_volume)  # 50
 | `enabled` | `bool` | - | `False` |
 | `playlist_uri` | `str` | - | `""` |
 | `device_name` | `str` | - | `""` |
-| `alarm_volume` | `int` | Range: 0-100 | `50` |
+| `alarm_volume` | `int` | Range: 0-100 | `20` |
 | `fade_in` | `bool` | - | `False` |
 | `shuffle` | `bool` | - | `False` |
 | `weekdays` | `list[int]` \| `None` | Each: 0-6 (Mo-So) | `None` (täglich) |

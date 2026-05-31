@@ -2,7 +2,7 @@
 
 ## 📋 **SpotiPi Environment Configuration**
 
-Current release: **v1.5.2**  
+Current release: **v1.8.0**  
 Supported runtime: **Python 3.10+**  
 Canonical runtime secrets path: `~/.spotipi/.env`
 
@@ -299,5 +299,5 @@ PORT=8080              # Custom port
 
 ---
 *Documented on: September 5, 2025*  
-*Updated on: March 17, 2026 (v1.5.2)*  
+*Updated on: May 31, 2026 (v1.8.0)*  
 *SpotiPi Auto-Detection System v1.0.0*

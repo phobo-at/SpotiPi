@@ -52,8 +52,9 @@ cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh  # first time only
 - **Version source of truth:** `src/version.py` (`VERSION` string **and** the `VERSION_INFO`
   major/minor/patch fields). Mirror the version in the title line of `Readme.MD`
   (`# SpotiPi (vX.Y.Z)`) and `AGENTS.md` (`# SpotiPi Agent Guidelines (vX.Y.Z)`), and add a
-  `CHANGELOG.md` entry. The frontend footer and `/api/health` read the version from `version.py` at
-  runtime via the bootstrap payload — no frontend rebuild needed for a version change.
+  `CHANGELOG.md` entry. The frontend footer reads it from the server-injected bootstrap payload
+  (`bootstrap.app.version`, set in `src/routes/main.py` from `version.py`), and the `/healthz`
+  endpoint returns it — no frontend rebuild needed for a version change.
 - **Post-push deploy:** run `./scripts/deploy_to_pi.sh` (local copy of `deploy_to_pi.sh.example`).
 
 ## Architecture

@@ -33,6 +33,9 @@ Test browsers:
 
 - Open Alarm tab and verify it is visible by default.
 - Set time, device, playlist, volume and save.
+- The sheet auto-saves on change (no explicit save button); confirm changes persist after refresh.
+- Pick the speaker via the custom device dropdown (not a native `<select>`).
+- Repeat / weekday picker: select individual day chips, and the "Daily" / "Weekdays" presets; an empty selection means a one-time alarm. Verify the chosen days persist after refresh and survive a save.
 - Enable/disable alarm from config mode.
 - Enable/disable alarm from active mode.
 - Verify timer/status updates after save and after refresh.
@@ -49,6 +52,8 @@ Test browsers:
 
 - Open Library tab.
 - Open playlist modal, switch tabs (playlists/albums/tracks/artists).
+- Verify pagination: long sections load incrementally (not all at once).
+- Verify recently picked playlists are surfaced for quick reuse.
 - Search/filter items.
 - Select an item and trigger playback on selected speaker.
 

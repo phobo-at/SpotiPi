@@ -6,7 +6,7 @@ Umfassende Anleitung für die Einrichtung und Verwaltung des SpotiPi Deployments
 
 1. [Aktueller Setup Überblick](#aktueller-setup-überblick)
 2. [Komplette Einrichtung von Grund auf](#komplette-einrichtung-von-grund-auf)
-3. [Git Hook Deployment](#git-hook-deployment)
+3. [Deployment vom Entwicklungsrechner](#deployment-vom-entwicklungsrechner)
 4. [Service Verwaltung](#service-verwaltung)
 5. [Fehlerbehebung](#fehlerbehebung)
 6. [Wartung](#wartung)
@@ -18,255 +18,143 @@ Umfassende Anleitung für die Einrichtung und Verwaltung des SpotiPi Deployments
 ### Architektur
 ```
 Mac Entwicklung              Raspberry Pi Produktion
-├── /spotipi-dev/            ├── /home/pi/repo.git (bare repo)
-│   └── spotipi              ├── /home/pi/spotipi (app)
-│                            ├── systemd service (spotipi.service)
-│                            └── Waitress WSGI Server via `python run.py`
+├── repos/spotipi            ├── /home/pi/spotipi          (app, rsync-Ziel)
+│   ├── scripts/             ├── /home/pi/.spotipi/.env    (Runtime-Secrets)
+│   │   └── deploy_to_pi.sh  ├── systemd: spotipi.service  (Waitress via run.py)
+│   └── deploy/systemd/      └── systemd: spotipi-alarm.timer (Readiness-Backup)
 ```
 
 ### Deployment Ablauf
-1. **Entwickeln** auf dem Mac in `/Users/michi/spotipi-dev/spotipi/`
-2. **Push** via `git push prod master`
-3. **Auto-Deploy** via Git post-receive hook
-4. **Auto-Neustart** systemd service
-5. **Bereit** unter `http://spotipi.local:5000`
+1. **Entwickeln** auf dem Mac im Repo (`~/Development/repos/spotipi`).
+2. **Shippen** mit `/ship` (commit + push an `github`) — oder direkt `./scripts/deploy_to_pi.sh`.
+3. **Sync** via `rsync` auf den Pi (`scripts/deploy_to_pi.sh`), inkl. optionalem systemd-Unit-Refresh.
+4. **Auto-Neustart** der `spotipi.service`.
+5. **Bereit** unter `http://spotipi.local:5000`.
+
+> Hinweis: Das frühere Modell (bare Git-Repo + `post-receive`-Hook) wird **nicht mehr verwendet**.
+> Deployment läuft über `scripts/deploy_to_pi.sh` (rsync), Erstinstallation über `deploy/install_fresh_pi.sh`.
 
 ### Aktuelle Git Remotes
 ```bash
-origin  git@github.com:phobo-at/spotipi.git (GitHub Backup)
-prod    ssh://pi@spotipi.local/home/pi/repo.git (Produktion)
+github  git@github.com:phobo-at/SpotiPi.git   # einziges Remote (Code + Backup)
 ```
 
 ---
 
 ## 🛠️ Komplette Einrichtung von Grund auf
 
-### 1. Raspberry Pi Vorbereitung
+### Empfohlen: Geführte Installation
+
+Auf einem frischen Pi erledigt das geführte Skript Pakete, venv, `.env`, optionalen
+Token und die systemd-Units in einem Durchlauf:
 
 ```bash
-# System aktualisieren
-sudo apt update && sudo apt upgrade -y
-
-# Benötigte Pakete installieren
-sudo apt install -y git python3 python3-pip python3-venv nginx
-
-# Pi User erstellen (falls nicht vorhanden)
-sudo useradd -m -s /bin/bash pi
-sudo usermod -aG sudo pi
-```
-
-### 2. Anwendungsverzeichnis Einrichtung
-
-```bash
-# Anwendungsverzeichnis erstellen
-sudo mkdir -p /home/pi/spotipi
-sudo chown pi:pi /home/pi/spotipi
-
-# Virtuelle Umgebung erstellen
+git clone https://github.com/phobo-at/SpotiPi.git /home/pi/spotipi
 cd /home/pi/spotipi
-python3 -m venv venv
-source venv/bin/activate
-
-# Basis-Abhängigkeiten installieren
-pip install flask requests python-dotenv psutil
+./deploy/install_fresh_pi.sh
 ```
 
-### 3. Git Repository Einrichtung
+`deploy/install_fresh_pi.sh` macht:
+1. `apt update/upgrade` + Basis-Pakete (`git python3 python3-venv python3-pip`).
+2. venv unter `/home/pi/spotipi/venv` + `pip install -r requirements.txt` (inkl. **waitress** – sonst fällt der Server auf den Flask-Dev-Server zurück).
+3. `~/.spotipi/.env` anlegen (`chmod 600`), Spotify-Credentials + `FLASK_SECRET_KEY` interaktiv setzen, `SPOTIPI_ENV=production`.
+4. optional Token generieren (`generate_token.py`).
+5. systemd-Units via `deploy/install.sh` installieren und einen Override für den realen App-Pfad setzen.
+
+### Manuell: nur die systemd-Units installieren
+
+Wenn venv und `~/.spotipi/.env` bereits stehen, installiert `deploy/install.sh` die
+mitgelieferten Units aus `deploy/systemd/` (kein handgeschriebenes Unit-File nötig):
 
 ```bash
-# Bare Git Repository für Deployment erstellen
-cd /home/pi
-git init --bare repo.git
-
-# Besitzrechte setzen
-sudo chown -R pi:pi /home/pi/repo.git
+cd /home/pi/spotipi
+./deploy/install.sh         # kopiert die Units, enable+restart spotipi.service,
+                            # aktiviert standardmäßig spotipi-alarm.timer
 ```
 
-### 4. Git Hook Konfiguration
+Die gelieferten Units (`deploy/systemd/spotipi.service`):
 
-Post-receive Hook erstellen:
-
-```bash
-cat > /home/pi/repo.git/hooks/post-receive << 'EOF'
-#!/bin/bash
-
-DEPLOY_DIR="/home/pi/spotipi"
-REPO_DIR="/home/pi/repo.git"
-LOGFILE="/home/pi/deploy.log"
-
-echo "[$(date)] 🚀 Deployment gestartet via post-receive" >> "$LOGFILE"
-
-# Code auschecken
-cd "$DEPLOY_DIR" || {
-    echo "[$(date)] ❌ FEHLER: Kann nicht zu $DEPLOY_DIR wechseln" >> "$LOGFILE"
-    exit 1
-}
-
-echo "[$(date)] 📥 Aktueller Code wird ausgecheckt..." >> "$LOGFILE"
-GIT_DIR="$REPO_DIR" GIT_WORK_TREE="$DEPLOY_DIR" git checkout -f master >> "$LOGFILE" 2>&1
-
-# Prüfen ob requirements.txt geändert wurde
-if git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -q "requirements.txt"; then
-    echo "[$(date)] 📦 requirements.txt geändert, Abhängigkeiten werden aktualisiert..." >> "$LOGFILE"
-    /home/pi/spotipi/venv/bin/pip install -r requirements.txt >> "$LOGFILE" 2>&1
-else
-    echo "[$(date)] ⏭️  Keine Änderungen an Abhängigkeiten erkannt" >> "$LOGFILE"
-fi
-
-# App neustarten
-echo "[$(date)] 🔄 spotipi.service wird neugestartet..." >> "$LOGFILE"
-sudo systemctl restart spotipi.service >> "$LOGFILE" 2>&1
-
-if [ $? -eq 0 ]; then
-    echo "[$(date)] ✅ Deployment abgeschlossen! Service erfolgreich neugestartet." >> "$LOGFILE"
-else
-    echo "[$(date)] ❌ FEHLER: Service-Neustart fehlgeschlagen!" >> "$LOGFILE"
-fi
-
-echo "[$(date)] 📱 App sollte verfügbar sein unter http://spotipi.local:5000" >> "$LOGFILE"
-EOF
-
-# Hook ausführbar machen
-chmod +x /home/pi/repo.git/hooks/post-receive
-```
-
-### 5. Systemd Service Einrichtung
-
-Service-Datei erstellen:
-
-```bash
-sudo tee /etc/systemd/system/spotipi.service << 'EOF'
-[Unit]
-Description=SpotiPi Web Anwendung
-After=network.target
-
+```ini
 [Service]
 Type=simple
-User=pi
-Group=pi
 WorkingDirectory=/home/pi/spotipi
-Environment=PATH=/home/pi/spotipi/venv/bin
+EnvironmentFile=-/home/pi/.spotipi/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=SPOTIPI_LOW_POWER=1
+Environment=SPOTIPI_MAX_CONCURRENCY=2
+Environment=SPOTIPI_JSON_LOGS=1
 ExecStart=/home/pi/spotipi/venv/bin/python run.py
-Restart=always
-RestartSec=10
-
-# Logging
-StandardOutput=append:/home/pi/web.log
-StandardError=append:/home/pi/web.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Service aktivieren und starten
-sudo systemctl daemon-reload
-sudo systemctl enable spotipi.service
-sudo systemctl start spotipi.service
+Restart=on-failure
+RestartSec=5s
 ```
 
-### 6. Alarm Timer Einrichtung (Robustheit)
+Logging läuft über journald (`journalctl -u spotipi.service`), nicht über eine `web.log`-Datei.
 
-**Seit v1.3.8** wird der Alarm-Timer standardmäßig aktiviert, um Robustheit nach Stromausfall/Reboot zu gewährleisten.
+### Alarm-Readiness-Timer (Robustheit)
 
-Der systemd-Timer (`spotipi-alarm.timer`) führt täglich um 05:30 Uhr einen Alarm-Readiness-Check aus und stellt sicher, dass verpasste Alarme nach Downtime nachgeholt werden (`Persistent=true`).
+`deploy/install.sh` aktiviert standardmäßig `spotipi-alarm.timer` (täglich 05:30,
+`Persistent=true` → Catch-up nach Reboot). Der Timer ruft `spotipi-alarm.service`
+→ `scripts/run_alarm.sh` als Backup-Layer zum in-process Scheduler-Thread auf.
 
 ```bash
-# Timer-Status prüfen
-sudo systemctl status spotipi-alarm.timer
-
-# Timer manuell aktivieren (falls nicht automatisch geschehen)
-sudo systemctl enable --now spotipi-alarm.timer
-
-# Timer deaktivieren (falls gewünscht)
-sudo systemctl disable --now spotipi-alarm.timer
-# ODER beim Deployment:
-SPOTIPI_ENABLE_ALARM_TIMER=0 ./scripts/deploy_to_pi.sh
+sudo systemctl status spotipi-alarm.timer       # Status
+sudo systemctl disable --now spotipi-alarm.timer # deaktivieren
+# Bei der Installation deaktivieren:
+SPOTIPI_ENABLE_ALARM_TIMER=0 ./deploy/install.sh
 ```
 
-**Timer-Details:**
-- **Zeitplan:** Täglich um 05:30 Uhr
-- **Catch-up:** `Persistent=true` – führt verpasste Ausführungen nach Reboot nach
-- **Service:** `spotipi-alarm.service` ruft `scripts/run_alarm.sh` auf
-- **Zweck:** Backup-Layer zusätzlich zum in-process Scheduler-Thread
+### Umgebungskonfiguration (`~/.spotipi/.env`)
 
-### 7. Sudoers für Service-Verwaltung konfigurieren
+Kanonischer Runtime-Pfad ist `~/.spotipi/.env` (vom `install_fresh_pi.sh` angelegt; alternativ
+über **Settings → Spotify Account** in der UI pflegbar). Mindest-Inhalt:
 
-Pi User erlauben, Service ohne Passwort zu verwalten:
-
-```bash
-sudo tee /etc/sudoers.d/spotipi << 'EOF'
-pi ALL=(ALL) NOPASSWD: /bin/systemctl restart spotipi.service
-pi ALL=(ALL) NOPASSWD: /bin/systemctl start spotipi.service
-pi ALL=(ALL) NOPASSWD: /bin/systemctl stop spotipi.service
-pi ALL=(ALL) NOPASSWD: /bin/systemctl status spotipi.service
-EOF
-```
-
-### 7. Umgebungskonfiguration
-
-```bash
-# Umgebungsverzeichnis und Datei erstellen
-mkdir -p /home/pi/.spotipi
-touch /home/pi/.spotipi/.env
-chmod 600 /home/pi/.spotipi/.env
-
-# Spotify-Anmeldedaten hinzufügen (manuell bearbeiten)
-nano /home/pi/.spotipi/.env
-```
-
-Inhalt der `.env`:
-```
+```env
 SPOTIFY_CLIENT_ID=deine_client_id
 SPOTIFY_CLIENT_SECRET=dein_client_secret
-SPOTIFY_REFRESH_TOKEN=dein_refresh_token
 SPOTIFY_USERNAME=dein_username
+# optional, sonst via generate_token.py erzeugt:
+SPOTIFY_REFRESH_TOKEN=dein_refresh_token
 ```
 
-### 8. Lokale Entwicklungseinrichtung
-
-Praktische Aliase zur `.bashrc` hinzufügen:
-
-```bash
-echo "alias restart-app='sudo systemctl restart spotipi.service'" >> ~/.bashrc
-echo "alias status-app='sudo systemctl status spotipi.service'" >> ~/.bashrc
-echo "alias logs-app='sudo journalctl -u spotipi.service -f'" >> ~/.bashrc
-echo "alias deploy-log='tail -f /home/pi/deploy.log'" >> ~/.bashrc
-source ~/.bashrc
-```
+Vollständige Variablen-Referenz: [`ENVIRONMENT_VARIABLES.md`](ENVIRONMENT_VARIABLES.md).
 
 ---
 
-## 🔄 Git Hook Deployment
+## 🔄 Deployment vom Entwicklungsrechner
+
+Deployment läuft per `rsync` über `scripts/deploy_to_pi.sh` — kein Git-Hook, kein bare Repo.
+
+### Einrichtung (einmalig)
+
+```bash
+cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh   # lokale Kopie (gitignored)
+chmod +x scripts/deploy_to_pi.sh
+```
 
 ### Wie es funktioniert
 
-1. **Entwickler pusht** Code zum Bare Repository
-2. **post-receive Hook** wird automatisch ausgelöst
-3. **Code wird ausgecheckt** in das Arbeitsverzeichnis
-4. **Abhängigkeiten** werden bei Bedarf aktualisiert
-5. **Service startet neu** automatisch
-6. **App ist live** innerhalb von Sekunden
+1. Quelldateien werden per `rsync` nach `pi@spotipi.local:/home/pi/spotipi` synchronisiert.
+2. systemd-Units werden bei Bedarf aktualisiert (steuerbar über `SPOTIPI_FORCE_SYSTEMD`).
+3. `spotipi.service` wird neu gestartet.
+4. Eine Deployment-Zusammenfassung (geänderte/erstellte/gelöschte Dateien) wird ausgegeben.
 
-### Hook Features
-
-- ✅ **Automatisches Code-Deployment**
-- ✅ **Intelligente Abhängigkeitsverwaltung** (nur wenn requirements.txt sich ändert)
-- ✅ **Service-Neustart** mit Fehlerbehandlung
-- ✅ **Umfassendes Logging** mit Zeitstempel und Emojis
-- ✅ **Fehlererkennung** und Berichterstattung
-
-### Deployment Befehle (vom Mac)
+### Deployment-Befehle (vom Mac)
 
 ```bash
-# Deployment zur Produktion
-git push prod master
+# Standard-Deploy (sync + Service-Neustart)
+./scripts/deploy_to_pi.sh
 
-# Deployment zur Entwicklung
-git push dev master
+# Nützliche Flags
+SPOTIPI_FORCE_SYSTEMD=1 ./scripts/deploy_to_pi.sh   # systemd-Units erzwingen
+SPOTIPI_PURGE_UNUSED=1  ./scripts/deploy_to_pi.sh   # alte/ungenutzte Dateien einmalig entfernen
+SPOTIPI_SERVICE_NAME="" ./scripts/deploy_to_pi.sh   # nur Code-Sync, ohne Service-Neustart
 
-# Deployment Status prüfen
-ssh pi@spotipi.local "tail -20 /home/pi/deploy.log"
+# Status prüfen
+ssh pi@spotipi.local "sudo systemctl status spotipi.service"
+ssh pi@spotipi.local "journalctl -u spotipi.service -n 50 --no-pager"
 ```
+
+> Wichtig: Frontend-Änderungen vorher mit `npm run build` bauen — der Pi baut `static/dist/` nicht selbst.
 
 ---
 
@@ -302,11 +190,11 @@ sudo systemctl enable spotipi.service
 
 ### Log Dateien
 
-| Datei | Zweck | Pfad |
-|-------|-------|------|
-| `deploy.log` | Git Deployment Logs | `/home/pi/deploy.log` |
-| `web.log` | Anwendung stdout/stderr | `/home/pi/web.log` |
-| `systemd logs` | Service Verwaltung | `journalctl -u spotipi.service` |
+| Quelle | Zweck | Zugriff |
+|--------|-------|---------|
+| journald | Anwendung stdout/stderr + Service-Verwaltung | `journalctl -u spotipi.service` |
+| journald | Alarm-Readiness-Timer | `journalctl -u spotipi-alarm.service` |
+| lokal (Dev) | Deploy-Ausgabe | Konsolen-Ausgabe von `./scripts/deploy_to_pi.sh` |
 
 ---
 
@@ -328,15 +216,14 @@ ls -la /home/pi/spotipi/venv/bin/python
 
 #### Deployment schlägt fehl
 ```bash
-# Deployment Log prüfen
-tail -50 /home/pi/deploy.log
+# Deploy-Ausgabe direkt vom Mac prüfen (rsync-Fehler, SSH-Probleme)
+./scripts/deploy_to_pi.sh
 
-# Git Hook Berechtigungen überprüfen
-ls -la /home/pi/repo.git/hooks/post-receive
+# SSH-Erreichbarkeit des Pi testen
+ssh pi@spotipi.local "echo ok && sudo systemctl status spotipi.service"
 
-# Manuelles Deployment testen
-cd /home/pi/spotipi
-git pull
+# Service-Logs nach einem fehlgeschlagenen Restart
+ssh pi@spotipi.local "journalctl -u spotipi.service -n 50 --no-pager"
 ```
 
 #### Umgebungsprobleme
@@ -413,7 +300,7 @@ mkdir -p "$BACKUP_DIR"
 # Kritische Dateien sichern
 cp /home/pi/.spotipi/.env "$BACKUP_DIR/"
 cp /etc/systemd/system/spotipi.service "$BACKUP_DIR/"
-cp /home/pi/repo.git/hooks/post-receive "$BACKUP_DIR/"
+cp -r /home/pi/spotipi/deploy/systemd "$BACKUP_DIR/units"
 
 echo "Backup abgeschlossen: $BACKUP_DIR"
 ```
@@ -423,7 +310,7 @@ echo "Backup abgeschlossen: $BACKUP_DIR"
 # Aktuelle Konfiguration exportieren
 python3 -c "
 import json
-from src.api.spotify import load_config
+from src.config import load_config
 config = load_config()
 print(json.dumps(config, indent=2))
 " > config_backup.json
@@ -433,14 +320,11 @@ print(json.dumps(config, indent=2))
 
 #### Anwendung aktualisieren
 ```bash
-# Vom Mac - normales Deployment
-git push prod master
+# Vom Mac - normales Deployment (rsync + Service-Neustart)
+./scripts/deploy_to_pi.sh
 
-# Manuelles Update auf Pi
-cd /home/pi/spotipi
-git pull origin master
-venv/bin/pip install -r requirements.txt
-sudo systemctl restart spotipi.service
+# Bei geänderten Dependencies zusätzlich auf dem Pi:
+ssh pi@spotipi.local "cd /home/pi/spotipi && venv/bin/pip install -r requirements.txt && sudo systemctl restart spotipi.service"
 ```
 
 #### Python Abhängigkeiten aktualisieren
@@ -459,7 +343,7 @@ pip install -r requirements.txt --upgrade
 
 ```bash
 # Schneller Deployment Status
-ssh pi@spotipi.local "systemctl is-active spotipi.service && tail -5 /home/pi/deploy.log"
+ssh pi@spotipi.local "systemctl is-active spotipi.service && journalctl -u spotipi.service -n 5 --no-pager"
 
 # Remote Neustart
 ssh pi@spotipi.local "sudo systemctl restart spotipi.service"
@@ -467,8 +351,11 @@ ssh pi@spotipi.local "sudo systemctl restart spotipi.service"
 # App Erreichbarkeit prüfen
 curl -s -o /dev/null -w "%{http_code}" http://spotipi.local:5000
 
-# Git Repository Größe
-du -sh /home/pi/repo.git /home/pi/spotipi
+# Liveness inkl. Version
+curl -s http://spotipi.local:5000/healthz
+
+# App-Verzeichnisgröße
+du -sh /home/pi/spotipi
 ```
 
 ### Netzwerk Konfiguration
@@ -492,25 +379,20 @@ sudo ufw enable
 Für erfahrene Benutzer, die das Setup erneut benötigen:
 
 ```bash
-# 1. Raspberry Pi Setup
-sudo apt install -y git python3 python3-pip python3-venv
-git init --bare /home/pi/repo.git
-
-# 2. Arbeitsverzeichnis erstellen
-mkdir -p /home/pi/spotipi
+# Auf dem Pi: frische, geführte Installation (Pakete, venv, .env, systemd-Units)
+git clone https://github.com/phobo-at/SpotiPi.git /home/pi/spotipi
 cd /home/pi/spotipi
-python3 -m venv venv
+./deploy/install_fresh_pi.sh
 
-# 3. Post-receive Hook installieren (siehe Abschnitt 4)
-# 4. Systemd Service erstellen (siehe Abschnitt 5)  
-# 5. Sudoers konfigurieren (siehe Abschnitt 6)
-# 6. Git Remote auf Mac hinzufügen und pushen
+# Danach vom Mac: deployen
+cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh && chmod +x scripts/deploy_to_pi.sh
+./scripts/deploy_to_pi.sh
 
 # Bereit zum Loslegen! 🚀
 ```
 
 ---
 
-**Zuletzt aktualisiert**: 15. August 2025  
-**Version**: 1.0.0  
+**Zuletzt aktualisiert**: 31. Mai 2026  
+**Version**: 1.8.0  
 **Betreuer**: SpotiPi Entwicklungsteam

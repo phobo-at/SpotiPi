@@ -48,9 +48,22 @@ validated_data = validate_alarm_config(request.form)  # ✅ Comprehensive valida
 
 #### **Device Name Validation**
 ```python
-# Alphanumeric + spaces, hyphens, underscores, dots (max 50 chars)
+# Any non-control Unicode characters except < and > (max 100 chars).
+# Spotify allows emojis/unicode in device names, so the rule is permissive.
 ✅ "Living Room Speaker" -> Valid
+✅ "Küche 🔊" -> Valid
 ❌ "Device<>Name" -> "device_name contains invalid characters"
+```
+
+#### **Weekdays Validation** (recurring alarms)
+```python
+# Accepts None / empty / a JSON-array string / a list of ints.
+# None or empty => one-time alarm; otherwise a sorted, deduped 0-6 list (0=Mon … 6=Sun).
+✅ None / "" / "[]"      -> None (one-time)
+✅ "[4, 1, 1, 0]"        -> [0, 1, 4]
+❌ "[0, 7]"              -> "Invalid weekday value: 7. Must be 0-6 (0=Mon, 6=Sun)."
+❌ [True]                -> rejected (bool is not a valid weekday)
+❌ "not-json"            -> "weekdays must be a JSON array of integers 0-6"
 ```
 
 ### 3. **Updated Endpoints**

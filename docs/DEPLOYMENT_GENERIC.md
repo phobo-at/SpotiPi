@@ -7,7 +7,7 @@ Comprehensive guide for setting up and managing SpotiPi deployment on Raspberry 
 1. [Overview](#overview)
 2. [Prerequisites](#prerequisites)
 3. [Complete Setup from Scratch](#complete-setup-from-scratch)
-4. [Git Hook Deployment](#git-hook-deployment)
+4. [Deployment from the development machine](#deployment-from-the-development-machine)
 5. [Service Management](#service-management)
 6. [Troubleshooting](#troubleshooting)
 7. [Maintenance](#maintenance)
@@ -19,17 +19,19 @@ Comprehensive guide for setting up and managing SpotiPi deployment on Raspberry 
 ### Architecture
 ```
 Development Machine         Raspberry Pi / Linux Server
-├── /path/to/spotipi/       ├── /home/pi/spotipi-repo.git (bare repo)
-│   └── spotipi             ├── /home/pi/spotipi-app (app)
-│                           └── systemd service (spotipi.service)
+├── repos/spotipi           ├── /home/pi/spotipi          (app, rsync target)
+│   ├── scripts/            ├── /home/pi/.spotipi/.env    (runtime secrets)
+│   │   └── deploy_to_pi.sh └── systemd: spotipi.service  (Waitress via run.py)
+│   └── deploy/systemd/         + spotipi-alarm.timer     (readiness backup)
 ```
 
 ### Deployment Flow
-1. **Develop** on local machine
-2. **Push** via `git push production master`
-3. **Auto-deploy** via Git post-receive hook
-4. **Auto-restart** systemd service
-5. **Ready** at `http://your-pi-ip:5000`
+1. **Develop** on the local machine.
+2. **Deploy** via `./scripts/deploy_to_pi.sh` (rsync + service restart).
+3. **First-time install** on the Pi via `./deploy/install_fresh_pi.sh`.
+4. **Ready** at `http://your-pi-ip:5000`.
+
+> The earlier bare-repo + `post-receive` hook model is **no longer used**.
 
 ---
 
@@ -56,220 +58,96 @@ Development Machine         Raspberry Pi / Linux Server
 
 ## 🛠️ Complete Setup from Scratch
 
-### 1. Server Preparation
+### Recommended: guided install
+
+On a fresh Pi/server the guided script handles packages, venv, `.env`, an optional token,
+and the systemd units in one pass:
 
 ```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
-
-# Install required packages
-sudo apt install -y git python3 python3-pip python3-venv nginx
-
-# Create user (if not exists)
-# sudo useradd -m -s /bin/bash pi
-# sudo usermod -aG sudo pi
+git clone https://github.com/phobo-at/SpotiPi.git /home/pi/spotipi
+cd /home/pi/spotipi
+./deploy/install_fresh_pi.sh
 ```
 
-### 2. Application Directory Setup
+`deploy/install_fresh_pi.sh` performs:
+1. `apt update/upgrade` + base packages (`git python3 python3-venv python3-pip`).
+2. venv at `/home/pi/spotipi/venv` + `pip install -r requirements.txt` (includes **waitress** — without it the server falls back to the Flask dev server).
+3. Creates `~/.spotipi/.env` (`chmod 600`), prompts for Spotify credentials + a generated `FLASK_SECRET_KEY`, sets `SPOTIPI_ENV=production`.
+4. Optionally generates a token (`generate_token.py`).
+5. Installs the systemd units via `deploy/install.sh` and writes an override for the real app path.
+
+### Manual: install only the systemd units
+
+If the venv and `~/.spotipi/.env` already exist, `deploy/install.sh` installs the shipped
+units from `deploy/systemd/` — no hand-written unit file needed:
 
 ```bash
-# Create application directory
-sudo mkdir -p /home/pi/spotipi-app
-sudo chown pi:pi /home/pi/spotipi-app
-
-# Create virtual environment
-cd /home/pi/spotipi-app
-python3 -m venv venv
-source venv/bin/activate
-
-# Install base dependencies
-pip install flask requests python-dotenv psutil
+cd /home/pi/spotipi
+./deploy/install.sh    # copies units, enable+restart spotipi.service,
+                       # enables spotipi-alarm.timer by default
 ```
 
-### 3. Git Repository Setup
+The shipped `deploy/systemd/spotipi.service`:
 
-```bash
-# Create bare Git repository for deployment
-cd /home/pi
-git init --bare spotipi-repo.git
-
-# Set ownership
-sudo chown -R pi:pi /home/pi/spotipi-repo.git
-```
-
-### 4. Git Hook Configuration
-
-Create the post-receive hook:
-
-```bash
-cat > /home/pi/spotipi-repo.git/hooks/post-receive << 'EOF'
-#!/bin/bash
-
-DEPLOY_DIR="/home/pi/spotipi-app"
-REPO_DIR="/home/pi/spotipi-repo.git"
-LOGFILE="/home/pi/deploy.log"
-
-echo "[$(date)] 🚀 Deployment started via post-receive" >> "$LOGFILE"
-
-# Checkout code
-cd "$DEPLOY_DIR" || {
-    echo "[$(date)] ❌ ERROR: Cannot cd to $DEPLOY_DIR" >> "$LOGFILE"
-    exit 1
-}
-
-echo "[$(date)] 📥 Checking out latest code..." >> "$LOGFILE"
-GIT_DIR="$REPO_DIR" GIT_WORK_TREE="$DEPLOY_DIR" git checkout -f master >> "$LOGFILE" 2>&1
-
-# Check if requirements.txt changed
-if git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -q "requirements.txt"; then
-    echo "[$(date)] 📦 requirements.txt changed, updating dependencies..." >> "$LOGFILE"
-    /home/pi/spotipi-app/venv/bin/pip install -r requirements.txt >> "$LOGFILE" 2>&1
-else
-    echo "[$(date)] ⏭️  No dependency changes detected" >> "$LOGFILE"
-fi
-
-# Restart app
-echo "[$(date)] 🔄 Restarting spotipi.service..." >> "$LOGFILE"
-sudo systemctl restart spotipi.service >> "$LOGFILE" 2>&1
-
-if [ $? -eq 0 ]; then
-    echo "[$(date)] ✅ Deployment complete! Service restarted successfully." >> "$LOGFILE"
-else
-    echo "[$(date)] ❌ ERROR: Service restart failed!" >> "$LOGFILE"
-fi
-
-echo "[$(date)] 📱 App should be available at http://$(hostname -I | awk '{print $1}'):5000" >> "$LOGFILE"
-EOF
-
-# Make hook executable
-chmod +x /home/pi/spotipi-repo.git/hooks/post-receive
-```
-
-### 5. Systemd Service Setup
-
-Create the service file:
-
-```bash
-sudo tee /etc/systemd/system/spotipi.service << 'EOF'
-[Unit]
-Description=SpotiPi Web Application
-After=network.target
-
+```ini
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/home/pi/spotipi-app
-Environment=PATH=/home/pi/spotipi-app/venv/bin
-ExecStart=/home/pi/spotipi-app/venv/bin/python run.py
-Restart=always
-RestartSec=10
-
-# Logging
-StandardOutput=append:/home/pi/spotipi.log
-StandardError=append:/home/pi/spotipi.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Enable and start service
-sudo systemctl daemon-reload
-sudo systemctl enable spotipi.service
-sudo systemctl start spotipi.service
+WorkingDirectory=/home/pi/spotipi
+EnvironmentFile=-/home/pi/.spotipi/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=SPOTIPI_LOW_POWER=1
+Environment=SPOTIPI_MAX_CONCURRENCY=2
+Environment=SPOTIPI_JSON_LOGS=1
+ExecStart=/home/pi/spotipi/venv/bin/python run.py
+Restart=on-failure
+RestartSec=5s
 ```
 
-### 6. Configure Sudoers for Service Management
+Logging goes to journald (`journalctl -u spotipi.service`), not a `spotipi.log` file.
+The `spotipi-alarm.timer` (daily 05:30, `Persistent=true`) is enabled by default as a
+readiness backup to the in-process scheduler thread; disable with
+`SPOTIPI_ENABLE_ALARM_TIMER=0 ./deploy/install.sh`.
 
-Allow user to restart the service without password:
+### Environment configuration (`~/.spotipi/.env`)
 
-```bash
-sudo tee /etc/sudoers.d/spotipi << 'EOF'
-pi ALL=(ALL) NOPASSWD: /bin/systemctl restart spotipi.service
-pi ALL=(ALL) NOPASSWD: /bin/systemctl start spotipi.service
-pi ALL=(ALL) NOPASSWD: /bin/systemctl stop spotipi.service
-pi ALL=(ALL) NOPASSWD: /bin/systemctl status spotipi.service
-EOF
-```
+The canonical runtime secrets path is `~/.spotipi/.env` (created by `install_fresh_pi.sh`;
+also editable via **Settings → Spotify Account** in the UI). Minimum content:
 
-### 7. Environment Configuration
-
-```bash
-# Create environment file
-touch /home/pi/spotipi-app/.env
-
-# Add Spotify credentials
-nano /home/pi/spotipi-app/.env
-```
-
-Content of `.env` (replace with your values):
-```
+```env
 SPOTIFY_CLIENT_ID=your_client_id_here
 SPOTIFY_CLIENT_SECRET=your_client_secret_here
-SPOTIFY_REFRESH_TOKEN=your_refresh_token_here
 SPOTIFY_USERNAME=your_spotify_username_here
+# optional, otherwise produced by generate_token.py:
+SPOTIFY_REFRESH_TOKEN=your_refresh_token_here
 ```
 
-### 8. Local Development Setup
-
-Add convenient aliases to `.bashrc`:
-
-```bash
-echo "alias restart-spotipi='sudo systemctl restart spotipi.service'" >> ~/.bashrc
-echo "alias status-spotipi='sudo systemctl status spotipi.service'" >> ~/.bashrc
-echo "alias logs-spotipi='sudo journalctl -u spotipi.service -f'" >> ~/.bashrc
-echo "alias deploy-log='tail -f /home/pi/deploy.log'" >> ~/.bashrc
-source ~/.bashrc
-```
-
-### 9. Setup Git Remote on Development Machine
-
-On your development machine (in the SpotiPi project directory):
-
-```bash
-# Add Git remote (adjust IP address)
-git remote add production pi@192.168.1.100:/home/pi/spotipi-repo.git
-
-# Or with hostname (if mDNS works)
-git remote add production pi@raspberrypi.local:/home/pi/spotipi-repo.git
-
-# First deployment
-git push production master
-```
+Full variable reference: [`ENVIRONMENT_VARIABLES.md`](ENVIRONMENT_VARIABLES.md).
 
 ---
 
-## 🔄 Git Hook Deployment
+## 🔄 Deployment from the development machine
 
-### How It Works
-
-1. **Developer pushes** code to bare repository
-2. **post-receive hook** triggers automatically
-3. **Code is checked out** to working directory
-4. **Dependencies** are updated if needed
-5. **Service restarts** automatically
-6. **App is live** within seconds
-
-### Hook Features
-
-- ✅ **Automatic code deployment**
-- ✅ **Smart dependency management** (only when requirements.txt changes)
-- ✅ **Service restart** with error handling
-- ✅ **Comprehensive logging** with timestamps and emojis
-- ✅ **Error detection** and reporting
-
-### Deployment Commands (from development machine)
+Deployment runs via `rsync` through `scripts/deploy_to_pi.sh` — no Git hook, no bare repo.
 
 ```bash
-# Deploy to production
-git push production master
+# One-time setup
+cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh
+chmod +x scripts/deploy_to_pi.sh
 
-# Check deployment status
-ssh pi@your-server-ip "tail -20 /home/pi/deploy.log"
+# Deploy (rsync + service restart)
+./scripts/deploy_to_pi.sh
 
-# Remote service status
-ssh pi@your-server-ip "sudo systemctl status spotipi.service"
+# Useful flags
+SPOTIPI_FORCE_SYSTEMD=1 ./scripts/deploy_to_pi.sh   # force systemd unit refresh
+SPOTIPI_PURGE_UNUSED=1  ./scripts/deploy_to_pi.sh   # one-off cleanup of stale files
+SPOTIPI_SERVICE_NAME="" ./scripts/deploy_to_pi.sh   # code sync only, no service restart
+
+# Check status
+ssh pi@spotipi.local "sudo systemctl status spotipi.service"
+ssh pi@spotipi.local "journalctl -u spotipi.service -n 50 --no-pager"
 ```
+
+> Build the frontend (`npm run build`) before deploying — the Pi does not rebuild `static/dist/`.
 
 ---
 
@@ -305,11 +183,11 @@ sudo systemctl enable spotipi.service
 
 ### Log Files
 
-| File | Purpose | Location |
-|------|---------|----------|
-| `deploy.log` | Git deployment logs | `/home/pi/deploy.log` |
-| `spotipi.log` | Application stdout/stderr | `/home/pi/spotipi.log` |
-| `systemd logs` | Service management | `journalctl -u spotipi.service` |
+| Source | Purpose | Access |
+|--------|---------|--------|
+| journald | Application stdout/stderr + service management | `journalctl -u spotipi.service` |
+| journald | Alarm readiness timer | `journalctl -u spotipi-alarm.service` |
+| local (dev) | Deploy output | console output of `./scripts/deploy_to_pi.sh` |
 
 ---
 
@@ -326,32 +204,31 @@ sudo systemctl status spotipi.service
 sudo journalctl -u spotipi.service -f
 
 # Verify Python environment
-ls -la /home/pi/spotipi-app/venv/bin/python
+ls -la /home/pi/spotipi/venv/bin/python
 ```
 
 #### Deployment Fails
 ```bash
-# Check deployment log
-tail -50 /home/pi/deploy.log
+# Run the deploy from the dev machine and read its output (rsync/SSH errors)
+./scripts/deploy_to_pi.sh
 
-# Verify Git hook permissions
-ls -la /home/pi/spotipi-repo.git/hooks/post-receive
+# Verify SSH reachability + service state
+ssh pi@spotipi.local "echo ok && sudo systemctl status spotipi.service"
 
-# Test manual deployment
-cd /home/pi/spotipi-app
-git pull
+# Service logs after a failed restart
+ssh pi@spotipi.local "journalctl -u spotipi.service -n 50 --no-pager"
 ```
 
 #### Environment Issues
 ```bash
 # Verify .env file
-cat /home/pi/spotipi-app/.env
+cat /home/pi/.spotipi/.env
 
 # Check file permissions
-ls -la /home/pi/spotipi-app/.env
+ls -la /home/pi/.spotipi/.env
 
 # Test Python imports
-cd /home/pi/spotipi-app
+cd /home/pi/spotipi
 venv/bin/python -c "import src.app"
 ```
 
@@ -416,7 +293,7 @@ sudo logrotate -f /etc/logrotate.conf
 df -h
 
 # Backup configuration
-cp /home/pi/spotipi-app/.env /home/pi/.env.backup
+cp /home/pi/.spotipi/.env /home/pi/.env.backup
 ```
 
 ### Backup Strategy
@@ -429,9 +306,9 @@ BACKUP_DIR="/home/pi/backups/$(date +%Y%m%d)"
 mkdir -p "$BACKUP_DIR"
 
 # Backup critical files
-cp /home/pi/spotipi-app/.env "$BACKUP_DIR/"
+cp /home/pi/.spotipi/.env "$BACKUP_DIR/"
 cp /etc/systemd/system/spotipi.service "$BACKUP_DIR/"
-cp /home/pi/spotipi-repo.git/hooks/post-receive "$BACKUP_DIR/"
+cp -r /home/pi/spotipi/deploy/systemd "$BACKUP_DIR/units"
 
 echo "Backup completed: $BACKUP_DIR"
 ```
@@ -441,7 +318,7 @@ echo "Backup completed: $BACKUP_DIR"
 # Export current configuration
 python3 -c "
 import json
-from src.api.spotify import load_config
+from src.config import load_config
 config = load_config()
 print(json.dumps(config, indent=2))
 " > config_backup.json
@@ -451,19 +328,16 @@ print(json.dumps(config, indent=2))
 
 #### Update Application
 ```bash
-# From development machine - normal deployment
-git push production master
+# From the development machine — normal deployment (rsync + restart)
+./scripts/deploy_to_pi.sh
 
-# Manual update on server
-cd /home/pi/spotipi-app
-git pull origin master
-venv/bin/pip install -r requirements.txt
-sudo systemctl restart spotipi.service
+# If dependencies changed, also on the server:
+ssh pi@spotipi.local "cd /home/pi/spotipi && venv/bin/pip install -r requirements.txt && sudo systemctl restart spotipi.service"
 ```
 
 #### Update Python Dependencies
 ```bash
-cd /home/pi/spotipi-app
+cd /home/pi/spotipi
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt --upgrade
@@ -477,7 +351,7 @@ pip install -r requirements.txt --upgrade
 
 ```bash
 # Quick deployment status
-ssh pi@your-server-ip "systemctl is-active spotipi.service && tail -5 /home/pi/deploy.log"
+ssh pi@your-server-ip "systemctl is-active spotipi.service && journalctl -u spotipi.service -n 5 --no-pager"
 
 # Remote restart
 ssh pi@your-server-ip "sudo systemctl restart spotipi.service"
@@ -485,8 +359,11 @@ ssh pi@your-server-ip "sudo systemctl restart spotipi.service"
 # Check app accessibility
 curl -s -o /dev/null -w "%{http_code}" http://your-server-ip:5000
 
-# Git repository size
-du -sh /home/pi/spotipi-repo.git /home/pi/spotipi-app
+# Liveness incl. version
+curl -s http://your-server-ip:5000/healthz
+
+# App directory size
+du -sh /home/pi/spotipi
 
 # Find server IP address
 hostname -I
@@ -519,20 +396,14 @@ For external access:
 For experienced users who need quick setup:
 
 ```bash
-# 1. Server setup
-sudo apt install -y git python3 python3-pip python3-venv
-git init --bare /home/pi/spotipi-repo.git
+# On the server: fresh guided install (packages, venv, .env, systemd units)
+git clone https://github.com/phobo-at/SpotiPi.git /home/pi/spotipi
+cd /home/pi/spotipi
+./deploy/install_fresh_pi.sh
 
-# 2. Create working directory
-mkdir -p /home/pi/spotipi-app
-cd /home/pi/spotipi-app
-python3 -m venv venv
-
-# 3. Install post-receive hook (see section 4)
-# 4. Create systemd service (see section 5)  
-# 5. Configure sudoers (see section 6)
-# 6. Create .env file with Spotify credentials (see section 7)
-# 7. Add Git remote on development machine and push (see section 9)
+# Then, from the development machine: deploy
+cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh && chmod +x scripts/deploy_to_pi.sh
+./scripts/deploy_to_pi.sh
 
 # Ready to go! 🚀
 ```
@@ -555,6 +426,6 @@ python3 -m venv venv
 
 ---
 
-**Last Updated**: August 15, 2025  
-**Version**: 1.0.0  
+**Last Updated**: May 31, 2026  
+**Version**: 1.8.0  
 **License**: MIT License

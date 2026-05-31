@@ -121,20 +121,21 @@ Returns detailed metrics:
 ### **5. Background Server Management**
 
 #### **Problem Solved**: Server Management
-Created `server_manager.py` for robust background server control:
+`scripts/server_manager.py` provides robust background server control; the
+`scripts/local_server.sh` wrapper is the canonical entry point:
 
 ```bash
 # Start server in background (no more Ctrl+C killing!)
-python3 server_manager.py start
+./scripts/local_server.sh start
 
 # Check server status
-python3 server_manager.py status
+./scripts/local_server.sh status
 
 # View logs without stopping server
-python3 server_manager.py logs
+./scripts/local_server.sh logs -f
 
 # Stop server cleanly
-python3 server_manager.py stop
+./scripts/local_server.sh stop
 ```
 
 #### **Server Status Example:**
@@ -213,10 +214,10 @@ curl http://localhost:5001/api/music-library   # Music library
 
 ```bash
 # Server Management
-python3 server_manager.py start    # Start in background
-python3 server_manager.py status   # Check status  
-python3 server_manager.py logs     # View logs
-python3 server_manager.py stop     # Clean shutdown
+./scripts/local_server.sh start    # Start in background
+./scripts/local_server.sh status   # Check status
+./scripts/local_server.sh logs -f  # View logs
+./scripts/local_server.sh stop     # Clean shutdown
 
 # Token Cache Monitoring  
 curl http://localhost:5001/api/token-cache/status        # Get metrics

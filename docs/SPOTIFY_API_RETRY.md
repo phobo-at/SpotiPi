@@ -43,8 +43,8 @@ respect_retry_after_header = True
 | `SPOTIPI_HTTP_RETRY_TOTAL` | `5` | Maximale Anzahl Retries (über alle Typen) |
 | `SPOTIPI_HTTP_RETRY_CONNECT` | `3` | Retries bei Connection-Fehlern |
 | `SPOTIPI_HTTP_RETRY_READ` | `4` | Retries bei Read-Timeouts |
-| `SPOTIPI_HTTP_POOL_CONNECTIONS` | `10` | Max. gleichzeitige Connections |
-| `SPOTIPI_HTTP_POOL_MAXSIZE` | `20` | Max. Connection-Pool-Größe |
+| `SPOTIPI_HTTP_POOL_CONNECTIONS` | `5` (Pi/Low-Power) / `10` (Dev) | Max. gleichzeitige Connections |
+| `SPOTIPI_HTTP_POOL_MAXSIZE` | `10` (Pi/Low-Power) / `20` (Dev) | Max. Connection-Pool-Größe |
 
 **Beispiel:**
 ```bash
