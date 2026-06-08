@@ -51,7 +51,7 @@ test("dashboard shell renders primary surfaces without critical accessibility is
   expect(blockingViolations).toEqual([]);
 });
 
-test("sleep tiles are hidden when sleep feature is disabled", async ({ page }) => {
+test("sleep tile is hidden when sleep feature is disabled", async ({ page }) => {
   await gotoWithBootstrapOverride(page, (bootstrap) => ({
     ...bootstrap,
     settings: {
@@ -64,10 +64,9 @@ test("sleep tiles are hidden when sleep feature is disabled", async ({ page }) =
   }));
 
   await expect(page.getByTestId("sleep-card")).toHaveCount(0);
-  await expect(page.getByTestId("sleep-snapshot")).toHaveCount(0);
 });
 
-test("sleep tiles are visible when sleep feature is enabled", async ({ page }) => {
+test("sleep tile is visible when sleep feature is enabled", async ({ page }) => {
   await gotoWithBootstrapOverride(page, (bootstrap) => ({
     ...bootstrap,
     settings: {
@@ -80,7 +79,6 @@ test("sleep tiles are visible when sleep feature is enabled", async ({ page }) =
   }));
 
   await expect(page.getByTestId("sleep-card")).toBeVisible();
-  await expect(page.getByTestId("sleep-snapshot")).toBeVisible();
 });
 
 test("settings surface opens from the header action", async ({ page }) => {

@@ -2367,7 +2367,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                   type="button"
                   class="snapshot-item snapshot-item-action"
                   onClick={() => openSurface("sleep")}
-                  data-testid="sleep-snapshot"
+                  data-testid="sleep-card"
                 >
                   <span>{icon("sleep")}</span>
                   <div>
