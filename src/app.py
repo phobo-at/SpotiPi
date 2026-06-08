@@ -55,6 +55,7 @@ from .routes.music import music_bp
 from .routes.playback import playback_bp
 from .routes.services import services_bp
 from .routes.sleep import sleep_bp
+from .routes.snooze import snooze_bp
 
 # Initialize Flask app with correct paths
 project_root = Path(__file__).parent.parent  # Go up from src/ to project root
@@ -127,6 +128,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(playback_bp)
     app.register_blueprint(services_bp)
     app.register_blueprint(sleep_bp)
+    app.register_blueprint(snooze_bp)
     register_error_handlers(app)
 
 
@@ -484,6 +486,13 @@ def create_app(*, start_warmup: Optional[bool] = None) -> Flask:
 
     if start_warmup:
         _start_warmup(flask_app, dashboard_snapshot, playback_snapshot, devices_snapshot)
+
+    # Re-arm a snooze session that survived a restart (e.g. Pi rebooted mid-window).
+    try:
+        from .core.snooze import maybe_resume_snooze_monitor
+        maybe_resume_snooze_monitor()
+    except Exception as snooze_err:
+        logging.debug(f"Snooze monitor restore skipped: {snooze_err}")
 
     _app = flask_app
     return flask_app

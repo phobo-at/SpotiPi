@@ -1,7 +1,7 @@
 # 🚀 SpotiPi Deployment Quick Start (Pi Zero W)
 
 **Datum:** 31. Mai 2026  
-**Version:** 1.8.0  
+**Version:** 1.9.0  
 **Python:** 3.10+  
 **Verifizierte Test-Baseline:** `pytest -q` → `186 passed, 2 skipped`
 

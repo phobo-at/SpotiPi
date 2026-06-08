@@ -483,6 +483,12 @@ def validate_alarm_config(form_data: Dict[str, Any]) -> Dict[str, Any]:
         bool_result = InputValidator.validate_boolean(form_data.get(field), field)
         validated[field] = bool_result.value
 
+    # Snooze toggle (only persist when the field is present, so partial alarm
+    # saves that omit it don't silently disable snooze).
+    if form_data.get('snooze_enabled') is not None:
+        snooze_result = InputValidator.validate_boolean(form_data.get('snooze_enabled'), 'snooze_enabled')
+        validated['snooze_enabled'] = snooze_result.value
+
     return validated
 
 def validate_sleep_config(form_data: Dict[str, Any]) -> Dict[str, Any]:

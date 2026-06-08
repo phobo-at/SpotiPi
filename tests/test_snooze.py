@@ -1,0 +1,351 @@
+"""Tests for the snooze-on-pause feature.
+
+Covers the core state machine (src/core/snooze.py), the snooze config schema
+fields, the /api/snooze/stop route and the snooze surface on the dashboard
+status contract.
+"""
+
+import time
+
+import pytest
+
+import src.core.snooze as snooze
+from src.config_schema import SpotiPiConfig
+
+
+@pytest.fixture
+def temp_status(tmp_path, monkeypatch):
+    """Point the snooze status file at a temp path and reset the cache."""
+    path = tmp_path / "snooze_status.json"
+    monkeypatch.setattr(snooze, "STATUS_PATH", str(path))
+    snooze._STATUS_CACHE = None
+    snooze._STATUS_CACHE_TS = 0.0
+    yield path
+    snooze._STATUS_CACHE = None
+    snooze._STATUS_CACHE_TS = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Matching helpers
+# ---------------------------------------------------------------------------
+
+def test_device_matches_by_id_and_name():
+    pb = {"device": {"id": "dev1", "name": "Forte"}}
+    assert snooze._device_matches(pb, "dev1", "Other")
+    assert snooze._device_matches(pb, "wrong", "Forte")
+    assert not snooze._device_matches(pb, "wrong", "Nope")
+
+
+def test_context_matches_playlist_track_and_empty():
+    playlist_pb = {"context": {"uri": "spotify:playlist:p"}, "item": {"uri": "spotify:track:x"}}
+    assert snooze._context_matches(playlist_pb, "spotify:playlist:p")
+    assert not snooze._context_matches(playlist_pb, "spotify:playlist:other")
+
+    track_pb = {"item": {"uri": "spotify:track:x"}}
+    assert snooze._context_matches(track_pb, "spotify:track:x")
+    assert not snooze._context_matches(track_pb, "spotify:track:y")
+
+    # Empty alarm URI matches any playing item
+    assert snooze._context_matches({"item": {"uri": "spotify:track:z"}}, "")
+    assert not snooze._context_matches({}, "")
+
+
+def test_classify_armed():
+    playing = {"is_playing": True, "device": {"id": "dev1"}, "context": {"uri": "spotify:playlist:p"}}
+    paused = {"is_playing": False, "device": {"id": "dev1"}}
+    foreign = {"is_playing": True, "device": {"id": "other"}, "context": {"uri": "spotify:playlist:zzz"}}
+
+    assert snooze._classify_armed(playing, "dev1", "Forte", "spotify:playlist:p") == "playing"
+    assert snooze._classify_armed(paused, "dev1", "Forte", "spotify:playlist:p") == "paused"
+    assert snooze._classify_armed(None, "dev1", "Forte", "spotify:playlist:p") == "paused"
+    assert snooze._classify_armed(foreign, "dev1", "Forte", "spotify:playlist:p") == "takeover"
+
+
+# ---------------------------------------------------------------------------
+# Status accessor
+# ---------------------------------------------------------------------------
+
+def test_get_snooze_status_inactive(temp_status):
+    assert snooze.get_snooze_status() == {"active": False}
+
+
+def test_get_snooze_status_window_elapsed(temp_status):
+    snooze._write_status({
+        "active": True,
+        "state": "armed",
+        "window_end": time.time() - 1,
+    })
+    assert snooze.get_snooze_status() == {"active": False}
+
+
+def test_get_snooze_status_snoozing_countdown(temp_status):
+    now = time.time()
+    snooze._write_status({
+        "active": True,
+        "state": "snoozing",
+        "window_end": now + 3600,
+        "resume_at": now + 300,
+        "snooze_count": 2,
+        "snooze_minutes": 9,
+        "device_name": "Forte",
+    })
+    status = snooze.get_snooze_status()
+    assert status["active"] is True
+    assert status["state"] == "snoozing"
+    assert status["snooze_count"] == 2
+    assert 290 <= status["resume_in_seconds"] <= 300
+    assert status["device_name"] == "Forte"
+
+
+# ---------------------------------------------------------------------------
+# Session lifecycle + transition writers
+# ---------------------------------------------------------------------------
+
+def test_start_snooze_session_writes_status(temp_status, monkeypatch):
+    monkeypatch.setattr(snooze, "_spawn_monitor", lambda: None)
+    ok = snooze.start_snooze_session(
+        device_id="dev1",
+        device_name="Forte",
+        playlist_uri="spotify:playlist:p",
+        volume=20,
+        shuffle=True,
+        window_minutes=120,
+        snooze_minutes=9,
+    )
+    assert ok is True
+    status = snooze.get_snooze_status()
+    assert status["active"] is True
+    assert status["state"] == "armed"
+    assert status["snooze_minutes"] == 9
+    assert status["device_name"] == "Forte"
+    assert status["window_remaining_seconds"] > 7000  # ~120 min
+
+
+def test_start_snooze_session_rejects_bad_durations(temp_status, monkeypatch):
+    monkeypatch.setattr(snooze, "_spawn_monitor", lambda: None)
+    assert snooze.start_snooze_session(
+        device_id="d", device_name="F", playlist_uri="", volume=20,
+        window_minutes=0, snooze_minutes=9,
+    ) is False
+
+
+def test_stop_snooze_session(temp_status, monkeypatch):
+    monkeypatch.setattr(snooze, "_spawn_monitor", lambda: None)
+    snooze.start_snooze_session(
+        device_id="dev1", device_name="Forte", playlist_uri="spotify:playlist:p", volume=20,
+    )
+    assert snooze.get_snooze_status()["active"] is True
+    assert snooze.stop_snooze_session() is True
+    assert snooze.get_snooze_status() == {"active": False}
+
+
+def test_arm_snooze_sets_resume_at(temp_status):
+    base = {
+        "active": True, "state": "armed", "window_end": time.time() + 3600,
+        "snooze_minutes": 9, "snooze_count": 0,
+    }
+    snooze._write_status(base)
+    snooze._arm_snooze(base)
+    status = snooze.get_snooze_status()
+    assert status["state"] == "snoozing"
+    assert 530 <= status["resume_in_seconds"] <= 540  # ~9 min
+
+
+def test_do_resume_full_volume_and_rearm(temp_status, monkeypatch):
+    calls = {}
+
+    def fake_start(token, device_id, playlist_uri, volume_percent=50, shuffle=False):
+        calls["args"] = (token, device_id, playlist_uri, volume_percent, shuffle)
+        return True
+
+    monkeypatch.setattr(snooze, "start_playback", fake_start)
+    status = {
+        "active": True, "state": "snoozing", "window_end": time.time() + 3600,
+        "resume_at": time.time() - 1, "device_id": "dev1",
+        "playlist_uri": "spotify:playlist:p", "volume": 20, "shuffle": False,
+        "snooze_minutes": 9, "snooze_count": 1,
+    }
+    snooze._write_status(status)
+    snooze._do_resume("tok", status)
+
+    # Resume must use the full alarm volume (no fade-in)
+    assert calls["args"] == ("tok", "dev1", "spotify:playlist:p", 20, False)
+    after = snooze.get_snooze_status()
+    assert after["state"] == "armed"
+    assert after["snooze_count"] == 2
+
+
+def test_maybe_resume_monitor(temp_status, monkeypatch):
+    spawned = {"count": 0}
+    monkeypatch.setattr(snooze, "_spawn_monitor", lambda: spawned.__setitem__("count", spawned["count"] + 1))
+
+    # No active session -> no spawn
+    assert snooze.maybe_resume_snooze_monitor() is False
+    assert spawned["count"] == 0
+
+    # Active within window -> spawn
+    snooze._write_status({"active": True, "state": "armed", "window_end": time.time() + 3600})
+    assert snooze.maybe_resume_snooze_monitor() is True
+    assert spawned["count"] == 1
+
+    # Active but window elapsed -> cleaned up, no spawn
+    snooze._write_status({"active": True, "state": "armed", "window_end": time.time() - 1})
+    assert snooze.maybe_resume_snooze_monitor() is False
+    assert snooze.get_snooze_status() == {"active": False}
+
+
+# ---------------------------------------------------------------------------
+# Monitor loop (driven deterministically)
+# ---------------------------------------------------------------------------
+
+def _drive_monitor(monkeypatch, temp_status, initial_status, playback_script):
+    """Run _monitor_snooze in-thread with a scripted playback sequence.
+
+    Captures every status write so transitions can be asserted. The script is
+    consumed one entry per loop iteration; when exhausted the session is
+    stopped so the loop terminates.
+    """
+    monkeypatch.setattr(snooze.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(snooze, "get_access_token", lambda: "tok")
+    monkeypatch.setattr(snooze, "refresh_access_token", lambda: "tok")
+    monkeypatch.setattr(snooze, "start_playback", lambda *a, **k: True)
+
+    writes = []
+    original_write = snooze._write_status
+
+    def spy_write(data):
+        writes.append(dict(data))
+        original_write(data)
+
+    monkeypatch.setattr(snooze, "_write_status", spy_write)
+
+    state = {"i": 0}
+
+    def fake_playback(token):
+        i = state["i"]
+        state["i"] += 1
+        if i >= len(playback_script):
+            snooze.stop_snooze_session()
+            return None
+        if i > 50:  # safety against runaway loops
+            raise AssertionError("monitor loop did not terminate")
+        return playback_script[i]
+
+    monkeypatch.setattr(snooze, "get_current_playback", fake_playback)
+
+    snooze._monitor_epoch = 1
+    original_write(initial_status)
+    writes.clear()
+    snooze._monitor_snooze(1)
+    return writes
+
+
+def test_monitor_arms_after_debounce(temp_status, monkeypatch):
+    playing = {"is_playing": True, "device": {"id": "dev1"}, "context": {"uri": "spotify:playlist:p"}}
+    paused = {"is_playing": False, "device": {"id": "dev1"}}
+    initial = {
+        "active": True, "state": "armed", "window_end": time.time() + 3600,
+        "device_id": "dev1", "device_name": "Forte", "playlist_uri": "spotify:playlist:p",
+        "volume": 20, "shuffle": False, "snooze_minutes": 9, "snooze_count": 0,
+    }
+    # A lone pause (then playing) must NOT arm; two consecutive pauses must arm.
+    script = [paused, playing, paused, paused]
+    writes = _drive_monitor(monkeypatch, temp_status, initial, script)
+
+    snoozing_writes = [w for w in writes if w.get("state") == "snoozing"]
+    assert len(snoozing_writes) == 1
+
+
+def test_monitor_resumes_when_due(temp_status, monkeypatch):
+    initial = {
+        "active": True, "state": "snoozing", "window_end": time.time() + 3600,
+        "resume_at": time.time() - 1, "device_id": "dev1", "device_name": "Forte",
+        "playlist_uri": "spotify:playlist:p", "volume": 20, "shuffle": False,
+        "snooze_minutes": 9, "snooze_count": 0,
+    }
+    # First iteration is due to resume; subsequent reads end the session.
+    writes = _drive_monitor(monkeypatch, temp_status, initial, [None])
+    rearmed = [w for w in writes if w.get("state") == "armed" and w.get("snooze_count") == 1]
+    assert len(rearmed) == 1
+
+
+def test_monitor_dismisses_on_takeover(temp_status, monkeypatch):
+    foreign = {"is_playing": True, "device": {"id": "other"}, "context": {"uri": "spotify:playlist:zzz"}}
+    initial = {
+        "active": True, "state": "armed", "window_end": time.time() + 3600,
+        "device_id": "dev1", "device_name": "Forte", "playlist_uri": "spotify:playlist:p",
+        "volume": 20, "shuffle": False, "snooze_minutes": 9, "snooze_count": 0,
+    }
+    writes = _drive_monitor(monkeypatch, temp_status, initial, [foreign])
+    # Takeover -> session ended, never snoozed
+    assert not any(w.get("state") == "snoozing" for w in writes)
+    assert snooze.get_snooze_status() == {"active": False}
+
+
+# ---------------------------------------------------------------------------
+# Config schema
+# ---------------------------------------------------------------------------
+
+def test_snooze_config_defaults():
+    c = SpotiPiConfig()
+    assert c.snooze_enabled is True
+    assert c.snooze_minutes == 9
+    assert c.snooze_window_minutes == 120
+
+
+def test_snooze_config_ranges():
+    with pytest.raises(Exception):
+        SpotiPiConfig(snooze_minutes=0)
+    with pytest.raises(Exception):
+        SpotiPiConfig(snooze_minutes=61)
+    with pytest.raises(Exception):
+        SpotiPiConfig(snooze_window_minutes=0)
+    with pytest.raises(Exception):
+        SpotiPiConfig(snooze_window_minutes=481)
+
+
+# ---------------------------------------------------------------------------
+# Routes + dashboard contract
+# ---------------------------------------------------------------------------
+
+def test_snooze_stop_no_active(client, monkeypatch):
+    import src.services.snooze_service as svc
+    monkeypatch.setattr(svc, "get_snooze_status", lambda: {"active": False})
+    resp = client.post("/api/snooze/stop", headers={"Accept": "application/json"})
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["success"] is False
+    assert data["error_code"] == "NO_ACTIVE_SNOOZE"
+
+
+def test_snooze_stop_active(client, monkeypatch):
+    import src.services.snooze_service as svc
+    stopped = {}
+    monkeypatch.setattr(svc, "get_snooze_status", lambda: {"active": True, "state": "snoozing"})
+    monkeypatch.setattr(svc, "stop_snooze_session", lambda: stopped.setdefault("done", True) or True)
+    resp = client.post("/api/snooze/stop", headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] is True
+    assert stopped.get("done") is True
+
+
+def test_dashboard_status_includes_snooze(client):
+    resp = client.get("/api/dashboard/status")
+    assert resp.status_code in (200, 202, 503)
+    payload = resp.get_json()["data"]
+    assert "snooze" in payload
+    assert isinstance(payload["snooze"], dict)
+    assert "snooze_enabled" in payload["alarm"]
+
+
+def test_save_alarm_persists_snooze_toggle(client):
+    resp = client.post("/save_alarm", data={
+        "time": "07:30",
+        "enabled": "true",
+        "alarm_volume": "40",
+        "snooze_enabled": "off",
+    })
+    data = resp.get_json()
+    assert data["success"] is True
+    assert data["data"]["snooze_enabled"] is False

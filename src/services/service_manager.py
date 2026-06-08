@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 from . import ServiceResult
 from .alarm_service import AlarmService
 from .sleep_service import SleepService
+from .snooze_service import SnoozeService
 from .spotify_service import SpotifyService
 from .system_service import SystemService
 
@@ -25,18 +26,20 @@ class ServiceManager:
         self.alarm = AlarmService()
         self.spotify = SpotifyService()
         self.sleep = SleepService()
+        self.snooze = SnoozeService()
         self.system = SystemService(
             alarm_service=self.alarm,
             spotify_service=self.spotify,
             sleep_service=self.sleep
         )
-        
+
         # Service registry
         self.services = {
             "system": self.system,
             "alarm": self.alarm,
             "spotify": self.spotify,
-            "sleep": self.sleep
+            "sleep": self.sleep,
+            "snooze": self.snooze
         }
         
         self._initialize_all()

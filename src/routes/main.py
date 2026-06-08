@@ -229,6 +229,7 @@ def _build_sleep_defaults(config: dict) -> dict:
 def _build_dashboard_payload(
     config: dict,
     sleep_status_payload: dict,
+    snooze_status_payload: dict,
     dashboard_snapshot: dict | None,
     dashboard_meta: dict,
     playback_snapshot: dict | None,
@@ -256,6 +257,7 @@ def _build_dashboard_payload(
         "fade_in": config.get("fade_in", False),
         "shuffle": config.get("shuffle", False),
         "weekdays": config.get("weekdays"),
+        "snooze_enabled": config.get("snooze_enabled", True),
     }
 
     playback_payload: dict = {}
@@ -290,6 +292,7 @@ def _build_dashboard_payload(
         "timestamp": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "alarm": alarm_payload,
         "sleep": sleep_status_payload,
+        "snooze": snooze_status_payload,
         "playback": playback_payload or {},
         "playback_status": playback_status,
         "devices": devices_payload,
@@ -333,6 +336,17 @@ def _build_index_template_data(*, initial_surface: str = "home") -> dict:
             "error_code": sleep_status_result_index.error_code or "sleep_status_error",
         }
 
+    snooze_service_index = get_service("snooze")
+    snooze_status_result_index = snooze_service_index.get_snooze_status()
+    if snooze_status_result_index.success:
+        snooze_status_initial = (snooze_status_result_index.data or {}).get("raw_status") or snooze_status_result_index.data
+    else:
+        snooze_status_initial = {
+            "active": False,
+            "error": snooze_status_result_index.message,
+            "error_code": snooze_status_result_index.error_code or "snooze_status_error",
+        }
+
     notifications = []
     success_message = session.pop("success_message", None)
     error_message = session.pop("error_message", None)
@@ -354,6 +368,7 @@ def _build_index_template_data(*, initial_surface: str = "home") -> dict:
         "dashboard": _build_dashboard_payload(
             config,
             sleep_status_initial,
+            snooze_status_initial,
             dashboard_snapshot,
             dashboard_meta,
             playback_snapshot,

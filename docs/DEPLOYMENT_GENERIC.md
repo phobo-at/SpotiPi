@@ -427,5 +427,5 @@ cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh && chmod +x scripts/d
 ---
 
 **Last Updated**: May 31, 2026  
-**Version**: 1.8.0  
+**Version**: 1.9.0  
 **License**: MIT License

@@ -238,6 +238,7 @@ def api_dashboard_status():
         "fade_in": config.get("fade_in", False),
         "shuffle": config.get("shuffle", False),
         "weekdays": config.get("weekdays"),
+        "snooze_enabled": config.get("snooze_enabled", True),
     }
 
     sleep_service = get_service("sleep")
@@ -249,6 +250,17 @@ def api_dashboard_status():
             "active": False,
             "error": sleep_result.message,
             "error_code": sleep_result.error_code or "sleep_status_error"
+        }
+
+    snooze_service = get_service("snooze")
+    snooze_result = snooze_service.get_snooze_status()
+    if snooze_result.success:
+        snooze_payload = (snooze_result.data or {}).get("raw_status") or snooze_result.data
+    else:
+        snooze_payload = {
+            "active": False,
+            "error": snooze_result.message,
+            "error_code": snooze_result.error_code or "snooze_status_error"
         }
 
     playback_payload = {}
@@ -289,6 +301,7 @@ def api_dashboard_status():
         "timestamp": _iso_timestamp_now(),
         "alarm": alarm_payload,
         "sleep": sleep_payload,
+        "snooze": snooze_payload,
         "playback": playback_payload or {},
         "playback_status": playback_status,
         "devices": devices_payload,

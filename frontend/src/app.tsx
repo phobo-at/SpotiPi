@@ -1818,6 +1818,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     payload.set("volume", String(playerVolume));
     payload.set("fade_in", data.fadeIn ? "on" : "off");
     payload.set("shuffle", data.shuffle ? "on" : "off");
+    payload.set("snooze_enabled", data.snoozeEnabled ? "on" : "off");
     payload.set("weekdays", JSON.stringify(data.weekdays));
 
     try {
@@ -1946,6 +1947,29 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       pushToast(
         "error",
         error instanceof Error ? error.message : localized(bootstrap.language, "Sleep failed", "Sleep fehlgeschlagen")
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleSnoozeStop() {
+    setBusyAction("snooze-stop");
+    try {
+      const result = await postForm<Record<string, unknown>>("/api/snooze/stop", new URLSearchParams());
+      if (result.body?.success) {
+        await refreshDashboard(true);
+        return;
+      }
+      pushToast(
+        "error",
+        result.body?.message ||
+          localized(bootstrap.language, "Failed to stop snooze", "Snooze konnte nicht gestoppt werden")
+      );
+    } catch (error) {
+      pushToast(
+        "error",
+        error instanceof Error ? error.message : localized(bootstrap.language, "Snooze failed", "Snooze fehlgeschlagen")
       );
     } finally {
       setBusyAction(null);
@@ -2176,6 +2200,37 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 {busyAction === "sleep-stop"
                   ? localized(bootstrap.language, "Stopping...", "Stoppt...")
                   : localized(bootstrap.language, "Stop", "Stoppen")}
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {dashboard.snooze?.active ? (
+          <section class="banner banner-success" data-testid="snooze-active-banner">
+            <strong>
+              {dashboard.snooze.state === "snoozing"
+                ? localized(bootstrap.language, "Snoozing", "Snooze läuft")
+                : localized(bootstrap.language, "Snooze armed", "Snooze scharf")}
+            </strong>
+            <span>
+              {dashboard.snooze.state === "snoozing"
+                ? localized(
+                    bootstrap.language,
+                    `Alarm resumes in ${formatCountdown(dashboard.snooze.resume_in_seconds, bootstrap.language)}`,
+                    `Wecker startet in ${formatCountdown(dashboard.snooze.resume_in_seconds, bootstrap.language)}`
+                  )
+                : localized(bootstrap.language, "Pause to snooze", "Pause = Snooze")}
+            </span>
+            <div class="banner-actions">
+              <button
+                type="button"
+                class="ghost-button"
+                disabled={busyAction === "snooze-stop"}
+                onClick={() => void handleSnoozeStop()}
+              >
+                {busyAction === "snooze-stop"
+                  ? localized(bootstrap.language, "Stopping...", "Stoppt...")
+                  : localized(bootstrap.language, "Dismiss", "Beenden")}
               </button>
             </div>
           </section>
@@ -2461,6 +2516,15 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             checked={alarmForm.shuffle}
             onChange={(checked) => {
               const next = { ...alarmForm, shuffle: checked };
+              setAlarmForm(next);
+              void handleAlarmSave(next);
+            }}
+          />
+          <ToggleField
+            label={localized(bootstrap.language, "Snooze on pause (9 min)", "Snooze bei Pause (9 Min)")}
+            checked={alarmForm.snoozeEnabled}
+            onChange={(checked) => {
+              const next = { ...alarmForm, snoozeEnabled: checked };
               setAlarmForm(next);
               void handleAlarmSave(next);
             }}

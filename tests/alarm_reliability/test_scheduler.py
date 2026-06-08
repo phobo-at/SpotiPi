@@ -114,6 +114,7 @@ def _make_execute_env(monkeypatch, fixed_now, config):
     monkeypatch.setattr(alarm, "set_volume", lambda *args, **kwargs: True)
     monkeypatch.setattr(alarm, "start_playback", lambda *args, **kwargs: None)
     monkeypatch.setattr(alarm, "config_transaction", lambda: transaction)
+    monkeypatch.setattr(alarm, "start_snooze_session", lambda *args, **kwargs: True)
     return transaction
 
 
@@ -204,6 +205,7 @@ def test_execute_alarm_catchup_within_grace(monkeypatch):
     monkeypatch.setattr(alarm, "set_volume", lambda *args, **kwargs: True)
     monkeypatch.setattr(alarm, "start_playback", lambda *args, **kwargs: None)
     monkeypatch.setattr(alarm, "config_transaction", lambda: transaction)
+    monkeypatch.setattr(alarm, "start_snooze_session", lambda *args, **kwargs: True)
 
     result = alarm.execute_alarm(
         catchup_grace_seconds=600,

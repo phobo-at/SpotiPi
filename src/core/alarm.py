@@ -22,6 +22,7 @@ from ..utils.logger import setup_logger
 from ..utils.thread_safety import config_transaction
 from ..utils.timezone import get_local_timezone
 from .alarm_logging import AlarmProbeContext, log_alarm_probe
+from .snooze import start_snooze_session
 
 # Get logger for alarm module
 logger = setup_logger(__name__)
@@ -299,6 +300,22 @@ def execute_alarm(
 
         log("✅ Playback started.")
         log_alarm_probe(probe, "execute_playback_started", extra={"fade_in": fade_in})
+
+        # Snooze-on-pause: while the alarm is playing, a pause on the alarm
+        # device (e.g. the Argon/Forte hardware button) should act as snooze.
+        if config.get("snooze_enabled", True):
+            try:
+                start_snooze_session(
+                    device_id=device_id,
+                    device_name=device_name,
+                    playlist_uri=config.get("playlist_uri", ""),
+                    volume=target_volume,
+                    shuffle=shuffle,
+                    window_minutes=int(config.get("snooze_window_minutes", 120) or 120),
+                    snooze_minutes=int(config.get("snooze_minutes", 9) or 9),
+                )
+            except Exception as snooze_err:
+                log(f"⚠️ Could not start snooze session: {snooze_err}")
 
         # Auto-disable single-use alarms only. Recurring alarms (weekdays set)
         # stay enabled so they fire again on the next selected day.

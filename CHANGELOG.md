@@ -5,6 +5,18 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-06-08
+
+### ✨ New Features
+- **Snooze on pause:** while a SpotiPi alarm is active, pausing playback on the alarm device (e.g. the Argon/Forte hardware pause button) now acts as snooze — the alarm automatically resumes after 9 minutes, repeating for a 2-hour window after the alarm fired. A background monitor polls Spotify and drives the snooze independently of whether the web UI is open.
+  - Context-aware dismiss: a pause only counts as snooze while the alarm's own playlist is the active context on the alarm device. Playing something else, tapping **Dismiss** in the app, or letting the 2-hour window elapse ends the session.
+  - Resumes always at the full alarm volume (no fade-in) so a snooze reliably wakes you.
+  - Configurable via a per-alarm toggle (defaults: 9 min snooze, 120 min window; fine-tune `snooze_minutes` / `snooze_window_minutes` in config).
+  - Survives a Pi restart: an in-progress snooze window is re-armed on startup.
+
+### 🎨 UI/UX
+- Alarm sheet adds a **Snooze on pause** toggle; the dashboard shows a snooze banner with a live "alarm resumes in M:SS" countdown and a Dismiss action.
+
 ## [1.8.0] - 2026-05-31
 
 ### ✨ New Features

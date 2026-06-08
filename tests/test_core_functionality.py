@@ -108,6 +108,7 @@ class TestAlarmExecution:
         
         assert result is False
 
+    @patch('src.core.alarm.start_snooze_session')
     @patch('src.core.alarm.load_config')
     @patch('src.core.alarm.get_access_token')
     @patch('src.core.alarm.get_device_id')
@@ -120,6 +121,7 @@ class TestAlarmExecution:
         mock_device: MagicMock,
         mock_token: MagicMock,
         mock_load_config: MagicMock,
+        mock_snooze: MagicMock,
         mock_config: Dict[str, Any]
     ):
         """Force mode should bypass enable check."""

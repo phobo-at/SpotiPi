@@ -87,6 +87,7 @@ class AlarmService(BaseService):
                 "alarm_volume": alarm_info.volume,
                 "fade_in": config.get("fade_in", False),
                 "shuffle": config.get("shuffle", False),
+                "snooze_enabled": config.get("snooze_enabled", True),
             }
 
             return self._success_result(
@@ -155,6 +156,7 @@ class AlarmService(BaseService):
                 "fade_in": config.get("fade_in", False),
                 "shuffle": config.get("shuffle", False),
                 "weekdays": config.get("weekdays"),
+                "snooze_enabled": config.get("snooze_enabled", True),
             }
 
             return self._success_result(
