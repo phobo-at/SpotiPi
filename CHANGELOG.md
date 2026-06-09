@@ -5,6 +5,15 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2026-06-09
+
+### 🐛 Fixes
+- **Snooze now triggers on mute, not just pause:** the Argon/Forte hardware "snooze" button *mutes* the device (volume → 0) rather than pausing it, so the v1.9.0 pause-only detection never fired on real hardware. The snooze monitor now treats the alarm being **silenced** — either a pause (`is_playing == False`) **or** a mute (device volume drops to ≤ 3) on the alarm device/context — as the snooze trigger. The mute is read from the existing playback poll, so there are no extra Spotify calls.
+  - On snooze, playback is now actively **paused** so the Pi doesn't churn silently through the playlist for the whole snooze window.
+  - On resume, the volume is explicitly raised back to the alarm volume to **override the mute** before playback restarts.
+  - A diagnostic log line (`💤 Snooze poll: …`) reports `is_playing` + device volume each poll so the mute behavior can be confirmed on-device.
+  - Hardening: a missing/zero stored snooze volume can no longer resume the alarm muted.
+
 ## [1.9.0] - 2026-06-08
 
 ### ✨ New Features

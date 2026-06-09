@@ -51,14 +51,40 @@ def test_context_matches_playlist_track_and_empty():
 
 
 def test_classify_armed():
-    playing = {"is_playing": True, "device": {"id": "dev1"}, "context": {"uri": "spotify:playlist:p"}}
+    playing = {"is_playing": True, "device": {"id": "dev1", "volume_percent": 50}, "context": {"uri": "spotify:playlist:p"}}
     paused = {"is_playing": False, "device": {"id": "dev1"}}
-    foreign = {"is_playing": True, "device": {"id": "other"}, "context": {"uri": "spotify:playlist:zzz"}}
+    foreign = {"is_playing": True, "device": {"id": "other", "volume_percent": 50}, "context": {"uri": "spotify:playlist:zzz"}}
+    # Hardware snooze button mutes (volume -> 0) without pausing: still "our" alarm.
+    muted_ours = {"is_playing": True, "device": {"id": "dev1", "volume_percent": 0}, "context": {"uri": "spotify:playlist:p"}}
+    muted_low = {"is_playing": True, "device": {"id": "dev1", "volume_percent": 2}, "context": {"uri": "spotify:playlist:p"}}
+    # A muted FOREIGN device is a takeover, not a snooze.
+    muted_foreign = {"is_playing": True, "device": {"id": "other", "volume_percent": 0}, "context": {"uri": "spotify:playlist:zzz"}}
 
     assert snooze._classify_armed(playing, "dev1", "Forte", "spotify:playlist:p") == "playing"
     assert snooze._classify_armed(paused, "dev1", "Forte", "spotify:playlist:p") == "paused"
     assert snooze._classify_armed(None, "dev1", "Forte", "spotify:playlist:p") == "paused"
     assert snooze._classify_armed(foreign, "dev1", "Forte", "spotify:playlist:p") == "takeover"
+    assert snooze._classify_armed(muted_ours, "dev1", "Forte", "spotify:playlist:p") == "paused"
+    assert snooze._classify_armed(muted_low, "dev1", "Forte", "spotify:playlist:p") == "paused"
+    assert snooze._classify_armed(muted_foreign, "dev1", "Forte", "spotify:playlist:p") == "takeover"
+
+
+def test_classify_armed_mute_threshold_boundary():
+    at = {"is_playing": True, "device": {"id": "dev1", "volume_percent": snooze.MUTE_THRESHOLD}, "context": {"uri": "spotify:playlist:p"}}
+    above = {"is_playing": True, "device": {"id": "dev1", "volume_percent": snooze.MUTE_THRESHOLD + 1}, "context": {"uri": "spotify:playlist:p"}}
+    assert snooze._classify_armed(at, "dev1", "Forte", "spotify:playlist:p") == "paused"
+    assert snooze._classify_armed(above, "dev1", "Forte", "spotify:playlist:p") == "playing"
+    # Threshold is overridable (used by the module default in production).
+    low = {"is_playing": True, "device": {"id": "dev1", "volume_percent": 5}, "context": {"uri": "spotify:playlist:p"}}
+    assert snooze._classify_armed(low, "dev1", "Forte", "spotify:playlist:p", mute_threshold=10) == "paused"
+
+
+def test_classify_armed_none_volume_falls_back_to_pause_only():
+    # Device without volume control (volume_percent None) -> no mute signal.
+    playing_no_vol = {"is_playing": True, "device": {"id": "dev1"}, "context": {"uri": "spotify:playlist:p"}}
+    paused_no_vol = {"is_playing": False, "device": {"id": "dev1"}}
+    assert snooze._classify_armed(playing_no_vol, "dev1", "Forte", "spotify:playlist:p") == "playing"
+    assert snooze._classify_armed(paused_no_vol, "dev1", "Forte", "spotify:playlist:p") == "paused"
 
 
 # ---------------------------------------------------------------------------
@@ -145,19 +171,44 @@ def test_arm_snooze_sets_resume_at(temp_status):
         "snooze_minutes": 9, "snooze_count": 0,
     }
     snooze._write_status(base)
-    snooze._arm_snooze(base)
+    snooze._arm_snooze("tok", base)  # no device_id -> no pause call
     status = snooze.get_snooze_status()
     assert status["state"] == "snoozing"
     assert 530 <= status["resume_in_seconds"] <= 540  # ~9 min
 
 
+def test_arm_snooze_pauses_playback(temp_status, monkeypatch):
+    paused_calls = []
+    monkeypatch.setattr(
+        snooze, "stop_playback",
+        lambda token, device_id=None: paused_calls.append((token, device_id)) or True,
+    )
+    base = {
+        "active": True, "state": "armed", "window_end": time.time() + 3600,
+        "device_id": "dev1", "snooze_minutes": 9, "snooze_count": 0,
+    }
+    snooze._write_status(base)
+    snooze._arm_snooze("tok", base)
+    # Arming a snooze actively pauses the (possibly only muted) stream.
+    assert paused_calls == [("tok", "dev1")]
+    assert snooze.get_snooze_status()["state"] == "snoozing"
+
+
 def test_do_resume_full_volume_and_rearm(temp_status, monkeypatch):
     calls = {}
+    sequence = []
+
+    def fake_set_volume(token, volume_percent, device_id=None):
+        sequence.append("set_volume")
+        calls["volume"] = (token, volume_percent, device_id)
+        return True
 
     def fake_start(token, device_id, playlist_uri, volume_percent=50, shuffle=False):
+        sequence.append("start_playback")
         calls["args"] = (token, device_id, playlist_uri, volume_percent, shuffle)
         return True
 
+    monkeypatch.setattr(snooze, "set_volume", fake_set_volume)
     monkeypatch.setattr(snooze, "start_playback", fake_start)
     status = {
         "active": True, "state": "snoozing", "window_end": time.time() + 3600,
@@ -168,11 +219,38 @@ def test_do_resume_full_volume_and_rearm(temp_status, monkeypatch):
     snooze._write_status(status)
     snooze._do_resume("tok", status)
 
-    # Resume must use the full alarm volume (no fade-in)
+    # Resume must override the mute (raise volume) BEFORE starting playback,
+    # and use the full alarm volume (no fade-in).
+    assert calls["volume"] == ("tok", 20, "dev1")
     assert calls["args"] == ("tok", "dev1", "spotify:playlist:p", 20, False)
+    assert sequence == ["set_volume", "start_playback"]
     after = snooze.get_snooze_status()
     assert after["state"] == "armed"
     assert after["snooze_count"] == 2
+
+
+def test_do_resume_overrides_mute_even_if_start_fails(temp_status, monkeypatch):
+    volume_calls = []
+    monkeypatch.setattr(
+        snooze, "set_volume",
+        lambda token, volume_percent, device_id=None: volume_calls.append((token, volume_percent, device_id)) or True,
+    )
+    monkeypatch.setattr(snooze, "start_playback", lambda *a, **k: False)
+    status = {
+        "active": True, "state": "snoozing", "window_end": time.time() + 3600,
+        "resume_at": time.time() - 1, "device_id": "dev1",
+        "playlist_uri": "spotify:playlist:p", "volume": 20, "shuffle": False,
+        "snooze_minutes": 9, "snooze_count": 0,
+    }
+    snooze._write_status(status)
+    snooze._do_resume("tok", status)
+
+    # Volume is raised even when playback fails to start, and the session
+    # re-arms (anti-stuck) so the next poll retries instead of hanging snoozing.
+    assert volume_calls == [("tok", 20, "dev1")]
+    after = snooze.get_snooze_status()
+    assert after["state"] == "armed"
+    assert after["snooze_count"] == 1
 
 
 def test_maybe_resume_monitor(temp_status, monkeypatch):
@@ -209,6 +287,8 @@ def _drive_monitor(monkeypatch, temp_status, initial_status, playback_script):
     monkeypatch.setattr(snooze, "get_access_token", lambda: "tok")
     monkeypatch.setattr(snooze, "refresh_access_token", lambda: "tok")
     monkeypatch.setattr(snooze, "start_playback", lambda *a, **k: True)
+    monkeypatch.setattr(snooze, "set_volume", lambda *a, **k: True)
+    monkeypatch.setattr(snooze, "stop_playback", lambda *a, **k: True)
 
     writes = []
     original_write = snooze._write_status
@@ -252,6 +332,34 @@ def test_monitor_arms_after_debounce(temp_status, monkeypatch):
     script = [paused, playing, paused, paused]
     writes = _drive_monitor(monkeypatch, temp_status, initial, script)
 
+    snoozing_writes = [w for w in writes if w.get("state") == "snoozing"]
+    assert len(snoozing_writes) == 1
+
+
+def test_monitor_arms_on_mute(temp_status, monkeypatch):
+    # Hardware snooze button mutes (volume 0) without flipping is_playing.
+    muted = {"is_playing": True, "device": {"id": "dev1", "volume_percent": 0}, "context": {"uri": "spotify:playlist:p"}}
+    initial = {
+        "active": True, "state": "armed", "window_end": time.time() + 3600,
+        "device_id": "dev1", "device_name": "Forte", "playlist_uri": "spotify:playlist:p",
+        "volume": 20, "shuffle": False, "snooze_minutes": 9, "snooze_count": 0,
+    }
+    # Two consecutive muted-but-playing reads must arm the snooze (debounce).
+    writes = _drive_monitor(monkeypatch, temp_status, initial, [muted, muted])
+    snoozing_writes = [w for w in writes if w.get("state") == "snoozing"]
+    assert len(snoozing_writes) == 1
+
+
+def test_monitor_mute_debounce_single_read_no_arm(temp_status, monkeypatch):
+    muted = {"is_playing": True, "device": {"id": "dev1", "volume_percent": 0}, "context": {"uri": "spotify:playlist:p"}}
+    full = {"is_playing": True, "device": {"id": "dev1", "volume_percent": 50}, "context": {"uri": "spotify:playlist:p"}}
+    initial = {
+        "active": True, "state": "armed", "window_end": time.time() + 3600,
+        "device_id": "dev1", "device_name": "Forte", "playlist_uri": "spotify:playlist:p",
+        "volume": 20, "shuffle": False, "snooze_minutes": 9, "snooze_count": 0,
+    }
+    # A lone mute (then full volume) must NOT arm; only two consecutive mutes do.
+    writes = _drive_monitor(monkeypatch, temp_status, initial, [muted, full, muted, muted])
     snoozing_writes = [w for w in writes if w.get("state") == "snoozing"]
     assert len(snoozing_writes) == 1
 

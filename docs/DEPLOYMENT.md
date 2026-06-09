@@ -394,5 +394,5 @@ cp scripts/deploy_to_pi.sh.example scripts/deploy_to_pi.sh && chmod +x scripts/d
 ---
 
 **Zuletzt aktualisiert**: 31. Mai 2026  
-**Version**: 1.9.0  
+**Version**: 1.9.1  
 **Betreuer**: SpotiPi Entwicklungsteam

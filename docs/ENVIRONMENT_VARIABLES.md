@@ -2,7 +2,7 @@
 
 ## 📋 **SpotiPi Environment Configuration**
 
-Current release: **v1.9.0**  
+Current release: **v1.9.1**  
 Supported runtime: **Python 3.10+**  
 Canonical runtime secrets path: `~/.spotipi/.env`
 

@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-💤 Snooze-on-Pause Module for SpotiPi
+💤 Snooze Module for SpotiPi
 
-Turns a *pause* on the alarm device into a snooze: while a SpotiPi alarm is
-active, pausing playback (e.g. via the Argon/Forte hardware pause button, which
-pauses the Spotify Connect stream) is interpreted as "snooze". The alarm
-playback automatically resumes after ``snooze_minutes`` and keeps doing so for a
-``snooze_window_minutes`` window after the alarm fired.
+Turns *silencing* the alarm device into a snooze: while a SpotiPi alarm is
+active, making the alarm go quiet is interpreted as "snooze". "Silenced" means
+either a **pause** (``is_playing == False``) or a **mute** (the device volume
+drops to ``MUTE_THRESHOLD`` or below) — the Argon/Forte hardware "snooze" button
+mutes rather than pauses, so both paths must count. The alarm playback
+automatically resumes after ``snooze_minutes`` (raising the volume back up to
+override the mute) and keeps doing so for a ``snooze_window_minutes`` window
+after the alarm fired.
 
 Spotify pushes no playback events, and the rest of the backend never polls the
 player on its own — only the frontend does, and only while a tab is open. So
@@ -14,14 +17,18 @@ this module runs a dedicated background daemon thread (modeled on
 ``src/core/sleep.py``) that polls ``/me/player`` and drives a small state
 machine:
 
-    armed     -> alarm is playing, watching for a pause
-    snoozing  -> pause detected, waiting until resume_at to start playback again
+    armed     -> alarm is playing, watching for a pause or mute
+    snoozing  -> silence detected, playback paused, waiting until resume_at
 
-The session is *context-aware*: a pause only counts as snooze while the alarm's
-own playlist is the active context on the alarm device. If the user actively
-plays something else (different context/device), the session ends (= dismissed).
-The window also auto-expires after ``snooze_window_minutes`` and can be stopped
-explicitly via :func:`stop_snooze_session`.
+When silence is detected the monitor actively pauses playback (so the Pi does
+not churn silently through the playlist for the whole snooze window) and resumes
+at full volume when ``resume_at`` is reached.
+
+The session is *context-aware*: a pause/mute only counts as snooze while the
+alarm's own playlist is the active context on the alarm device. If the user
+actively plays something else (different context/device), the session ends
+(= dismissed). The window also auto-expires after ``snooze_window_minutes`` and
+can be stopped explicitly via :func:`stop_snooze_session`.
 """
 
 import json
@@ -32,7 +39,8 @@ from threading import Lock, Thread
 from typing import Any, Dict, Optional
 
 from ..api.spotify import (get_access_token, get_current_playback,
-                           refresh_access_token, start_playback)
+                           refresh_access_token, set_volume, start_playback,
+                           stop_playback)
 
 # Detect low-power mode once for module-wide optimisations
 LOW_POWER_MODE = os.getenv('SPOTIPI_LOW_POWER', '').lower() in ('1', 'true', 'yes', 'on')
@@ -52,9 +60,15 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 logger = logging.getLogger('snooze')
 
-# Number of consecutive "paused" polls required before arming the countdown.
-# Guards against transient is_playing=false reads at track boundaries.
+# Number of consecutive "silenced" polls required before arming the countdown.
+# Guards against transient is_playing=false / volume-dip reads at track boundaries.
 PAUSE_DEBOUNCE_READS = 2
+
+# Device volume at/below this counts as "muted" (the hardware snooze button mutes
+# instead of pausing). The alarm plays at alarm_volume (e.g. 50), so a drop into
+# this band is unambiguous; the small non-zero floor tolerates devices whose mute
+# bottoms out at 1-2% rather than exactly 0.
+MUTE_THRESHOLD = 3
 
 # Poll cadence (seconds)
 ARMED_INTERVAL = 30 if LOW_POWER_MODE else 15
@@ -279,13 +293,20 @@ def _classify_armed(
     device_id: Optional[str],
     device_name: str,
     playlist_uri: str,
+    mute_threshold: int = MUTE_THRESHOLD,
 ) -> str:
     """Classify the playback state while armed.
 
     Returns one of:
-        "playing"  -> our alarm is still playing (keep watching)
-        "paused"   -> playback paused / nothing active (snooze candidate)
+        "playing"  -> our alarm is still playing audibly (keep watching)
+        "paused"   -> alarm silenced via pause OR mute (snooze candidate)
         "takeover" -> something else is actively playing (dismiss)
+
+    "paused" is the SILENCED verdict: it covers both a real pause
+    (``is_playing == False``) and a mute (the alarm keeps "playing" but the
+    device volume dropped to ``mute_threshold`` or below — what the hardware
+    snooze button does). Mute is only counted on *our* alarm device/context;
+    a muted foreign device is a takeover, not a snooze.
     """
     if playback is None:
         # Nothing active anywhere -> alarm device most likely paused/dropped off.
@@ -293,6 +314,12 @@ def _classify_armed(
     if not bool(playback.get("is_playing")):
         return "paused"
     if _device_matches(playback, device_id, device_name) and _context_matches(playback, playlist_uri):
+        # Our alarm is "playing" — but a mute (volume <= threshold) is a snooze.
+        # volume_percent is None on devices without volume control: treat as
+        # "no mute signal" and fall back to pause-only detection (don't snooze).
+        volume = (playback.get("device") or {}).get("volume_percent")
+        if volume is not None and volume <= mute_threshold:
+            return "paused"
         return "playing"
     return "takeover"
 
@@ -365,7 +392,10 @@ def _monitor_snooze(epoch: int) -> None:
                     _do_resume(token, status)
                     pause_streak = 0
                     continue
-                # Waiting to resume: detect manual resume / takeover.
+                # Waiting to resume: detect manual resume / takeover. Keyed on
+                # is_playing only (NOT volume): we paused on arm, so during snooze
+                # is_playing is False and a stale volume_percent must not trigger a
+                # spurious re-arm/dismiss. Only a real play action matters here.
                 if playback and bool(playback.get("is_playing")):
                     if _device_matches(playback, device_id, device_name) and _context_matches(playback, playlist_uri):
                         logger.info("💤 Manual resume detected during snooze - re-arming")
@@ -380,8 +410,18 @@ def _monitor_snooze(epoch: int) -> None:
                 time.sleep(interval)
                 continue
 
-            # state == "armed": watch for a pause.
+            # state == "armed": watch for the alarm being silenced (pause or mute).
             verdict = _classify_armed(playback, device_id, device_name, playlist_uri)
+            # Diagnostic: confirm on real hardware how the snooze button shows up
+            # (does the volume drop to 0, or does is_playing flip?). Only logged
+            # during an active alarm window, every ARMED_INTERVAL seconds, so the
+            # volume stays low. Can be downgraded to debug once confirmed.
+            _device = (playback or {}).get("device") or {}
+            logger.info(
+                "💤 Snooze poll: verdict=%s is_playing=%s volume=%s device=%s",
+                verdict, (playback or {}).get("is_playing"),
+                _device.get("volume_percent"), _device.get("name"),
+            )
             if verdict == "takeover":
                 logger.info("💤 Foreign playback detected (device/context changed) - dismissing snooze")
                 stop_snooze_session()
@@ -389,7 +429,7 @@ def _monitor_snooze(epoch: int) -> None:
             if verdict == "paused":
                 pause_streak += 1
                 if pause_streak >= PAUSE_DEBOUNCE_READS:
-                    _arm_snooze(status)
+                    _arm_snooze(token, status)
                     pause_streak = 0
             else:  # "playing"
                 pause_streak = 0
@@ -401,15 +441,29 @@ def _monitor_snooze(epoch: int) -> None:
         logger.info("💤 Snooze monitor thread exiting (epoch=%d)", epoch)
 
 
-def _arm_snooze(status: Dict[str, Any]) -> None:
-    """Transition armed -> snoozing and schedule the next resume."""
+def _arm_snooze(token: str, status: Dict[str, Any]) -> None:
+    """Transition armed -> snoozing, pause playback, and schedule the next resume.
+
+    Writes the snoozing status first (authoritative) so the resume still fires
+    even if the pause request fails. Then actively pauses playback: the hardware
+    snooze button mutes rather than pauses, so without this the stream would keep
+    churning silently through the playlist for the whole snooze window. Pausing an
+    already-paused stream (legacy pause button) is a harmless no-op.
+    """
     snooze_minutes = int(status.get("snooze_minutes", 9) or 9)
     resume_at = time.time() + snooze_minutes * 60
     new_status = dict(status)
     new_status["state"] = "snoozing"
     new_status["resume_at"] = resume_at
     _write_status(new_status)
-    logger.info("💤 Pause detected - snoozing for %d min", snooze_minutes)
+    logger.info("💤 Silence detected (pause/mute) - snoozing for %d min", snooze_minutes)
+
+    device_id = status.get("device_id")
+    if device_id:
+        try:
+            stop_playback(token, device_id)
+        except Exception as exc:
+            logger.debug("💤 Snooze arm: pause request failed: %s", exc)
 
 
 def _set_state_armed(status: Dict[str, Any]) -> None:
@@ -421,14 +475,25 @@ def _set_state_armed(status: Dict[str, Any]) -> None:
 
 
 def _do_resume(token: str, status: Dict[str, Any]) -> None:
-    """Resume alarm playback at full alarm volume (no fade-in) and re-arm."""
+    """Resume alarm playback at full alarm volume (no fade-in) and re-arm.
+
+    Explicitly raises the volume *before* starting playback to override a mute
+    (the hardware snooze button mutes the device). start_playback also re-asserts
+    the volume internally, but only after its playback verification succeeds — the
+    pre-call guarantees the device is audible even if that verification degrades.
+    """
     device_id = status.get("device_id")
     playlist_uri = status.get("playlist_uri") or ""
-    volume = int(status.get("volume", 20) or 0)
+    # `or 50` (not `or 0`): a missing/zero stored volume must never resume muted.
+    volume = int(status.get("volume") or 50)
     shuffle = bool(status.get("shuffle", False))
 
     started = False
     if device_id:
+        try:
+            set_volume(token, volume, device_id)  # override the mute before play
+        except Exception as exc:
+            logger.debug("💤 Snooze resume: pre-volume set failed: %s", exc)
         try:
             started = start_playback(token, device_id, playlist_uri, volume_percent=volume, shuffle=shuffle)
         except Exception as exc:

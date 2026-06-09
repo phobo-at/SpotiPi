@@ -28,9 +28,9 @@ class AlarmConfig(BaseModel):
     fade_in: bool = Field(default=False, description="Enable gradual volume fade-in")
     shuffle: bool = Field(default=False, description="Enable shuffle playback")
     weekdays: Optional[list[int]] = Field(default=None, description="Days of week (0=Monday, 6=Sunday). None = daily")
-    snooze_enabled: bool = Field(default=True, description="Treat a pause on the alarm device as snooze")
-    snooze_minutes: int = Field(default=9, ge=1, le=60, description="Minutes until the alarm resumes after a snooze pause")
-    snooze_window_minutes: int = Field(default=120, ge=1, le=480, description="Window (minutes) after alarm start during which pause=snooze applies")
+    snooze_enabled: bool = Field(default=True, description="Treat a pause or mute on the alarm device as snooze")
+    snooze_minutes: int = Field(default=9, ge=1, le=60, description="Minutes until the alarm resumes after a snooze (pause/mute)")
+    snooze_window_minutes: int = Field(default=120, ge=1, le=480, description="Window (minutes) after alarm start during which pause/mute=snooze applies")
 
     @field_validator('weekdays')
     @classmethod
@@ -103,9 +103,9 @@ class SpotiPiConfig(BaseModel):
     fade_in: bool = Field(default=False, description="Enable gradual volume fade-in")
     shuffle: bool = Field(default=False, description="Enable shuffle playback")
     weekdays: Optional[list[int]] = Field(default=None, description="Days of week (0=Monday, 6=Sunday). None = daily")
-    snooze_enabled: bool = Field(default=True, description="Treat a pause on the alarm device as snooze")
-    snooze_minutes: int = Field(default=9, ge=1, le=60, description="Minutes until the alarm resumes after a snooze pause")
-    snooze_window_minutes: int = Field(default=120, ge=1, le=480, description="Window (minutes) after alarm start during which pause=snooze applies")
+    snooze_enabled: bool = Field(default=True, description="Treat a pause or mute on the alarm device as snooze")
+    snooze_minutes: int = Field(default=9, ge=1, le=60, description="Minutes until the alarm resumes after a snooze (pause/mute)")
+    snooze_window_minutes: int = Field(default=120, ge=1, le=480, description="Window (minutes) after alarm start during which pause/mute=snooze applies")
 
     # Sleep timer settings
     sleep_volume: int = Field(default=30, ge=0, le=100, description="Sleep timer volume (0-100)")
