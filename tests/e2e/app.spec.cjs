@@ -106,6 +106,25 @@ test("alarm flow opens from the primary action card", async ({ page }) => {
   await expect(page.getByTestId("alarm-sheet")).toBeVisible();
 });
 
+test("alarm card shows time, speaker and selected music", async ({ page }) => {
+  await gotoWithDashboardOverride(page, (dashboard) => ({
+    ...dashboard,
+    alarm: {
+      ...dashboard.alarm,
+      enabled: true,
+      time: "06:00",
+      device_name: "Schlafzimmer",
+      playlist_uri: "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M",
+      playlist_name: "Morning Energy"
+    }
+  }));
+
+  const alarmCard = page.getByTestId("alarm-card");
+  await expect(alarmCard).toContainText("06:00");
+  await expect(alarmCard).toContainText("Schlafzimmer");
+  await expect(alarmCard).toContainText("Morning Energy");
+});
+
 test("alarm sheet surfaces recently picked playlists from localStorage", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem(

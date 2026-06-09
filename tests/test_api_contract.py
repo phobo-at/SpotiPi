@@ -186,6 +186,30 @@ def test_save_alarm_success_roundtrip(client):
     payload = data['data']
     assert payload['time'] == '07:30'
     assert 'next_alarm' in payload
+    assert payload['playlist_name'] == ''
+
+
+def test_save_alarm_persists_playlist_name(client):
+    resp = client.post('/save_alarm', data={
+        'time': '06:00',
+        'enabled': 'true',
+        'alarm_volume': '40',
+        'playlist_uri': 'spotify:playlist:37i9dQZF1DXcBWIGoYBM5M',
+        'playlist_name': 'Morning Energy <script>'
+    })
+    data = assert_api_envelope(resp, expect_success=True)
+    payload = data['data']
+    # Angle brackets are stripped by sanitization; the name itself survives.
+    assert payload['playlist_name'] == 'Morning Energy script'
+
+    # Saving again without a name must clear it (no stale label after URI changes).
+    resp = client.post('/save_alarm', data={
+        'time': '06:00',
+        'enabled': 'true',
+        'alarm_volume': '40'
+    })
+    data = assert_api_envelope(resp, expect_success=True)
+    assert data['data']['playlist_name'] == ''
 
 
 def test_devices_auth_required(client):

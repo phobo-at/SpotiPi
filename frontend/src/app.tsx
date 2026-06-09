@@ -1575,7 +1575,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     if (surface === "alarm") {
       pendingRecentRef.current.alarm = item;
       setAlarmForm((current) => {
-        const next = { ...current, playlistUri: item.uri };
+        const next = { ...current, playlistUri: item.uri, playlistName: item.name || "" };
         void handleAlarmSave(next);
         return next;
       });
@@ -1814,6 +1814,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     payload.set("time", data.time);
     payload.set("device_name", data.deviceName);
     payload.set("playlist_uri", data.playlistUri);
+    payload.set("playlist_name", data.playlistName);
     payload.set("alarm_volume", String(data.alarmVolume));
     payload.set("volume", String(playerVolume));
     payload.set("fade_in", data.fadeIn ? "on" : "off");
@@ -2122,8 +2123,20 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const playerHasPlaceholderCopy = !currentTrack?.name;
   const primaryFlows: PrimaryFlowSnapshot = toPrimaryFlowSnapshot(dashboard);
   const devicesStatus = dashboard.devices_meta.status || "pending";
+  // Older configs only stored the playlist URI; fall back to the recents cache for a name.
+  const alarmMusicName =
+    primaryFlows.alarmPlaylistName ||
+    (primaryFlows.alarmPlaylistUri
+      ? alarmRecents.recents.find((entry) => entry.uri === primaryFlows.alarmPlaylistUri)?.name || ""
+      : "");
   const alarmSummary = primaryFlows.alarmEnabled
-    ? `${formatTimeLabel(primaryFlows.alarmTime, bootstrap.language)} · ${primaryFlows.alarmDeviceName || localized(bootstrap.language, "No speaker", "Kein Lautsprecher")}`
+    ? [
+        formatTimeLabel(primaryFlows.alarmTime, bootstrap.language),
+        primaryFlows.alarmDeviceName || localized(bootstrap.language, "No speaker", "Kein Lautsprecher"),
+        alarmMusicName
+      ]
+        .filter(Boolean)
+        .join(" · ")
     : localized(bootstrap.language, "No alarm scheduled", "Kein Wecker geplant");
   const sleepSummary = primaryFlows.sleepActive
     ? formatCountdown(primaryFlows.sleepRemainingSeconds, bootstrap.language)

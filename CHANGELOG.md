@@ -5,6 +5,14 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-06-09
+
+### ✨ New Features
+- The dashboard alarm card now shows the selected music alongside time and speaker (`06:00 · Schlafzimmer · Morning Energy`). The playlist name is persisted in the config (`playlist_name`, sanitized, max 100 chars) and served by all dashboard payloads; older configs fall back to the locally cached recents until the next save.
+
+### 🧹 Maintenance
+- Fixed `.gitignore`: the Python build rule `lib/` accidentally ignored `frontend/src/lib/` — `api.ts`, `types.ts`, and `view_models.ts` are now tracked for the first time.
+
 ## [1.9.1] - 2026-06-09
 
 ### 🐛 Fixes

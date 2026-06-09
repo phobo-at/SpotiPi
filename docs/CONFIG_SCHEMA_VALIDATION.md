@@ -49,6 +49,7 @@ print(validated_model.alarm_volume)  # 50
 | `time` | `str` | Regex: `HH:MM` (00:00-23:59) | `"07:00"` |
 | `enabled` | `bool` | - | `False` |
 | `playlist_uri` | `str` | - | `""` |
+| `playlist_name` | `str` | Max 100 Zeichen (Anzeigename) | `""` |
 | `device_name` | `str` | - | `""` |
 | `alarm_volume` | `int` | Range: 0-100 | `20` |
 | `fade_in` | `bool` | - | `False` |

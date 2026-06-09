@@ -465,13 +465,21 @@ def validate_alarm_config(form_data: Dict[str, Any]) -> Dict[str, Any]:
     if not uri_result.is_valid:
         raise ValidationError(uri_result.field_name, uri_result.error)
     validated['playlist_uri'] = uri_result.value
-    
+
+    # Playlist display name (optional, display-only): sanitize instead of rejecting,
+    # and always set it so a stale name never outlives a playlist_uri change
+    raw_playlist_name = form_data.get('playlist_name')
+    if isinstance(raw_playlist_name, str):
+        validated['playlist_name'] = re.sub(r'[\x00-\x1F<>]', '', raw_playlist_name).strip()[:100]
+    else:
+        validated['playlist_name'] = ''
+
     # Device name validation (optional)
     device_result = InputValidator.validate_device_name(form_data.get('device_name'), 'device_name', required=False)
     if not device_result.is_valid:
         raise ValidationError(device_result.field_name, device_result.error)
     validated['device_name'] = device_result.value
-    
+
     # Weekdays validation (optional, recurring alarms)
     weekdays_result = InputValidator.validate_weekdays(form_data.get('weekdays'), 'weekdays')
     if not weekdays_result.is_valid:
