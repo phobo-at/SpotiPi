@@ -2,7 +2,7 @@
 
 ## Overview
 
-Current release context: **v1.10.0** on **Python 3.10+**.
+Current release context: **v1.10.1** on **Python 3.10+**.
 
 Since **v1.3.8**, SpotiPi supports structured JSON logging for production observability. This enables:
 - **Better debugging**: Correlate alarm failures across multiple structured fields

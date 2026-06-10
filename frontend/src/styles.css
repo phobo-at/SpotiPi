@@ -276,6 +276,9 @@ button:disabled {
   border-radius: var(--radius-xl);
   border: 1px solid var(--surface-outline);
   box-shadow: var(--shadow-xl);
+  /* Grid items default to min-width:auto; without this, long nowrap labels
+     (e.g. the alarm summary) blow the 1fr track past the mobile viewport. */
+  min-width: 0;
 }
 
 .player-card {
@@ -856,6 +859,7 @@ input[type="range"] {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.04);
   width: 100%;
+  min-width: 0;
   text-align: left;
   color: var(--text);
 }
