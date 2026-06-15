@@ -104,6 +104,11 @@ RSYNC_ARGS=(
   --exclude='.DS_Store'
   --exclude='logs/'
   --exclude='*.log'
+  # Never overwrite the Pi's live, user-managed config (the web UI writes these).
+  # Only the base default_config.json is synced; production/development are the
+  # device's own runtime config. (Must precede the config/*** include below.)
+  --exclude='config/production.json'
+  --exclude='config/development.json'
 )
 
 # Include rules for required paths
