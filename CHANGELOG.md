@@ -5,6 +5,17 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-06-15
+
+### 🐛 Fixes
+- **Alarm no longer fires multiple times around the scheduled minute.** The execution window opened `T − 1.5 min` *before* the alarm time and the alarm fired immediately within it (via the catch-up grace, which is meant for *missed/late* alarms only). Because the occurrence dedup keys on the scheduled time, a pre-scheduled execution could never be recorded as "done", so the alarm re-fired on every scheduler loop — each restarting the fade-in — until the wall clock finally passed the scheduled minute. Observed in production as 2–4 back-to-back alarms (e.g. a short ring, silence, then another ring). Two changes fix this:
+  - The execution/retry window now opens **at** the scheduled time, never before it (`AlarmScheduler._window_open_delay`). A missed alarm still opens the window immediately so catch-up keeps working.
+  - `execute_alarm` no longer treats the catch-up grace as a reason to fire **early**: an alarm that is not yet due returns `execute_before_window` instead of firing.
+
+### 🛡️ Hardening
+- **Snooze no longer false-triggers right after the alarm starts.** The first `/me/player` reads after playback begins are often stale (the device is audibly playing but the API still reports paused / 204 / the previous device). The snooze monitor now ignores pause/mute/takeover during a startup **settle phase** — until it has confirmed the alarm playing at least once, or `SPOTIPI_SNOOZE_SETTLE_SECONDS` (default 45 s) has elapsed (so a very fast mute still snoozes).
+- Alarm execution now emits a forced `execute_snooze_armed` / `execute_snooze_error` / `execute_snooze_disabled` probe event, so whether the snooze session armed is visible in the journal (the regular `snooze` logs are suppressed in production).
+
 ## [1.10.1] - 2026-06-10
 
 ### 🐛 Fixes

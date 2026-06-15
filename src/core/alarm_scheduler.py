@@ -257,6 +257,21 @@ class AlarmScheduler:
         jitter = random.uniform(0.2, 0.7)
         return base + jitter
 
+    def _window_open_delay(self, next_alarm: _dt.datetime, now: Optional[_dt.datetime] = None) -> float:
+        """Seconds to sleep until the execution/retry window opens.
+
+        The window opens AT the scheduled alarm time, never before it. Opening it
+        early (``T - trigger_window``) made the alarm fire prematurely and then
+        re-fire on every loop until the wall clock finally passed ``T`` — the
+        occurrence dedup keys on the scheduled time, so a pre-scheduled execution
+        could never be recorded as "done" (observed as 2–4 back-to-back alarms,
+        each restarting the fade-in). A missed alarm (``now`` already past
+        ``next_alarm``) opens the window immediately so catch-up still works.
+        """
+        if now is None:
+            now = _dt.datetime.now(tz=LOCAL_TZ)
+        return max(0.0, (next_alarm - now).total_seconds())
+
     def _pending_state_alarm(self) -> Optional[_dt.datetime]:
         scheduled_iso = self._state.get("scheduled_utc")
         if not scheduled_iso:
@@ -424,8 +439,9 @@ class AlarmScheduler:
                     log_alarm_probe(context, "prewarm_overdue", extra={"seconds_until": seconds_until}, force=True)
                     continue
 
-            # Sleep until the execution window opens
-            sleep_until_window = max(0, seconds_until - trigger_window_seconds)
+            # Sleep until the alarm time itself: the execution/retry window opens
+            # AT the scheduled time, never before it (see _window_open_delay).
+            sleep_until_window = self._window_open_delay(next_alarm)
             if sleep_until_window > 0:
                 _logger.debug(
                     "Next alarm at %s (in %ss). Sleeping %ss until execution window.",

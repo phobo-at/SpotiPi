@@ -390,6 +390,45 @@ def test_monitor_dismisses_on_takeover(temp_status, monkeypatch):
     assert snooze.get_snooze_status() == {"active": False}
 
 
+def _armed_initial(**overrides):
+    base = {
+        "active": True, "state": "armed", "window_end": time.time() + 3600,
+        "device_id": "dev1", "device_name": "Forte", "playlist_uri": "spotify:playlist:p",
+        "volume": 20, "shuffle": False, "snooze_minutes": 9, "snooze_count": 0,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_monitor_ignores_stale_startup_silence(temp_status, monkeypatch):
+    # Right after the alarm starts, /me/player can report stale pause/204 reads
+    # while the device is audibly playing. Two such reads, before we ever saw the
+    # alarm playing and within the settle window, must NOT arm a snooze.
+    paused = {"is_playing": False, "device": {"id": "dev1"}}
+    initial = _armed_initial(alarm_started_at=time.time())
+    writes = _drive_monitor(monkeypatch, temp_status, initial, [paused, paused])
+    assert not any(w.get("state") == "snoozing" for w in writes)
+
+
+def test_monitor_arms_after_confirmed_play(temp_status, monkeypatch):
+    # Once the monitor has confirmed the alarm playing, a subsequent mute counts
+    # even inside the settle window.
+    playing = {"is_playing": True, "device": {"id": "dev1", "volume_percent": 45}, "context": {"uri": "spotify:playlist:p"}}
+    muted = {"is_playing": True, "device": {"id": "dev1", "volume_percent": 0}, "context": {"uri": "spotify:playlist:p"}}
+    initial = _armed_initial(alarm_started_at=time.time())
+    writes = _drive_monitor(monkeypatch, temp_status, initial, [playing, muted, muted])
+    assert len([w for w in writes if w.get("state") == "snoozing"]) == 1
+
+
+def test_monitor_arms_after_settle_window_without_confirmed_play(temp_status, monkeypatch):
+    # Fallback: even if we never caught a clean "playing" read, once the settle
+    # window has elapsed a sustained silence still snoozes (fast mute case).
+    paused = {"is_playing": False, "device": {"id": "dev1"}}
+    initial = _armed_initial(alarm_started_at=time.time() - (snooze.STARTUP_SETTLE_SECONDS + 5))
+    writes = _drive_monitor(monkeypatch, temp_status, initial, [paused, paused])
+    assert len([w for w in writes if w.get("state") == "snoozing"]) == 1
+
+
 # ---------------------------------------------------------------------------
 # Config schema
 # ---------------------------------------------------------------------------

@@ -138,24 +138,18 @@ def execute_alarm(
     )
 
     if diff_minutes < 0 and not force:
-        if catchup_grace_seconds <= 0 or abs(diff_minutes) > catchup_grace_minutes:
-            debug(f"Not yet within trigger window. diff={diff_minutes:.2f}m")
-            log_alarm_probe(
-                probe,
-                "execute_before_window",
-                extra={"diff_minutes": diff_minutes},
-                force=True,
-            )
-            return False
+        # Alarm is still in the future: it is not due yet. Catch-up grace is for
+        # MISSED (late) alarms only and must never fire early — an early fire also
+        # re-fires until the wall clock passes the scheduled time, because the
+        # occurrence dedup cannot record a pre-scheduled execution as done.
+        debug(f"Not yet due (diff={diff_minutes:.2f}m) – waiting for the alarm time.")
         log_alarm_probe(
             probe,
-            "execute_catchup_within_grace",
-            extra={
-                "diff_minutes": diff_minutes,
-                "catchup_grace_minutes": catchup_grace_minutes,
-            },
+            "execute_before_window",
+            extra={"diff_minutes": diff_minutes},
             force=True,
         )
+        return False
 
     if diff_minutes > ALARM_TRIGGER_WINDOW_MINUTES and not force:
         if catchup_grace_seconds > 0 and diff_minutes <= catchup_grace_minutes:
@@ -305,7 +299,7 @@ def execute_alarm(
         # device (e.g. the Argon/Forte hardware button) should act as snooze.
         if config.get("snooze_enabled", True):
             try:
-                start_snooze_session(
+                snooze_armed = start_snooze_session(
                     device_id=device_id,
                     device_name=device_name,
                     playlist_uri=config.get("playlist_uri", ""),
@@ -314,8 +308,24 @@ def execute_alarm(
                     window_minutes=int(config.get("snooze_window_minutes", 120) or 120),
                     snooze_minutes=int(config.get("snooze_minutes", 9) or 9),
                 )
+                # Forced probe so arming is visible in the journal (regular 'snooze'
+                # logs are suppressed in production – only alarm_probe is captured).
+                log_alarm_probe(
+                    probe,
+                    "execute_snooze_armed",
+                    extra={"armed": bool(snooze_armed)},
+                    force=True,
+                )
             except Exception as snooze_err:
                 log(f"⚠️ Could not start snooze session: {snooze_err}")
+                log_alarm_probe(
+                    probe,
+                    "execute_snooze_error",
+                    extra={"error": str(snooze_err)},
+                    force=True,
+                )
+        else:
+            log_alarm_probe(probe, "execute_snooze_disabled", force=True)
 
         # Auto-disable single-use alarms only. Recurring alarms (weekdays set)
         # stay enabled so they fire again on the next selected day.

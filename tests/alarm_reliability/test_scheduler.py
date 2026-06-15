@@ -215,6 +215,41 @@ def test_execute_alarm_catchup_within_grace(monkeypatch):
     assert transaction.saved["enabled"] is False
 
 
+def test_execute_alarm_does_not_fire_early(monkeypatch):
+    # 06:58:30 for a 07:00 alarm: 90s early. The catch-up grace is for LATE
+    # alarms only and must never fire early (firing early also re-fired until the
+    # wall clock passed the scheduled time).
+    fixed_now = datetime.datetime(2025, 1, 1, 6, 58, 30, tzinfo=TZ)
+    config = {
+        "enabled": True,
+        "time": "07:00",
+        "device_name": "Living Room",
+        "playlist_uri": "spotify:playlist:test",
+        "alarm_volume": 50,
+        "fade_in": False,
+        "shuffle": False,
+        "last_known_devices": {},
+    }
+    _make_execute_env(monkeypatch, fixed_now, config)
+    result = alarm.execute_alarm(catchup_grace_seconds=600)
+    assert result is False
+
+
+def test_window_open_delay_opens_at_alarm_time():
+    from src.core.alarm_scheduler import LOCAL_TZ, AlarmScheduler
+
+    sched = AlarmScheduler()
+    now = datetime.datetime.now(tz=LOCAL_TZ)
+
+    # Future alarm: sleep the FULL remaining time (open AT T), not 0 (open early).
+    future = now + datetime.timedelta(seconds=90)
+    assert sched._window_open_delay(future, now=now) == pytest.approx(90.0, abs=0.5)
+
+    # Missed alarm: open immediately so catch-up still works.
+    past = now - datetime.timedelta(seconds=120)
+    assert sched._window_open_delay(past, now=now) == 0.0
+
+
 def test_pending_state_alarm_handles_recent_miss(monkeypatch):
     from src.core.alarm_scheduler import AlarmScheduler
 

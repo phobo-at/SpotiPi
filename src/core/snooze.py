@@ -64,6 +64,15 @@ logger = logging.getLogger('snooze')
 # Guards against transient is_playing=false / volume-dip reads at track boundaries.
 PAUSE_DEBOUNCE_READS = 2
 
+# Right after an alarm starts, the first /me/player reads are often stale: the
+# device is audibly playing but the API still reports paused / 204 / the previous
+# device for some seconds. Counting those as "silenced" would snooze the alarm
+# seconds after it rang. A pause/mute/takeover only counts once the monitor has
+# confirmed the alarm playing at least once, OR this settle window has elapsed
+# (the fallback so a very fast mute still snoozes even if we never caught a clean
+# "playing" read).
+STARTUP_SETTLE_SECONDS = max(0, int(os.getenv("SPOTIPI_SNOOZE_SETTLE_SECONDS", "45")))
+
 # Device volume at/below this counts as "muted" (the hardware snooze button mutes
 # instead of pausing). The alarm plays at alarm_volume (e.g. 50), so a drop into
 # this band is unambiguous; the small non-zero floor tolerates devices whose mute
@@ -347,6 +356,7 @@ def _monitor_snooze(epoch: int) -> None:
     """Background loop driving the armed/snoozing state machine."""
     logger.info("💤 Snooze monitor thread started (epoch=%d)", epoch)
     pause_streak = 0
+    seen_playing = False
     try:
         while True:
             # A newer session/monitor superseded this one.
@@ -412,27 +422,37 @@ def _monitor_snooze(epoch: int) -> None:
 
             # state == "armed": watch for the alarm being silenced (pause or mute).
             verdict = _classify_armed(playback, device_id, device_name, playlist_uri)
-            # Diagnostic: confirm on real hardware how the snooze button shows up
-            # (does the volume drop to 0, or does is_playing flip?). Only logged
-            # during an active alarm window, every ARMED_INTERVAL seconds, so the
-            # volume stays low. Can be downgraded to debug once confirmed.
+            # Settle phase: right after the alarm starts, /me/player reads are often
+            # stale (device audibly playing but API reports paused/204/old device).
+            # Only act on a silence/takeover once we've confirmed the alarm playing,
+            # or the settle window has elapsed (so a very fast mute still snoozes).
+            alarm_started_at = status.get("alarm_started_at") or 0
+            settled = (
+                seen_playing
+                or alarm_started_at <= 0
+                or (now - alarm_started_at) >= STARTUP_SETTLE_SECONDS
+            )
             _device = (playback or {}).get("device") or {}
             logger.info(
-                "💤 Snooze poll: verdict=%s is_playing=%s volume=%s device=%s",
+                "💤 Snooze poll: verdict=%s is_playing=%s volume=%s device=%s settled=%s seen_playing=%s",
                 verdict, (playback or {}).get("is_playing"),
-                _device.get("volume_percent"), _device.get("name"),
+                _device.get("volume_percent"), _device.get("name"), settled, seen_playing,
             )
-            if verdict == "takeover":
+            if verdict == "playing":
+                seen_playing = True
+                pause_streak = 0
+            elif not settled:
+                # Still settling after alarm start: ignore stale pause/mute/takeover.
+                pause_streak = 0
+            elif verdict == "takeover":
                 logger.info("💤 Foreign playback detected (device/context changed) - dismissing snooze")
                 stop_snooze_session()
                 return
-            if verdict == "paused":
+            else:  # "paused" – silenced via pause or mute
                 pause_streak += 1
                 if pause_streak >= PAUSE_DEBOUNCE_READS:
                     _arm_snooze(token, status)
                     pause_streak = 0
-            else:  # "playing"
-                pause_streak = 0
 
             time.sleep(ARMED_INTERVAL)
     except Exception:
