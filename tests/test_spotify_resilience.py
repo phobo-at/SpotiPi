@@ -138,6 +138,101 @@ def test_save_token_atomically_sets_permissions_in_encrypted_mode(monkeypatch, t
     assert chmod_calls[-1][1] == 0o600
 
 
+class _FakeTxn:
+    def __init__(self, base):
+        import copy
+        self._base = copy.deepcopy(base)
+        self.saved = None
+
+    def load(self):
+        import copy
+        return copy.deepcopy(self._base)
+
+    def save(self, cfg):
+        import copy
+        self.saved = copy.deepcopy(cfg)
+        return True
+
+
+def _install_fake_config(monkeypatch, initial):
+    """Redirect spotify's config helpers to an in-memory store; record txns."""
+    from contextlib import contextmanager
+
+    state = {"cfg": initial}
+    txns = []
+
+    def fake_load_safe():
+        import copy
+        return copy.deepcopy(state["cfg"])
+
+    @contextmanager
+    def fake_txn():
+        txn = _FakeTxn(state["cfg"])
+        txns.append(txn)
+        yield txn
+        if txn.saved is not None:
+            state["cfg"] = txn.saved
+
+    monkeypatch.setattr(spotify, "load_config_safe", fake_load_safe)
+    monkeypatch.setattr(spotify, "config_transaction", fake_txn)
+    return state, txns
+
+
+def test_remember_devices_seen_caches_visible_device_ids(monkeypatch):
+    state, txns = _install_fake_config(monkeypatch, {"last_known_devices": {}})
+
+    spotify._remember_devices_seen([
+        {"id": "dev1", "name": "Schlafzimmer"},
+        {"id": "dev2", "name": "Wohnzimmer"},
+        {"id": None, "name": "No Id"},  # ignored
+    ])
+
+    cache = state["cfg"]["last_known_devices"]
+    assert cache["schlafzimmer"]["id"] == "dev1"
+    assert cache["wohnzimmer"]["id"] == "dev2"
+    assert "no id" not in cache
+    assert len(txns) == 1  # exactly one write
+
+
+def test_remember_devices_seen_skips_write_when_unchanged(monkeypatch):
+    initial = {
+        "last_known_devices": {
+            "schlafzimmer": {
+                "id": "dev1",
+                "name": "Schlafzimmer",
+                "requested_name": "Schlafzimmer",
+                "updated_at": 1.0,
+            }
+        }
+    }
+    state, txns = _install_fake_config(monkeypatch, initial)
+
+    spotify._remember_devices_seen([{"id": "dev1", "name": "Schlafzimmer"}])
+
+    # No mapping changed -> no transaction opened -> no disk write (SD wear).
+    assert txns == []
+    assert state["cfg"]["last_known_devices"]["schlafzimmer"]["id"] == "dev1"
+
+
+def test_remember_devices_seen_updates_changed_id(monkeypatch):
+    initial = {
+        "last_known_devices": {
+            "schlafzimmer": {
+                "id": "stale",
+                "name": "Schlafzimmer",
+                "requested_name": "Schlafzimmer",
+                "updated_at": 1.0,
+            }
+        }
+    }
+    state, txns = _install_fake_config(monkeypatch, initial)
+
+    spotify._remember_devices_seen([{"id": "fresh", "name": "Schlafzimmer"}])
+
+    assert state["cfg"]["last_known_devices"]["schlafzimmer"]["id"] == "fresh"
+    assert len(txns) == 1
+
+
 def test_save_token_atomically_sets_permissions_on_importerror_fallback(monkeypatch, temp_token_path):
     chmod_calls = []
     real_import = builtins.__import__

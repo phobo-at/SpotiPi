@@ -1461,6 +1461,9 @@ def get_devices(token: str) -> List[Dict[str, Any]]:
                 devices = r.json().get("devices", [])
                 # Sort devices alphabetically by name (case-insensitive)
                 devices.sort(key=lambda d: (d.get("name") or "").lower())
+                # Keep the device-id cache warm so the alarm has a fallback id to
+                # wake a device that has momentarily dropped off Spotify Connect.
+                _remember_devices_seen(devices)
                 return devices
             else:
                 logging.getLogger('spotify').error(f"❌ Error fetching devices: {r.text}")
@@ -1511,6 +1514,72 @@ def _remember_device_mapping(requested_name: str, actual_name: str, device_id: O
             transaction.save(cfg)
     except Exception as exc:  # pragma: no cover - fallback on best-effort cache
         logging.getLogger('spotify').debug("device.cache.store_failed %s", exc)
+
+
+def _remember_devices_seen(devices: List[Dict[str, Any]]) -> None:
+    """Keep the device-id cache warm from every live device listing.
+
+    ``get_device_id`` only caches ids during the alarm flow (prewarm at T-2min,
+    readiness, execute). If the speaker has dropped off Spotify Connect by then,
+    nothing is cached and the alarm has no id to wake it (observed: a bedroom
+    alarm that never rang because the speaker was absent from the device list and
+    the cache was empty). Calling this whenever the app actually fetches the
+    device list from Spotify (UI device refresh, dashboard, sleep timer) keeps a
+    fresh fallback id for any device the user has recently seen.
+
+    Writes only when a mapping is new or its id changed, so the common steady
+    state is a single cached config read with no disk write (Pi SD wear).
+    """
+    if not devices:
+        return
+    incoming: Dict[str, Tuple[str, str]] = {}
+    for device in devices:
+        device_id = device.get("id")
+        name = device.get("name")
+        key = _normalize_device_name(name)
+        if device_id and key:
+            incoming[key] = (device_id, name or "")
+    if not incoming:
+        return
+    try:
+        current = load_config_safe().get("last_known_devices")
+    except Exception:
+        current = None
+    if not isinstance(current, dict):
+        current = {}
+    needs_write = any(
+        not isinstance(current.get(key), dict) or current[key].get("id") != device_id
+        for key, (device_id, _name) in incoming.items()
+    )
+    if not needs_write:
+        return
+    try:
+        with config_transaction() as transaction:
+            cfg = transaction.load()
+            cache = cfg.get("last_known_devices")
+            if not isinstance(cache, dict):
+                cache = {}
+            for key, (device_id, name) in incoming.items():
+                entry = cache.get(key)
+                if isinstance(entry, dict) and entry.get("id") == device_id:
+                    continue
+                cache[key] = {
+                    "id": device_id,
+                    "name": name,
+                    "requested_name": name,
+                    "updated_at": time.time(),
+                }
+            if len(cache) > _MAX_CACHED_DEVICES:
+                sorted_items = sorted(
+                    cache.items(),
+                    key=lambda item: item[1].get("updated_at", 0.0),
+                    reverse=True,
+                )[:_MAX_CACHED_DEVICES]
+                cache = {key: value for key, value in sorted_items}
+            cfg["last_known_devices"] = cache
+            transaction.save(cfg)
+    except Exception as exc:  # pragma: no cover - best-effort cache
+        logging.getLogger('spotify').debug("device.cache.bulk_store_failed %s", exc)
 
 
 def _load_cached_device_mapping(device_name: str) -> Optional[Dict[str, Any]]:

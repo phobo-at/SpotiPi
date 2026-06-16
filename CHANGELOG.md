@@ -5,6 +5,11 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1] - 2026-06-16
+
+### 🐛 Fixes
+- **Alarm can again wake a Spotify-Connect speaker that has gone idle.** The alarm reaches a device by name; when the device has temporarily dropped off `/me/player/devices` (common for Connect speakers that deregister when idle), it falls back to a cached device id in `config.last_known_devices` so `start_playback` can still wake it. That cache was only ever warmed from the alarm flow (prewarm at T-120s, readiness, execute), so if the speaker was absent by then nothing was cached — and a wiped cache (e.g. after a config reset) left the alarm with no id to wake, so it sat in `readiness_pending` and never rang. The device-id cache is now kept warm from **every** live device listing (`get_devices`: UI device refresh, dashboard, sleep timer), write-on-change only to avoid needless config writes. Note: a speaker that is *fully* powered off / disconnected from Spotify Connect at alarm time still cannot be woken by any API call.
+
 ## [1.11.0] - 2026-06-15
 
 ### 🐛 Fixes
