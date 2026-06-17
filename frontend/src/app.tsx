@@ -98,6 +98,7 @@ const ICONS: Record<string, string> = {
   settings: "M19.4 13a7.7 7.7 0 0 0 .1-1l2-1.5-1.8-3.1-2.4.8a7.8 7.8 0 0 0-1.7-1l-.3-2.5H8.7l-.3 2.5a7.8 7.8 0 0 0-1.7 1l-2.4-.8-1.8 3.1 2 1.5a7.7 7.7 0 0 0 0 2l-2 1.5 1.8 3.1 2.4-.8a7.8 7.8 0 0 0 1.7 1l.3 2.5h6.6l.3-2.5a7.8 7.8 0 0 0 1.7-1l2.4.8 1.8-3.1-2-1.5ZM12 15.2A3.2 3.2 0 1 1 12 8.8a3.2 3.2 0 0 1 0 6.4Z",
   library: "M8 5.6v10.1a3.4 3.4 0 1 0 2 3V9.8h8v-4.2H8Z",
   volume: "M4 9.5v5h3.2L11 18V6L7.2 9.5H4Zm10.7-2.8v2.2a3.8 3.8 0 0 1 0 6.2v2.2a5.9 5.9 0 0 0 0-10.6Zm2.9-2.7v2.1a7.7 7.7 0 0 1 0 11.8V20a9.8 9.8 0 0 0 0-16Z",
+  note: "M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6Z",
   device: "M5 4h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-5l2 3H8l2-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
   refresh: "M18.4 8A7 7 0 1 0 19 12h-2a5 5 0 1 1-1.4-3.5L13 11h7V4l-1.6 4Z",
   close: "M6.7 5.3 12 10.6l5.3-5.3 1.4 1.4L13.4 12l5.3 5.3-1.4 1.4L12 13.4l-5.3 5.3-1.4-1.4L10.6 12 5.3 6.7l1.4-1.4Z",
@@ -519,6 +520,22 @@ function sameWeekdaySet(a: number[], b: number[]): boolean {
   return sortedA.every((value, index) => value === sortedB[index]);
 }
 
+function formatWeekdaySummary(value: number[], language: string): string {
+  if (value.length === 0) {
+    return localized(language, "Once", "Einmal");
+  }
+  if (sameWeekdaySet(value, WEEKDAYS_PRESET_DAILY)) {
+    return localized(language, "Daily", "Täglich");
+  }
+  if (sameWeekdaySet(value, WEEKDAYS_PRESET_WORKDAYS)) {
+    return localized(language, "Weekdays", "Werktags");
+  }
+  const selected = new Set(value);
+  return WEEKDAY_ORDER.filter((day) => selected.has(day))
+    .map((day) => weekdayShortLabel(day, language))
+    .join(", ");
+}
+
 interface WeekdayPickerProps {
   value: number[];
   language: string;
@@ -529,19 +546,7 @@ function WeekdayPicker({ value, language, onChange }: WeekdayPickerProps) {
   const selected = new Set(value);
   const isDaily = sameWeekdaySet(value, WEEKDAYS_PRESET_DAILY);
   const isWorkdays = sameWeekdaySet(value, WEEKDAYS_PRESET_WORKDAYS);
-
-  let summary: string;
-  if (value.length === 0) {
-    summary = localized(language, "Once", "Einmal");
-  } else if (isDaily) {
-    summary = localized(language, "Daily", "Täglich");
-  } else if (isWorkdays) {
-    summary = localized(language, "Weekdays", "Werktags");
-  } else {
-    summary = WEEKDAY_ORDER.filter((day) => selected.has(day))
-      .map((day) => weekdayShortLabel(day, language))
-      .join(", ");
-  }
+  const summary = formatWeekdaySummary(value, language);
 
   function toggleDay(day: number) {
     const next = selected.has(day)
@@ -1851,6 +1856,14 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
   }
 
+  // Inline dashboard toggle: build a fresh form from the latest dashboard state so we
+  // never persist a stale alarmForm, then reuse the same save path as the alarm sheet.
+  function handleAlarmEnabledToggle(enabled: boolean) {
+    const next = { ...createAlarmFormModel(dashboard, settings), enabled };
+    setAlarmForm(next);
+    void handleAlarmSave(next, enabled ? "activate" : undefined);
+  }
+
   async function handleSleepStart() {
     if (networkStatus === "offline") {
       pushToast(
@@ -2123,21 +2136,26 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const playerHasPlaceholderCopy = !currentTrack?.name;
   const primaryFlows: PrimaryFlowSnapshot = toPrimaryFlowSnapshot(dashboard);
   const devicesStatus = dashboard.devices_meta.status || "pending";
-  // Older configs only stored the playlist URI; fall back to the recents cache for a name.
-  const alarmMusicName =
-    primaryFlows.alarmPlaylistName ||
-    (primaryFlows.alarmPlaylistUri
-      ? alarmRecents.recents.find((entry) => entry.uri === primaryFlows.alarmPlaylistUri)?.name || ""
-      : "");
-  const alarmSummary = primaryFlows.alarmEnabled
-    ? [
-        formatTimeLabel(primaryFlows.alarmTime, bootstrap.language),
-        primaryFlows.alarmDeviceName || localized(bootstrap.language, "No speaker", "Kein Lautsprecher"),
-        alarmMusicName
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : localized(bootstrap.language, "No alarm scheduled", "Kein Wecker geplant");
+  // Older configs only stored the playlist URI; fall back to the recents cache for name + cover.
+  const alarmRecentEntry = primaryFlows.alarmPlaylistUri
+    ? alarmRecents.recents.find((entry) => entry.uri === primaryFlows.alarmPlaylistUri)
+    : undefined;
+  const alarmMusicName = primaryFlows.alarmPlaylistName || alarmRecentEntry?.name || "";
+  const alarmMusicImage = normalizeImageUrl(alarmRecentEntry?.image_url);
+  const alarmTimeLabel = formatTimeLabel(primaryFlows.alarmTime, bootstrap.language);
+  const alarmRepeatLabel = primaryFlows.alarmEnabled
+    ? formatWeekdaySummary(primaryFlows.alarmWeekdays, bootstrap.language)
+    : localized(bootstrap.language, "Off", "Aus");
+  const alarmDeviceLabel =
+    primaryFlows.alarmDeviceName || localized(bootstrap.language, "No speaker", "Kein Lautsprecher");
+  const alarmMusicLabel = alarmMusicName || localized(bootstrap.language, "No music", "Keine Musik");
+  const alarmCardAriaLabel = primaryFlows.alarmEnabled
+    ? localized(
+        bootstrap.language,
+        `Alarm at ${alarmTimeLabel}, ${alarmDeviceLabel}, ${alarmMusicLabel}. Open alarm settings.`,
+        `Wecker um ${alarmTimeLabel}, ${alarmDeviceLabel}, ${alarmMusicLabel}. Wecker-Einstellungen öffnen.`
+      )
+    : localized(bootstrap.language, "No alarm scheduled. Open alarm settings.", "Kein Wecker geplant. Wecker-Einstellungen öffnen.");
   const sleepSummary = primaryFlows.sleepActive
     ? formatCountdown(primaryFlows.sleepRemainingSeconds, bootstrap.language)
     : localized(bootstrap.language, "No sleep timer running", "Kein Sleep-Timer aktiv");
@@ -2362,19 +2380,62 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
           <section class="snapshot-card">
             <div class="snapshot-grid">
-              <button
-                type="button"
-                class="snapshot-item snapshot-item-action"
-                onClick={() => openSurface("alarm")}
+              <div
+                class={`alarm-hero ${primaryFlows.alarmEnabled ? "" : "is-off"}`}
                 data-testid="alarm-card"
               >
-                <span>{icon("alarm")}</span>
-                <div>
-                  <small>{localized(bootstrap.language, "Alarm", "Wecker")}</small>
-                  <strong>{alarmSummary}</strong>
-                </div>
-                <span class="snapshot-item-caret">{icon("chevron")}</span>
-              </button>
+                <button
+                  type="button"
+                  class="alarm-hero-open"
+                  onClick={() => openSurface("alarm")}
+                  aria-label={alarmCardAriaLabel}
+                >
+                  <span class="alarm-hero-head">
+                    <span class="alarm-hero-mark">{icon("alarm")}</span>
+                    <small>{localized(bootstrap.language, "Alarm", "Wecker")}</small>
+                  </span>
+                  <span class="alarm-hero-time">
+                    <strong>{alarmTimeLabel}</strong>
+                    <span class="alarm-hero-repeat">{alarmRepeatLabel}</span>
+                  </span>
+                  <span class="alarm-hero-meta">
+                    <span class="alarm-hero-row">
+                      <span class="alarm-hero-rowicon">{icon("device")}</span>
+                      <span class="alarm-hero-rowtext">{alarmDeviceLabel}</span>
+                    </span>
+                    <span class="alarm-hero-row">
+                      <span class="alarm-hero-rowicon">{icon("volume")}</span>
+                      <span class="alarm-hero-rowtext">{primaryFlows.alarmVolume}%</span>
+                    </span>
+                    <span class="alarm-hero-row">
+                      {alarmMusicImage ? (
+                        <img
+                          class="alarm-hero-cover"
+                          src={alarmMusicImage}
+                          alt=""
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <span class="alarm-hero-rowicon">{icon("note")}</span>
+                      )}
+                      <span class="alarm-hero-rowtext">{alarmMusicLabel}</span>
+                    </span>
+                  </span>
+                </button>
+                <label class="toggle-control alarm-hero-toggle" data-testid="alarm-enable-toggle">
+                  <input
+                    type="checkbox"
+                    checked={primaryFlows.alarmEnabled}
+                    disabled={busyAction === "alarm" || networkStatus === "offline"}
+                    aria-label={localized(bootstrap.language, "Enable alarm", "Wecker aktivieren")}
+                    onChange={(event) =>
+                      handleAlarmEnabledToggle((event.currentTarget as HTMLInputElement).checked)
+                    }
+                  />
+                  <span class="toggle-track" aria-hidden="true" />
+                </label>
+              </div>
               {sleepSurfaceVisible ? (
                 <button
                   type="button"

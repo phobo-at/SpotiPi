@@ -85,6 +85,10 @@ export function toPrimaryFlowSnapshot(dashboard: DashboardData): PrimaryFlowSnap
     alarmDeviceName: dashboard.alarm.device_name || "",
     alarmPlaylistUri: dashboard.alarm.playlist_uri || "",
     alarmPlaylistName: dashboard.alarm.playlist_name || "",
+    alarmVolume: clamp(Number(dashboard.alarm.alarm_volume || 0), 0, 100),
+    alarmWeekdays: Array.isArray(dashboard.alarm.weekdays)
+      ? dashboard.alarm.weekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+      : [],
     sleepActive: Boolean(dashboard.sleep.active),
     sleepRemainingSeconds: dashboard.sleep.remaining_seconds,
     availableDevices: Array.isArray(dashboard.devices) ? dashboard.devices.length : 0

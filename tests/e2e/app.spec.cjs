@@ -219,6 +219,59 @@ test("alarm weekday picker sends selected weekdays to the backend", async ({ pag
   await expect.poll(() => savedWeekdays).toEqual([]);
 });
 
+test("alarm card inline toggle saves enabled state without opening the sheet", async ({ page }) => {
+  let savedEnabled;
+
+  // Needs a valid device + time so the save handler's activation guards pass.
+  await gotoWithDashboardOverride(page, (dashboard) => ({
+    ...dashboard,
+    alarm: {
+      ...dashboard.alarm,
+      enabled: true,
+      time: "07:00",
+      device_name: "Test Speaker",
+      playlist_uri: "spotify:playlist:inline-toggle",
+      playlist_name: "Wake Mix",
+      weekdays: []
+    }
+  }));
+
+  await page.route("**/save_alarm", async (route, request) => {
+    const params = new URLSearchParams(request.postData() || "");
+    savedEnabled = params.get("enabled");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        message: "ok",
+        data: {
+          enabled: savedEnabled === "on",
+          time: "07:00",
+          alarm_volume: 20,
+          next_alarm: "",
+          playlist_uri: "spotify:playlist:inline-toggle",
+          playlist_name: "Wake Mix",
+          device_name: "Test Speaker",
+          fade_in: false,
+          shuffle: false,
+          weekdays: []
+        }
+      })
+    });
+  });
+
+  const toggle = page.getByTestId("alarm-enable-toggle");
+  const toggleInput = toggle.locator("input");
+  await expect(toggleInput).toBeChecked();
+
+  // Turning the alarm off persists enabled=off and must NOT open the alarm sheet.
+  await toggle.click();
+  await expect.poll(() => savedEnabled).toBe("off");
+  await expect(page.getByTestId("alarm-sheet")).toBeHidden();
+  await expect(toggleInput).not.toBeChecked();
+});
+
 test("sheet closes with Escape and restores focus to trigger", async ({ page }) => {
   await page.goto("/");
 

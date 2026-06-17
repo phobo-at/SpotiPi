@@ -5,6 +5,12 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-06-17
+
+### ✨ Features
+- **Redesigned the dashboard alarm card.** The alarm tile used to be a single truncating line (`HH:MM · Speaker · …`) that hid the music and volume on mobile. It is now a hero card that shows the wake **time**, the repeat schedule (Daily / Weekdays / specific days / Once), the target **speaker**, the **volume**, and the **selected music** — including the playlist/album **cover art** when it is in the local recents cache (a music-note icon is shown as fallback). When the alarm is off, the card dims its content to signal the state. The sleep and play tiles are unchanged.
+- **Inline alarm toggle.** The card now carries an enable/disable switch so the alarm can be armed or disarmed straight from the dashboard, persisting through the same `/save_alarm` path as the alarm sheet (with the same device/time activation guards). Tapping the rest of the card still opens the full alarm settings.
+
 ## [1.11.1] - 2026-06-16
 
 ### 🐛 Fixes

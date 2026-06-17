@@ -163,6 +163,8 @@ export interface PrimaryFlowSnapshot {
   alarmDeviceName: string;
   alarmPlaylistUri: string;
   alarmPlaylistName: string;
+  alarmVolume: number;
+  alarmWeekdays: number[];
   sleepActive: boolean;
   sleepRemainingSeconds?: number;
   availableDevices: number;

@@ -923,6 +923,162 @@ input[type="range"] {
   transform: rotate(-90deg) translateY(-1px);
 }
 
+/* Alarm hero card — the dashboard's primary tile, shows time + speaker + volume + music */
+.alarm-hero {
+  position: relative;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: border-color 150ms ease;
+}
+
+.alarm-hero:hover {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.alarm-hero-open {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  padding: 18px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.alarm-hero-open:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.alarm-hero-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 60px;
+}
+
+.alarm-hero-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.alarm-hero-mark .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.alarm-hero-head small {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.alarm-hero-time {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.alarm-hero-time strong {
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.alarm-hero-repeat {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.alarm-hero-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.alarm-hero-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.alarm-hero-rowicon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  color: var(--text-soft);
+}
+
+.alarm-hero-rowicon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.alarm-hero-cover {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.alarm-hero-rowtext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+/* Inline enable toggle — reuses .toggle-control / .toggle-track styling.
+   Scoped under .alarm-hero so position:absolute wins over .toggle-control's relative. */
+.alarm-hero .alarm-hero-toggle {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+}
+
+.alarm-hero-toggle input:disabled + .toggle-track {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dim the card content when the alarm is off (toggle stays full-strength) */
+.alarm-hero.is-off .alarm-hero-mark {
+  background: var(--surface-muted);
+  color: var(--text-soft);
+}
+
+.alarm-hero.is-off .alarm-hero-time strong,
+.alarm-hero.is-off .alarm-hero-rowtext {
+  color: var(--text-muted);
+}
+
+.alarm-hero.is-off .alarm-hero-cover {
+  opacity: 0.6;
+}
+
 .app-footer {
   display: flex;
   justify-content: space-between;
