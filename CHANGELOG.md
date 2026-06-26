@@ -5,6 +5,25 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.4] - 2026-06-27
+
+### 🔒 Security
+- **Flask/Werkzeug debug mode can no longer be enabled by an unauthenticated LAN client.** `debug` was settable via `POST /api/settings` and persisted to config; `run.py` then derived the dev-server `debug=`/`use_reloader=` flags from that writable value. On a Pi bound to `0.0.0.0`, anyone on the network could persist `debug=true` and, after the next service restart, get the Werkzeug interactive debugger and full tracebacks exposed to the whole LAN. Debug is now opt-in via the `SPOTIPI_DEBUG` environment variable only (in both `run.py` and the `src/app.py` entrypoint), the writable `debug` field was removed from `/api/settings`, and the dev server now binds to loopback (`127.0.0.1`) unless `HOST` is set explicitly.
+
+### 🐛 Fixes
+- **Config is now written atomically, so a power-cut mid-save can no longer silently wipe the alarm.** `save_config()` wrote the live `config/<env>.json` directly (no temp file, no fsync). An interruption mid-write left a truncated file; `load_config()` swallows the `JSONDecodeError` and falls back to defaults (`enabled: False`), so the alarm time/device/playlist/volume were silently lost and the alarm never rang — the worst failure mode for a routinely power-cycled alarm clock, and the only critical persisted file that wasn't already crash-safe. It now serializes to a sibling `.tmp` file, `fsync`s, and `os.replace()`s onto the target — the same atomic pattern already used for tokens, scheduler state and the device cache.
+
+### ⚡ Performance
+- **The dashboard clock no longer re-renders the entire app every second.** A 1s `setInterval` called `setClock()` 60×/min, reconciling the whole (~3200-line) app tree and re-running its derived computations, even though the clock only shows `HH:MM` and the sleep/snooze countdowns read from the 4s poll. It now ticks once per minute, self-correcting against the real clock by aligning each tick to the next minute boundary — ~59 wasted full reconciliations per minute removed on the Pi Zero W browser / low-end phones.
+- **The now-playing queue poll now pauses while the app is backgrounded.** The 15s `/api/playback/queue` poll had no `visibilitychange` handling (unlike `useDashboardPolling`), so a backgrounded PWA kept proxying to Spotify through the Pi forever. It now skips the fetch while `document.hidden` and refreshes immediately on return to the foreground — less constant CPU/network on the Pi and less mobile battery drain.
+
+### ♿ Accessibility
+- **Keyboard adjustments to the alarm volume slider are now saved.** The save was wired only to `onMouseUp`/`onTouchEnd`, so a keyboard user adjusting the slider with arrow keys updated the on-screen value but never POSTed it — the alarm rang at the old volume. It now persists on `change` (which fires on commit for mouse, touch and keyboard), matching the Settings volume slider.
+- **Toggle switches now show a visible keyboard focus ring.** The real checkbox is `opacity:0`, so the global `:focus-visible` outline was painted on an invisible element and never appeared on the visible track for any toggle (alarm/sleep enable, fade-in, shuffle, OLED, feature flags) — a WCAG 2.4.7 failure. The focus ring is now forwarded to the visible `.toggle-track`.
+
+### 🧹 Cleanup
+- **Removed the dead `static/css/**` stylesheet tree and the unrendered `alarm.html` / `sleep.html` / `settings.html` templates.** The served SPA links only the esbuild-bundled `static/dist/app.css` (built from `frontend/src/styles.css`); the ~20-file `static/css` `@import` graph and those three partials were never loaded or rendered, so CSS/a11y edits made there (e.g. an earlier toggle-focus fix) silently never reached users. The unused `static_css_path`/`static_js_path`/`static_icons_path` template context vars were dropped too. `AGENTS.md` now points all styling work at `frontend/src/styles.css`.
+
 ## [1.12.3] - 2026-06-26
 
 ### 🐛 Fixes

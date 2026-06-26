@@ -1343,6 +1343,15 @@ input[type="range"] {
   transform: translateX(22px);
 }
 
+/* The real checkbox is opacity:0, so the global :focus-visible outline lands on an
+   invisible element. Forward the keyboard focus ring to the visible track instead
+   so every toggle (alarm/sleep enable, fade-in, shuffle, OLED, …) shows focus —
+   WCAG 2.4.7. */
+.toggle-control input:focus-visible + .toggle-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .library-list {
   display: grid;
   gap: 8px;

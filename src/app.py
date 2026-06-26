@@ -381,9 +381,6 @@ def _register_request_hooks(app: Flask) -> None:
             'translations': translations,
             't': template_t,
             'lang': user_language,
-            'static_css_path': '/static/css/',
-            'static_js_path': '/static/js/',
-            'static_icons_path': '/static/icons/',
             'now': datetime.datetime.now(),
             'frontend_asset_version': frontend_asset_version,
         }
@@ -616,8 +613,14 @@ if __name__ == "__main__":
 
     # Development vs Production
     config = load_config()
-    debug_mode = config.get("debug", False)
+    # Security: debug is opt-in via the SPOTIPI_DEBUG env var only, never from the
+    # writable config (mirrors run.py) — prevents an unauthenticated LAN settings
+    # write from enabling the Werkzeug debugger on the next restart.
+    debug_mode = os.getenv("SPOTIPI_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
     port = int(os.getenv("PORT", 5000))
 
+    # Bind the dev server to loopback when debugging so it is never network-exposed.
+    host = "127.0.0.1" if debug_mode else "0.0.0.0"
+
     # Start with new event-driven scheduler
-    run_app(host="0.0.0.0", port=port, debug=debug_mode)
+    run_app(host=host, port=port, debug=debug_mode)

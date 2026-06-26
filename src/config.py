@@ -310,14 +310,31 @@ class ConfigManager:
                     }
 
             config_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(config_file, 'w') as f:
+
+            # Atomic write: serialize to a sibling temp file, fsync it, then
+            # os.replace() onto the target. A reader (or a Pi power-cut mid-write)
+            # therefore never sees a half-written config. This is the single most
+            # important persisted file, so it gets the same crash-safe treatment
+            # already used for tokens, scheduler state and the device cache.
+            tmp_file = config_file.with_name(config_file.name + ".tmp")
+            with open(tmp_file, 'w') as f:
                 json.dump(save_data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_file, config_file)
 
             logging.getLogger(__name__).debug(f"Config saved and validated: {config_file}")
             return True
 
-        except (IOError, json.JSONDecodeError) as e:
+        except (IOError, OSError, json.JSONDecodeError) as e:
             logging.getLogger(__name__).error(f"Failed to save config: {e}")
+            # Best-effort cleanup so a failed write never leaves a stray .tmp file.
+            try:
+                tmp_file = config_file.with_name(config_file.name + ".tmp")
+                if tmp_file.exists():
+                    tmp_file.unlink()
+            except OSError:
+                pass
             return False
     
     def get_environment(self) -> str:

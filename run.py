@@ -53,13 +53,18 @@ if __name__ == "__main__":
         default_port = 5001  # Development port
     
     port = int(os.environ.get("PORT", default_port))
-    debug_mode = bool(config.get("debug", False))
 
-    debug_override = _env_bool("SPOTIPI_DEBUG")
-    if debug_override is not None:
-        debug_mode = debug_override
+    # Security: never derive Flask/Werkzeug debug from the writable runtime config.
+    # A LAN client can flip config["debug"] via POST /api/settings; if that reached
+    # app.run(debug=True) on the next service restart it would expose the Werkzeug
+    # interactive debugger and full tracebacks on 0.0.0.0. Debug is opt-in via the
+    # SPOTIPI_DEBUG environment variable only.
+    debug_mode = _env_bool("SPOTIPI_DEBUG", False) is True
 
-    host = os.environ.get("HOST", config.get("host", "0.0.0.0"))
+    # When the dev server is enabled, default to loopback so the interactive
+    # debugger is never exposed to the network unless HOST is set explicitly.
+    default_host = "127.0.0.1" if debug_mode else config.get("host", "0.0.0.0")
+    host = os.environ.get("HOST", default_host)
     disable_reloader = _env_bool("SPOTIPI_DISABLE_RELOADER", False) is True
     force_waitress = _env_bool("SPOTIPI_FORCE_WAITRESS", False) is True
 

@@ -1,4 +1,4 @@
-# SpotiPi Agent Guidelines (v1.12.3)
+# SpotiPi Agent Guidelines (v1.12.4)
 
 This file is the canonical source of AI coding instructions for this repository.
 
@@ -70,6 +70,7 @@ This file is the canonical source of AI coding instructions for this repository.
 - Respect `prefers-reduced-motion`.
 - Preserve accessibility primitives (`aria-*`, roles, labels) for interactive and dynamic UI.
 - Use the `frontend/src/` Preact shell for new frontend behavior; do not add new feature logic to legacy `static/js/modules/`.
+- All shipped styling lives in `frontend/src/styles.css` (bundled by esbuild into `static/dist/app.css`, the only stylesheet `templates/index.html` links). Make every CSS / responsive / a11y / contrast change there. The old `static/css/**` tree and the `alarm.html`/`sleep.html`/`settings.html` partials were removed in v1.12.4 as dead code — do not reintroduce per-page CSS or those templates.
 - Keep raw API shapes behind frontend adapters/view models instead of spreading transport logic across components.
 - Reuse established UI patterns before adding new variants (loading skeletons, empty states, transitions).
 - Keep `/settings` as a surface of the same app shell unless a change explicitly requires otherwise.

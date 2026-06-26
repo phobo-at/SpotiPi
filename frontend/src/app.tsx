@@ -1421,11 +1421,20 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
   }, [bootstrap.language, pushToast]);
 
+  // The clock only renders HH:MM (plus a date), so tick once per minute aligned to
+  // the next minute boundary instead of re-rendering the entire app every second.
+  // On a Pi Zero W browser / low-end phone this drops ~59 wasted full reconciliations
+  // per minute. Self-correcting: each tick reschedules off the real clock.
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setClock(new Date());
-    }, 1000);
-    return () => window.clearInterval(timer);
+    let timeoutId = 0;
+    const tick = () => {
+      const now = new Date();
+      setClock(now);
+      const msUntilNextMinute = 60000 - (now.getSeconds() * 1000 + now.getMilliseconds());
+      timeoutId = window.setTimeout(tick, msUntilNextMinute);
+    };
+    tick();
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   useEffect(() => {
@@ -1497,6 +1506,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     let intervalId = 0;
 
     async function loadQueue() {
+      // Don't proxy to Spotify while the tab/PWA is backgrounded — mirrors the
+      // visibility-aware behaviour of useDashboardPolling so a hidden app stops
+      // hitting the Pi every 15s (saves CPU/network on the Pi and mobile battery).
+      if (typeof document !== "undefined" && document.hidden) {
+        return;
+      }
       if (networkStatus === "offline") {
         setQueueStatus("offline");
         setPlaybackQueue([]);
@@ -1540,14 +1555,23 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       }
     }
 
+    function handleVisibility() {
+      // Refresh immediately when the app is brought back to the foreground.
+      if (!document.hidden) {
+        void loadQueue();
+      }
+    }
+
     void loadQueue();
     intervalId = window.setInterval(() => {
       void loadQueue();
     }, 15000);
+    document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [dashboard.playback.current_track?.name, dashboard.playback_status, networkStatus]);
 
@@ -2572,8 +2596,21 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                   alarmVolume: Number((event.currentTarget as HTMLInputElement).value)
                 }))
               }
-              onMouseUp={() => void handleAlarmSave()}
-              onTouchEnd={() => void handleAlarmSave()}
+              // `change` fires on commit for mouse, touch AND keyboard (arrow keys),
+              // so keyboard-only volume edits are persisted too (previously the save
+              // hung only on onMouseUp/onTouchEnd and silently dropped keyboard edits).
+              // Read the committed value straight from the event and pass it to the
+              // save explicitly: on keyboard, `input` and `change` fire synchronously
+              // before Preact flushes the state update, so reading alarmForm here would
+              // persist the pre-keypress value. Mirrors the Settings volume slider.
+              onChange={(event) => {
+                const next = {
+                  ...alarmForm,
+                  alarmVolume: Number((event.currentTarget as HTMLInputElement).value)
+                };
+                setAlarmForm(next);
+                void handleAlarmSave(next);
+              }}
             />
           </div>
 

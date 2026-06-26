@@ -492,8 +492,9 @@ def api_update_settings():
                 updates["alarm_volume"] = vol
             except (TypeError, ValueError):
                 pass
-        if "debug" in app_settings:
-            updates["debug"] = bool(app_settings["debug"])
+        # Note: "debug" is intentionally NOT writable via this endpoint. Flask debug
+        # is gated on the SPOTIPI_DEBUG env var only (see run.py / src/app.py) so an
+        # unauthenticated LAN client cannot enable the Werkzeug debugger.
 
     updated_fields = sorted(updates.keys())
 
