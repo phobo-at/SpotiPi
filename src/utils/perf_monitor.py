@@ -30,6 +30,11 @@ class RouteMetrics:
 class PerfMonitor:
     """Collect high-resolution request and block timings."""
 
+    # Hard cap on distinct tracked route keys. Real apps have a few dozen routes;
+    # this is a backstop so a high-cardinality key source (e.g. an unexpected raw
+    # path) can never grow the map without bound on a memory-constrained Pi.
+    _MAX_ROUTES = 256
+
     def __init__(self) -> None:
         self._routes: Dict[str, RouteMetrics] = {}
         self._overall: RouteMetrics = RouteMetrics(samples=deque(maxlen=self._max_samples()))
@@ -52,6 +57,15 @@ class PerfMonitor:
             with self._lock:
                 metrics = self._routes.get(key)
                 if metrics is None:
+                    # Backstop against unbounded growth: once the cap is hit, fold
+                    # further distinct keys into a shared overflow bucket instead of
+                    # allocating a new RouteMetrics (deque + lock) per key forever.
+                    if len(self._routes) >= self._MAX_ROUTES:
+                        overflow = self._routes.get("<overflow>")
+                        if overflow is None:
+                            overflow = RouteMetrics(samples=deque(maxlen=self._maxlen))
+                            self._routes["<overflow>"] = overflow
+                        return overflow
                     metrics = RouteMetrics(samples=deque(maxlen=self._maxlen))
                     self._routes[key] = metrics
         return metrics

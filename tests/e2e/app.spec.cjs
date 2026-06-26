@@ -329,6 +329,31 @@ test("sheet closes with Escape and restores focus to trigger", async ({ page }) 
   })).toBeTruthy();
 });
 
+test("custom dropdown closes with Escape and restores focus to its trigger", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByTestId("settings-trigger").click();
+  await expect(page.getByTestId("settings-sheet")).toBeVisible();
+
+  const languageSelect = page.locator("#settings-language");
+  const trigger = languageSelect.locator(".device-dropdown-trigger");
+  const listbox = languageSelect.locator('[role="listbox"]');
+
+  await trigger.click();
+  await expect(listbox).toBeVisible();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+  await page.keyboard.press("Escape");
+
+  await expect(listbox).toBeHidden();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect.poll(async () => page.evaluate(() => {
+    const active = document.activeElement;
+    const trigger = document.querySelector("#settings-language .device-dropdown-trigger");
+    return active === trigger;
+  })).toBeTruthy();
+});
+
 test("sheet traps keyboard focus", async ({ page }) => {
   await page.goto("/");
 

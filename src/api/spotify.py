@@ -17,8 +17,8 @@ import re
 import socket
 import threading
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -2081,8 +2081,29 @@ def start_playback(
     )
 
 # --- Track count caching for random offset (playlist/album) ---
-@lru_cache(maxsize=256)
+# Keyed on (uri, kind) only — NOT the access token. The token rotates ~hourly, so
+# keying on it made every entry unreachable after a refresh (re-fetching unchanged
+# playlist/album metadata each hour) and retained up to 256 stale tokens in memory.
+# A TTL keeps the old code's natural ~hourly refresh cadence so a resized playlist/
+# album can't keep a stale total indefinitely (a too-large total would feed an
+# out-of-range shuffle offset). Bounded LRU; only successful lookups are cached.
+_TRACK_TOTAL_CACHE_MAX = 256
+_TRACK_TOTAL_TTL = 3600.0  # seconds
+_track_total_cache: "OrderedDict[Tuple[str, str], Tuple[int, float]]" = OrderedDict()
+_track_total_cache_lock = threading.Lock()
+
+
 def _get_track_total_cached(token: str, uri: str, kind: str) -> int:
+    key = (uri, kind)
+    now = time.time()
+    with _track_total_cache_lock:
+        cached = _track_total_cache.get(key)
+        if cached is not None:
+            total, fetched_at = cached
+            if now - fetched_at < _TRACK_TOTAL_TTL:
+                _track_total_cache.move_to_end(key)
+                return total
+            del _track_total_cache[key]  # expired — re-fetch below
     try:
         if kind == 'playlist':
             playlist_id = uri.split(":")[-1]
@@ -2101,7 +2122,13 @@ def _get_track_total_cached(token: str, uri: str, kind: str) -> int:
                 timeout=8
             )
         if meta_resp.status_code == 200:
-            return meta_resp.json().get('tracks', {}).get('total', 0)
+            total = meta_resp.json().get('tracks', {}).get('total', 0)
+            with _track_total_cache_lock:
+                _track_total_cache[key] = (total, time.time())
+                _track_total_cache.move_to_end(key)
+                while len(_track_total_cache) > _TRACK_TOTAL_CACHE_MAX:
+                    _track_total_cache.popitem(last=False)
+            return total
     except Exception:
         pass
     return 0

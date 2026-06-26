@@ -341,10 +341,20 @@ interface ToastStackProps {
 }
 
 function ToastStack({ items, onDismiss, dismissLabel }: ToastStackProps) {
+  // No live region on the container: that + aria-atomic="true" made assistive tech
+  // re-announce the entire stack on every add/auto-dismiss. Instead each toast is its
+  // own atomic live region — errors assertive (role="alert", interrupts) so failures
+  // aren't missed, info/success polite (role="status").
   return (
-    <div class="toast-stack" aria-live="polite" aria-atomic="true">
+    <div class="toast-stack">
       {items.map((item) => (
-        <div class={`toast toast-${item.type}`} key={item.id}>
+        <div
+          class={`toast toast-${item.type}`}
+          key={item.id}
+          role={item.type === "error" ? "alert" : "status"}
+          aria-live={item.type === "error" ? "assertive" : "polite"}
+          aria-atomic="true"
+        >
           <span>{item.message}</span>
           <button
             type="button"
@@ -628,9 +638,19 @@ interface CustomSelectProps {
   id?: string;
 }
 
-function CustomSelect({ value, options, onChange, id }: CustomSelectProps) {
+/**
+ * Shared keyboard + dismissal behaviour for the custom listbox dropdowns
+ * (CustomSelect, DevicePicker). The markup already advertised role="listbox"/
+ * "option" but implemented none of the listbox keyboard contract, so keyboard /
+ * screen-reader users could open the list but not dismiss it (only mousedown-outside
+ * closed it). This adds: Escape to close with focus returned to the trigger,
+ * ArrowDown on the trigger to open, ArrowUp/Down to move between options, focus moved
+ * to the selected option on open, and focusout-based dismissal when focus leaves.
+ */
+function useListboxDropdown() {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -643,16 +663,105 @@ function CustomSelect({ value, options, onChange, id }: CustomSelectProps) {
     return () => document.removeEventListener("mousedown", handleOutside);
   }, [open]);
 
+  // On open, move focus to the selected option (or the first) so keyboard users
+  // land inside the list instead of being stranded on the trigger.
+  useEffect(() => {
+    if (!open) return;
+    const list = containerRef.current?.querySelector('[role="listbox"]');
+    if (!list) return;
+    const selected = list.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]');
+    const first = list.querySelector<HTMLButtonElement>('[role="option"]');
+    (selected ?? first)?.focus();
+  }, [open]);
+
+  const close = useCallback((focusTrigger: boolean) => {
+    setOpen(false);
+    if (focusTrigger) {
+      // Defer until after the list is removed from the DOM. Focusing synchronously
+      // races the re-render that unmounts the focused option, which can bounce focus
+      // to <body> before our focus() lands on some browsers.
+      requestAnimationFrame(() => triggerRef.current?.focus());
+    }
+  }, []);
+
+  const handleListKeyDown = useCallback((e: JSX.TargetedKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      // Close only the dropdown, not the enclosing sheet (whose document-level
+      // Escape handler would otherwise also fire). A second Escape closes the sheet.
+      e.stopPropagation();
+      close(true);
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const list = containerRef.current?.querySelector('[role="listbox"]');
+      if (!list) return;
+      const options = Array.from(list.querySelectorAll<HTMLButtonElement>('[role="option"]'));
+      if (!options.length) return;
+      const current = options.findIndex((option) => option === document.activeElement);
+      const next = e.key === "ArrowDown"
+        ? (current + 1) % options.length
+        : (current <= 0 ? options.length - 1 : current - 1);
+      options[next].focus();
+    }
+  }, [close]);
+
+  const handleTriggerKeyDown = useCallback((e: JSX.TargetedKeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "ArrowDown" && !open) {
+      e.preventDefault();
+      setOpen(true);
+    } else if (e.key === "Escape" && open) {
+      e.preventDefault();
+      e.stopPropagation();
+      close(true);
+    }
+  }, [open, close]);
+
+  const handleFocusOut = useCallback((e: JSX.TargetedFocusEvent<HTMLDivElement>) => {
+    const nextTarget = e.relatedTarget as Node | null;
+    if (nextTarget && containerRef.current?.contains(nextTarget)) {
+      return;
+    }
+    setOpen(false);
+  }, []);
+
+  return {
+    open,
+    setOpen,
+    close,
+    containerRef,
+    triggerRef,
+    handleListKeyDown,
+    handleTriggerKeyDown,
+    handleFocusOut,
+  };
+}
+
+function CustomSelect({ value, options, onChange, id }: CustomSelectProps) {
+  const {
+    open,
+    setOpen,
+    close,
+    containerRef,
+    triggerRef,
+    handleListKeyDown,
+    handleTriggerKeyDown,
+    handleFocusOut,
+  } = useListboxDropdown();
+
   const selected = options.find((o) => o.value === value);
 
   return (
-    <div class="device-dropdown" ref={containerRef} id={id}>
+    <div class="device-dropdown" ref={containerRef} id={id} onFocusOut={handleFocusOut}>
       <button
+        ref={triggerRef}
         type="button"
         class={`field-input device-dropdown-trigger ${open ? "is-open" : ""}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={handleTriggerKeyDown}
       >
         <span>{selected?.label ?? value}</span>
         <span class={`device-dropdown-chevron ${open ? "is-open" : ""}`}>
@@ -660,7 +769,7 @@ function CustomSelect({ value, options, onChange, id }: CustomSelectProps) {
         </span>
       </button>
       {open ? (
-        <div class="device-dropdown-list" role="listbox">
+        <div class="device-dropdown-list" role="listbox" onKeyDown={handleListKeyDown}>
           {options.map((opt) => {
             const isSelected = opt.value === value;
             return (
@@ -672,7 +781,7 @@ function CustomSelect({ value, options, onChange, id }: CustomSelectProps) {
                 class={`device-dropdown-option ${isSelected ? "is-selected" : ""}`}
                 onClick={() => {
                   onChange(opt.value);
-                  setOpen(false);
+                  close(true);
                 }}
               >
                 <span class="device-dropdown-option-name">{opt.label}</span>
@@ -697,19 +806,16 @@ function DevicePicker({
   t,
   language
 }: DevicePickerProps) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
-  }, [open]);
+  const {
+    open,
+    setOpen,
+    close,
+    containerRef,
+    triggerRef,
+    handleListKeyDown,
+    handleTriggerKeyDown,
+    handleFocusOut,
+  } = useListboxDropdown();
 
   const emptyMessage = offline
     ? t("status_offline", localized(language, "Offline mode", "Offline-Modus"))
@@ -733,14 +839,16 @@ function DevicePicker({
           <p>{emptyMessage}</p>
         </div>
       ) : (
-        <div class="device-select-row" ref={containerRef}>
+        <div class="device-select-row" ref={containerRef} onFocusOut={handleFocusOut}>
           <div class="device-dropdown">
             <button
+              ref={triggerRef}
               type="button"
               class={`field-input device-dropdown-trigger ${open ? "is-open" : ""}`}
               aria-haspopup="listbox"
               aria-expanded={open}
               onClick={() => setOpen((v) => !v)}
+              onKeyDown={handleTriggerKeyDown}
             >
               <span class={selectedDevice ? "" : "device-dropdown-placeholder"}>
                 {selectedDevice
@@ -755,7 +863,7 @@ function DevicePicker({
               </span>
             </button>
             {open ? (
-              <div class="device-dropdown-list" role="listbox">
+              <div class="device-dropdown-list" role="listbox" onKeyDown={handleListKeyDown}>
                 {devices.map((device) => {
                   const key = device.id || device.name;
                   const isSelected =
@@ -769,7 +877,7 @@ function DevicePicker({
                       class={`device-dropdown-option ${isSelected ? "is-selected" : ""}`}
                       onClick={() => {
                         onSelect(device);
-                        setOpen(false);
+                        close(true);
                       }}
                     >
                       <span class="device-dropdown-option-name">{device.name}</span>

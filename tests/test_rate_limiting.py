@@ -100,6 +100,26 @@ def test_different_algorithms(client):
     assert {"sliding_window", "token_bucket"}.issubset(algorithms)
 
 
+def test_resolve_client_id_ignores_user_agent(app):
+    """Rotating the User-Agent must NOT change the rate-limit bucket key.
+
+    Previously the key was `ip:hash(user_agent)`, letting one IP multiply its budget
+    ~65k× by varying the UA. The key must now be the bare client IP.
+    """
+    limiter = SimpleRateLimiter()
+
+    with app.test_request_context(
+        "/", environ_base={"REMOTE_ADDR": "192.168.1.50"}, headers={"User-Agent": "AgentOne"}
+    ):
+        id_one = limiter._resolve_client_id()
+    with app.test_request_context(
+        "/", environ_base={"REMOTE_ADDR": "192.168.1.50"}, headers={"User-Agent": "totally-different-UA/9.9"}
+    ):
+        id_two = limiter._resolve_client_id()
+
+    assert id_one == id_two == "192.168.1.50"
+
+
 def test_low_power_mode_keeps_rate_limiter_enabled(monkeypatch):
     monkeypatch.setenv("SPOTIPI_LOW_POWER", "1")
     monkeypatch.delenv("SPOTIPI_DISABLE_RATE_LIMIT", raising=False)

@@ -224,14 +224,20 @@ def api_dashboard_status():
             reason="api.dashboard"
         )
 
-    # Only trigger dedicated snapshot refreshers if the combined dashboard one is not already running.
-    if (force_refresh or playback_meta["pending"]) and not dashboard_meta.get("refreshing"):
+    # The combined dashboard refresh already fetches BOTH playback and devices, so only
+    # spawn the dedicated refreshers when no combined refresh is in flight (whether we
+    # just started it above or it was already running). Read the flag via the
+    # lightweight is_refreshing() accessor — re-reading snapshot() here would deep-copy
+    # the whole payload just for one boolean on the Pi Zero W's hottest endpoint.
+    dashboard_refreshing = _dashboard_snapshot.is_refreshing()
+
+    if (force_refresh or playback_meta["pending"]) and not dashboard_refreshing:
         _playback_snapshot.schedule_refresh(
             _refresh_playback_snapshot,
             force=force_refresh,
             reason="api.dashboard.playback"
         )
-    if (force_refresh or devices_meta["pending"]) and not dashboard_meta.get("refreshing"):
+    if (force_refresh or devices_meta["pending"]) and not dashboard_refreshing:
         _devices_snapshot.schedule_refresh(
             _refresh_devices_snapshot,
             force=force_refresh,

@@ -222,9 +222,11 @@ def api_music_library_sections():
             error_code="insufficient_scope",
             data={"required_scope": scope_exc.required_scope},
         )
-    except Exception as e:
+    except Exception:
+        # Log the detail server-side only; this GET route is reachable without auth,
+        # so don't reflect raw exception strings (internal paths/state) to the client.
         logging.exception("Error loading partial music library")
-        return api_response(False, message=str(e), status=500, error_code="music_library_partial_error")
+        return api_response(False, message=t_api("internal_server_error", request), status=500, error_code="music_library_partial_error")
 
 
 @music_bp.route("/api/artist-albums/<artist_id>")
@@ -327,6 +329,7 @@ def api_artist_top_tracks(artist_id):
         
         return api_response(True, data={"artist_id": artist_id, "tracks": tracks, "total": len(tracks)})
         
-    except Exception as e:
+    except Exception:
+        # Log detail server-side only; don't reflect raw exception strings to clients.
         logging.exception("Error loading artist top tracks")
-        return api_response(False, message=f"Failed to load artist top tracks: {str(e)}", status=500, error_code="artist_tracks_failed")
+        return api_response(False, message=t_api("internal_server_error", request), status=500, error_code="artist_tracks_failed")

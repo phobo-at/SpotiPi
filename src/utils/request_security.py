@@ -124,14 +124,18 @@ def is_trusted_local_request(request_obj: Request) -> bool:
     return bool(client_ip.is_loopback or client_ip.is_private or client_ip.is_link_local)
 
 
-def matches_origin(origin: str, allowed_entry: str) -> bool:
-    """Check if a request origin matches an allowed CORS entry."""
+def matches_origin(origin: str, allowed_entry: str, *, allow_wildcard: bool = True) -> bool:
+    """Check if a request origin matches an allowed CORS entry.
+
+    `allow_wildcard=False` makes a `*` entry NOT match — used by the CSRF/same-origin
+    decision, where a wildcard must never blanket-approve a cross-origin submission.
+    """
     if not allowed_entry:
         return False
 
     allowed_entry = allowed_entry.strip()
     if allowed_entry == "*":
-        return True
+        return allow_wildcard
 
     if origin == "null":
         return allowed_entry.lower() == "null"
@@ -171,8 +175,18 @@ def matches_origin(origin: str, allowed_entry: str) -> bool:
     return True
 
 
-def resolve_cors_allow_origin(request_obj: Request, request_origin: str | None = None) -> str | None:
-    """Resolve the concrete Access-Control-Allow-Origin value for this request."""
+def resolve_cors_allow_origin(
+    request_obj: Request,
+    request_origin: str | None = None,
+    *,
+    allow_wildcard: bool = True,
+) -> str | None:
+    """Resolve the concrete Access-Control-Allow-Origin value for this request.
+
+    `allow_wildcard=False` refuses to honor a `*` CORS config — used by the
+    same-origin/CSRF check so a wildcard read-CORS policy can't also disable the
+    cross-site protection on state-changing requests.
+    """
     request_origin = request_origin if request_origin is not None else request_obj.headers.get("Origin")
     if not request_origin:
         return None
@@ -180,11 +194,11 @@ def resolve_cors_allow_origin(request_obj: Request, request_origin: str | None =
     allowed_origins_env = os.getenv("SPOTIPI_CORS_ORIGINS", "")
     if allowed_origins_env.strip():
         allowed_entries = [entry.strip() for entry in allowed_origins_env.split(",") if entry.strip()]
-        if any(entry == "*" for entry in allowed_entries):
+        if allow_wildcard and any(entry == "*" for entry in allowed_entries):
             return request_origin
         if request_origin == "null" and any(entry.lower() == "null" for entry in allowed_entries):
             return "null"
-        if any(matches_origin(request_origin, entry) for entry in allowed_entries):
+        if any(matches_origin(request_origin, entry, allow_wildcard=allow_wildcard) for entry in allowed_entries):
             return request_origin
         return None
 
@@ -317,7 +331,12 @@ def is_same_origin_submission(request_obj: Request) -> bool:
     if origin:
         if origin == "null":
             return False
-        return resolve_cors_allow_origin(request_obj, request_origin=origin) == origin
+        # Same-origin is always accepted. For cross-origin, require an explicit
+        # (non-wildcard) allowlist match: a `*` CORS policy must NOT satisfy the CSRF
+        # check, otherwise any site could drive state-changing requests at the device.
+        if matches_origin(origin, request_obj.host):
+            return True
+        return resolve_cors_allow_origin(request_obj, request_origin=origin, allow_wildcard=False) == origin
 
     referer = request_obj.headers.get("Referer")
     if referer:
@@ -325,7 +344,9 @@ def is_same_origin_submission(request_obj: Request) -> bool:
         if not parsed_referer.scheme or not parsed_referer.netloc:
             return False
         referer_origin = f"{parsed_referer.scheme}://{parsed_referer.netloc}"
-        return resolve_cors_allow_origin(request_obj, request_origin=referer_origin) == referer_origin
+        if matches_origin(referer_origin, request_obj.host):
+            return True
+        return resolve_cors_allow_origin(request_obj, request_origin=referer_origin, allow_wildcard=False) == referer_origin
 
     if sec_fetch_site in {"same-origin", "same-site", "none"}:
         return True

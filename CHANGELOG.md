@@ -5,6 +5,32 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.5] - 2026-06-27
+
+This release works through the remaining medium/low findings from the UI/performance/security review (the high-priority ones shipped in v1.12.4).
+
+### 🔒 Security
+- **Rate limiting now keys on the client IP alone.** The bucket key mixed in a hash of the `User-Agent`, so a single source could multiply its effective request budget ~65k× just by rotating the UA string — defeating the per-IP throttle that protects the Pi and the Spotify API. The UA component is gone; the exempt-IP check no longer splits on `:` (which would have corrupted IPv6 addresses).
+- **A wildcard CORS policy no longer disables CSRF protection.** With `SPOTIPI_CORS_ORIGINS=*`, the same-origin/CSRF check (`is_same_origin_submission`) echoed any caller's Origin and accepted it, so any website could drive state-changing requests. The check now accepts same-origin unconditionally but requires an explicit, non-wildcard allowlist match for cross-origin requests; `*` is still honored for the read-only `Access-Control-Allow-Origin` header (via a new `allow_wildcard` flag).
+- **Unauthenticated music endpoints no longer reflect raw exception strings.** `GET /api/music-library/sections` and `/api/artist-top-tracks/<id>` returned `str(e)` (internal paths/state) to any caller; they now return a generic localized message and log the detail server-side only.
+- **Documented the token-at-rest threat model.** The "encryption at rest" derives its key from material on the same SD card as the token, so it is obfuscation — not protection against a stolen/imaged card. The module docstring now says so and points at the `0o600` file permissions as the real protection.
+
+### ⚡ Performance
+- **The dashboard status endpoint no longer spawns redundant snapshot refreshers.** The dedup guard read the snapshot metadata captured *before* the combined refresh was scheduled, so it almost always also started the dedicated playback *and* devices refreshers — three daemon threads (and duplicate Spotify calls) instead of one on the single-core Pi Zero W. The guard now re-reads the metadata after scheduling so it sees the combined refresh running.
+- **The performance monitor's route map is now bounded.** Unmatched/404 requests were keyed on the raw URL path, so scanner/crawler traffic allocated a permanent metrics entry per distinct path (unbounded memory growth). Unmatched requests are bucketed under a single `<unmatched>` label, with a hard cap + shared overflow bucket as a backstop.
+- **The HTTP transport layer only retries idempotent verbs now.** `POST`/`PATCH` were retried, so a read-timeout on `POST /me/player/next` | `/previous` | `/queue` could skip or queue a track more than once. Only `GET`/`PUT`/`DELETE` are retried at the transport layer; non-idempotent calls own their retries in application code.
+- **The playlist/album track-total cache survives token refreshes.** It was keyed on the rotating access token, so every entry became unreachable after the ~hourly refresh (re-fetching unchanged metadata) and up to 256 stale tokens lingered in memory. It is now keyed on `(uri, kind)` with a bounded LRU, and no longer caches the error fallback.
+- **Removed unnecessary frontend effect churn:** `ensureLibrarySection` no longer takes `collections` as a dependency (it reads the latest value via a ref), so it keeps a stable identity instead of re-running its effect on every collection update.
+
+### ♿ Accessibility
+- **The custom speaker/language dropdowns now implement the listbox keyboard contract.** They advertised `role="listbox"`/`"option"` but could only be dismissed by clicking outside (impossible for keyboard/screen-reader users). They now support Escape to close with focus returned to the trigger (without also closing the enclosing sheet), ArrowDown to open, ArrowUp/Down to move between options, focus moved to the selected option on open, and focusout-based dismissal. The shared behaviour lives in one `useListboxDropdown` hook used by both dropdowns.
+- **Error toasts are now announced assertively.** All toasts shared one `aria-live="polite"` + `aria-atomic="true"` container, so failures were announced late and every change re-read the whole stack. Each toast is now its own atomic live region — errors `role="alert"` (assertive), info/success `role="status"` (polite).
+- **Bumped sub-44px tap targets** (`.library-row-action`, banner ghost buttons) to a 44px minimum hit area.
+
+### 🎨 UI
+- **Aligned the PWA chrome with the live dark theme.** The manifest `theme_color`/`background_color` and the `index.html` `theme-color` were the old green/grey palette (`#1db954`/`#121212`), tinting the Android status bar green and flashing grey on launch; they now use the app background `#071018`.
+- **Added a maskable PWA icon** (`icon-pwa-maskable-512.png`, with safe-zone padding) so Android adaptive-icon launchers no longer letterbox the home-screen icon.
+
 ## [1.12.4] - 2026-06-27
 
 ### 🔒 Security

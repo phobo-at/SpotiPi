@@ -57,12 +57,18 @@ class TestRetryConfiguration:
         assert retry.total >= 3  # At least 3 retries
         assert retry.total <= 10  # Not more than 10
         
-    def test_retry_config_allows_all_http_methods(self):
-        """Test that retry works for all HTTP methods"""
+    def test_retry_config_only_retries_idempotent_methods(self):
+        """Transport-layer retries are restricted to idempotent verbs.
+
+        POST/PATCH are non-idempotent on the Spotify API (e.g. POST /me/player/next
+        | /previous | /queue), so retrying them on a read-timeout could skip/queue a
+        track more than once. Only GET/PUT/DELETE may be retried at this layer.
+        """
         retry = _build_retry_configuration()
-        
-        expected_methods = ["GET", "POST", "PUT", "DELETE", "PATCH"]
-        assert set(retry.allowed_methods) == set(expected_methods)
+
+        assert set(retry.allowed_methods) == {"GET", "PUT", "DELETE"}
+        assert "POST" not in retry.allowed_methods
+        assert "PATCH" not in retry.allowed_methods
 
 
 @pytest.mark.skipif(not HTTP_AVAILABLE, reason="HTTP module not available")

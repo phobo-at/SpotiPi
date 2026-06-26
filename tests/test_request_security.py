@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import base64
 
+from flask import request
+
 from src.utils.rate_limiting import RateLimitRule, SimpleRateLimiter
+from src.utils.request_security import is_same_origin_submission, resolve_cors_allow_origin
 
 
 def _basic_auth_headers(username: str, password: str) -> dict[str, str]:
@@ -119,6 +122,41 @@ def test_default_cors_allows_exact_default_host(client):
 
     assert response.status_code == 200
     assert response.headers["Access-Control-Allow-Origin"] == "http://spotipi.local:3000"
+
+
+def test_wildcard_cors_does_not_satisfy_csrf_check(app, monkeypatch):
+    """A wildcard read-CORS policy must NOT disable the same-origin/CSRF protection."""
+    monkeypatch.setenv("SPOTIPI_CORS_ORIGINS", "*")
+
+    # Cross-origin state-changing request is rejected despite the wildcard.
+    with app.test_request_context(
+        "/api/settings", method="POST", headers={"Origin": "https://evil.example"}
+    ):
+        assert is_same_origin_submission(request) is False
+
+    # Same-origin state-changing request is still accepted.
+    with app.test_request_context(
+        "/api/settings", method="POST", base_url="http://localhost", headers={"Origin": "http://localhost"}
+    ):
+        assert is_same_origin_submission(request) is True
+
+
+def test_wildcard_cors_still_echoes_origin_for_read_cors_header(app, monkeypatch):
+    """The read CORS header still honors '*' (allow_wildcard default True)."""
+    monkeypatch.setenv("SPOTIPI_CORS_ORIGINS", "*")
+
+    with app.test_request_context("/healthz", headers={"Origin": "https://anything.example"}):
+        assert (
+            resolve_cors_allow_origin(request, request_origin="https://anything.example")
+            == "https://anything.example"
+        )
+        # …but the CSRF-scoped resolution refuses to honor the wildcard.
+        assert (
+            resolve_cors_allow_origin(
+                request, request_origin="https://anything.example", allow_wildcard=False
+            )
+            is None
+        )
 
 
 def test_rate_limiter_ignores_spoofed_forwarded_for_by_default(app):

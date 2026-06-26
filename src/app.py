@@ -202,7 +202,11 @@ def _register_request_hooks(app: Flask) -> None:
         """Capture request start timestamp for perf monitoring."""
         try:
             g.perf_started = time.perf_counter()
-            g.perf_route = request.endpoint or request.path
+            # Use the matched endpoint name as the perf key, never the raw URL path:
+            # unmatched/404 requests have endpoint=None and a path that varies per
+            # request, which would grow the perf route map unboundedly (scanner/crawler
+            # traffic). Bucket all unmatched requests under a single fixed label.
+            g.perf_route = request.endpoint or "<unmatched>"
             g.perf_method = request.method
             g.perf_recorded = False
         except Exception:

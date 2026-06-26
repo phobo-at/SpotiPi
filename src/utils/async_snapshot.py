@@ -48,6 +48,15 @@ class AsyncSnapshot:
             }
         return data_copy, meta
 
+    def is_refreshing(self) -> bool:
+        """Lightweight check whether a background refresh is currently in flight.
+
+        Unlike snapshot(), this does not deep-copy the payload — use it on hot paths
+        that only need the refreshing flag (e.g. dashboard refresh dedup).
+        """
+        with self._lock:
+            return self._refreshing
+
     def mark_stale(self) -> None:
         """Force the snapshot to be considered stale."""
         with self._lock:

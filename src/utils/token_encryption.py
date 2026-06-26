@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """
 🔐 Token Encryption Module for SpotiPi
-Provides secure token storage with encryption at rest.
-Uses Fernet symmetric encryption with machine-derived keys.
-Designed for single-user LAN deployment on Pi Zero W.
+Obfuscates Spotify tokens at rest using Fernet symmetric encryption.
+
+THREAT MODEL — read before relying on this for confidentiality:
+The Fernet key is derived from machine-local material (`/etc/machine-id`, hostname,
+USER) that lives on the SAME SD card as the encrypted token. Anyone who can image
+the card can re-derive the key and decrypt the token, so this provides NO meaningful
+protection against a stolen/copied card or backup — treat it as obfuscation, not
+encryption-at-rest security. The real protection for the token file is the restricted
+filesystem permissions (0o700 dir / 0o600 file), not the cipher. Bind the key to an
+off-card secret (passphrase / TPM / secure element) if true at-rest confidentiality
+is ever required. Designed for single-user LAN deployment on Pi Zero W.
 """
 
 import base64

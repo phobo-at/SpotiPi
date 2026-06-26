@@ -72,6 +72,12 @@ export function useLibraryData({
   const [collections, setCollections] = useState<Record<LibrarySection, CollectionState>>(
     createCollectionMap()
   );
+  // Mirror the latest collections into a ref so ensureLibrarySection can read current
+  // status without taking `collections` as a dependency — otherwise it gets a new
+  // identity on every collection update and re-runs its consuming effect each time.
+  // The functional setCollections guard below remains the authoritative status check.
+  const collectionsRef = useRef(collections);
+  collectionsRef.current = collections;
   const [artistDrilldown, setArtistDrilldown] = useState<ArtistDrilldown>({
     artist: null,
     status: "idle",
@@ -90,7 +96,7 @@ export function useLibraryData({
       return;
     }
 
-    const existing = collections[section];
+    const existing = collectionsRef.current[section];
     if (existing.status === "loading" || existing.status === "ready") {
       return;
     }
@@ -160,7 +166,7 @@ export function useLibraryData({
         }
       }));
     }
-  }, [collections, enabled, language, t]);
+  }, [enabled, language, t]);
 
   useEffect(() => {
     if (surface === "alarm" || surface === "sleep" || surface === "play") {

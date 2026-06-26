@@ -95,7 +95,13 @@ def _with_default_timeout(
 
 def _build_retry_configuration() -> Retry:
     status_forcelist = [429, 500, 502, 503, 504]
-    allowed_methods = ["GET", "POST", "PUT", "DELETE", "PATCH"]
+    # Only retry idempotent verbs at the transport layer. POST/PATCH are
+    # non-idempotent on the Spotify API (POST /me/player/next | /previous |
+    # /queue change state), so a read-timeout retry could skip/queue twice.
+    # PUT (play/volume/transfer) and DELETE are idempotent and safe to retry;
+    # non-idempotent calls (token refresh POST, alarm playback) own their
+    # retries at the application layer.
+    allowed_methods = ["GET", "PUT", "DELETE"]
     backoff = float(os.getenv("SPOTIPI_HTTP_BACKOFF_FACTOR", "0.6"))
     total = int(os.getenv("SPOTIPI_HTTP_RETRY_TOTAL", "5"))
     connect = int(os.getenv("SPOTIPI_HTTP_RETRY_CONNECT", "3"))

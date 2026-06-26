@@ -90,10 +90,11 @@ class SimpleRateLimiter:
     # Core limiter
     # ------------------------------------------------------------------
     def _resolve_client_id(self) -> str:
-        ip = get_effective_client_ip(request)
-        user_agent = request.headers.get("User-Agent", "")[:64]
-        ua_hash = hash(user_agent) & 0xFFFF
-        return f"{ip}:{ua_hash:x}"
+        # Key the limiter on the resolved client IP ALONE. Previously the bucket
+        # key mixed in a hash of the User-Agent, so a single source could multiply
+        # its budget ~65k× just by rotating the UA string — defeating the per-IP
+        # throttle that protects the Pi Zero and the Spotify API from overload.
+        return get_effective_client_ip(request)
 
     def check_rate_limit(self, rule_name: str, client_id: Optional[str] = None) -> RateLimitStatus:
         if not self._enabled:
@@ -106,7 +107,9 @@ class SimpleRateLimiter:
         if client_id is None:
             client_id = self._resolve_client_id()
 
-        client_ip = client_id.split(":", 1)[0]
+        # client_id is the bare client IP (no UA suffix), so use it directly for the
+        # exempt check — never split on ":" (that would corrupt IPv6 addresses).
+        client_ip = client_id
         if client_ip in rule.exempt_ips:
             return RateLimitStatus(0, 999999, time.time() + 3600, False)
 
