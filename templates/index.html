@@ -8,6 +8,10 @@
   <link rel="modulepreload" href="{{ url_for('static', filename='dist/app.js', v=frontend_asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='dist/app.css', v=frontend_asset_version) }}">
 
+  <!-- Warm up the connection to Spotify's image CDN so the first album artwork paints sooner -->
+  <link rel="preconnect" href="https://i.scdn.co" crossorigin>
+  <link rel="dns-prefetch" href="https://i.scdn.co">
+
   <!-- PWA Icons & Manifest -->
   <link rel="icon" href="{{ url_for('static', filename='icons/icon-pwa-dark-180.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-pwa-dark-180.png') }}">

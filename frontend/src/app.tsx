@@ -2271,7 +2271,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           <section class="player-card" data-testid="player-card">
             <div class="player-artwork">
               {safeCurrentTrackImage ? (
-                <img src={safeCurrentTrackImage} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                <img src={safeCurrentTrackImage} alt="" loading="eager" fetchpriority="high" referrerPolicy="no-referrer" />
               ) : (
                 <div
                   class="artwork-fallback player-artwork-fallback"

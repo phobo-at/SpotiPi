@@ -16,7 +16,7 @@ interface UseSettingsMutationsOptions {
   setSettings: (next: SettingsData | ((current: SettingsData) => SettingsData)) => void;
   setBusyAction: (action: string | null) => void;
   pushToast: (type: ToastItem["type"], message: string) => void;
-  refreshDashboard: (force?: boolean) => Promise<void>;
+  refreshDashboard: (force?: boolean) => Promise<boolean>;
 }
 
 interface UseSettingsMutationsResult {

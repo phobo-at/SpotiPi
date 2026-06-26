@@ -3,7 +3,7 @@ const { expect, test } = require("@playwright/test");
 
 const BOOTSTRAP_SCRIPT_RE = /(<script id="spotipi-bootstrap" type="application\/json">)([\s\S]*?)(<\/script>)/;
 
-async function gotoWithBootstrapOverride(page, overrideBootstrap) {
+async function gotoWithBootstrapOverride(page, overrideBootstrap, { go = true } = {}) {
   await page.route("**/*", async (route, request) => {
     const url = new URL(request.url());
     if (request.resourceType() !== "document" || url.pathname !== "/") {
@@ -26,14 +26,40 @@ async function gotoWithBootstrapOverride(page, overrideBootstrap) {
     await route.fulfill({ response, body: patchedHtml });
   });
 
-  await page.goto("/");
+  if (go) {
+    await page.goto("/");
+  }
 }
 
 async function gotoWithDashboardOverride(page, overrideDashboard) {
-  await gotoWithBootstrapOverride(page, (bootstrap) => ({
-    ...bootstrap,
-    dashboard: overrideDashboard(bootstrap.dashboard)
-  }));
+  // The SPA now polls /api/dashboard/status eagerly on mount (and fast-retries while a
+  // snapshot is still warming), so the injected bootstrap dashboard would otherwise be
+  // overwritten by the live dev-server response within milliseconds. Mock the endpoint to
+  // echo back the same overridden dashboard, keeping the injected state stable for the
+  // assertions. The returned `state` is mutable so tests that persist a change (e.g. the
+  // inline alarm toggle, which is bound to dashboard state) can keep the polled response
+  // consistent with what they just saved.
+  const state = { dashboard: null };
+
+  await gotoWithBootstrapOverride(
+    page,
+    (bootstrap) => {
+      state.dashboard = overrideDashboard(bootstrap.dashboard);
+      return { ...bootstrap, dashboard: state.dashboard };
+    },
+    { go: false }
+  );
+
+  await page.route("**/api/dashboard/status**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, data: state.dashboard })
+    });
+  });
+
+  await page.goto("/");
+  return state;
 }
 
 test("dashboard shell renders primary surfaces without critical accessibility issues", async ({ page }) => {
@@ -223,7 +249,7 @@ test("alarm card inline toggle saves enabled state without opening the sheet", a
   let savedEnabled;
 
   // Needs a valid device + time so the save handler's activation guards pass.
-  await gotoWithDashboardOverride(page, (dashboard) => ({
+  const state = await gotoWithDashboardOverride(page, (dashboard) => ({
     ...dashboard,
     alarm: {
       ...dashboard.alarm,
@@ -239,6 +265,12 @@ test("alarm card inline toggle saves enabled state without opening the sheet", a
   await page.route("**/save_alarm", async (route, request) => {
     const params = new URLSearchParams(request.postData() || "");
     savedEnabled = params.get("enabled");
+    // Keep the polled dashboard consistent with the persisted toggle so a background
+    // refresh can't flip the inline toggle back to its injected (enabled) state.
+    state.dashboard = {
+      ...state.dashboard,
+      alarm: { ...state.dashboard.alarm, enabled: savedEnabled === "on" }
+    };
     await route.fulfill({
       status: 200,
       contentType: "application/json",

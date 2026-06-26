@@ -5,6 +5,11 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.1] - 2026-06-26
+
+### ⚡ Performance
+- **Faster cold open: now-playing state and album artwork appear in ~1s instead of ~8–12s.** On opening the PWA the dashboard used to wait a full poll interval (4–6s) before its first request, and because the status endpoint never blocks for fresh data, the real playback snapshot only arrived on the *second* poll — another 4–6s later. The dashboard hook now (1) fires an eager poll on mount instead of waiting for the first `setInterval` tick, and (2) fast-retries (~700ms, capped) while the snapshot is still warming, then settles back to the normal cadence. The server also kicks a non-blocking snapshot refresh during the index render, so the Spotify fetch is already in flight before the SPA's first poll. The hero album artwork now loads eagerly (`loading="eager"` + `fetchpriority="high"`) and the shell preconnects to Spotify's image CDN (`i.scdn.co`) so the cover paints sooner. No change to the `/api/dashboard/status` 202-while-pending contract or to Pi-Zero request-thread guardrails.
+
 ## [1.12.0] - 2026-06-17
 
 ### ✨ Features

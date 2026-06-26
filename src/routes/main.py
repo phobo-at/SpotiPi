@@ -326,6 +326,18 @@ def _build_index_template_data(*, initial_surface: str = "home") -> dict:
     playback_snapshot, playback_meta = (None, {}) if _playback_snapshot is None else _playback_snapshot.snapshot()
     devices_snapshot, devices_meta = (None, {}) if _devices_snapshot is None else _devices_snapshot.snapshot()
 
+    # Warm the snapshot during the index render so the background Spotify fetch is already
+    # in flight before the SPA fires its first poll. Non-blocking (schedule_refresh spawns a
+    # daemon thread); the in-flight guard dedupes against the client's mount poll. Only the
+    # combined refresher is scheduled — it primes playback + devices in a single fetch — and
+    # it stays non-forced so a still-fresh snapshot triggers no redundant call on the Pi.
+    if _dashboard_snapshot is not None and dashboard_meta.get("pending"):
+        try:
+            from .health import _refresh_dashboard_snapshot
+            _dashboard_snapshot.schedule_refresh(_refresh_dashboard_snapshot, reason="index")
+        except Exception as warm_err:
+            logging.debug("Index render warm-refresh skipped: %s", warm_err)
+
     sleep_service_index = get_service("sleep")
     sleep_status_result_index = sleep_service_index.get_sleep_status()
     if sleep_status_result_index.success:
