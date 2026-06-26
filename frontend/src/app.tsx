@@ -1341,7 +1341,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     t,
     setBusyAction,
     pushToast,
-    refreshDashboard
+    refreshDashboard,
+    setDashboard
   });
   const { updateSetting, handleClearCache } = useSettingsMutations({
     language: bootstrap.language,

@@ -133,6 +133,26 @@ def _refresh_dashboard_snapshot() -> Dict[str, Any]:
     }
 
 
+def reflect_playback_state(is_playing: bool) -> None:
+    """Patch the cached playback snapshot's is_playing in place.
+
+    Lets a just-issued play/pause toggle show up on the dashboard's next poll
+    immediately, instead of waiting for the snapshot's TTL to lapse and a fresh
+    Spotify fetch to land (which can be several seconds). The next real refresh
+    still reconciles with Spotify's authoritative state.
+    """
+    if _playback_snapshot is None:
+        return
+    snap, _meta = _playback_snapshot.snapshot()
+    if not snap or not isinstance(snap.get("playback"), dict):
+        return
+    snap["playback"]["is_playing"] = is_playing
+    track = snap["playback"].get("current_track")
+    if isinstance(track, dict):
+        track["is_playing"] = is_playing
+    _playback_snapshot.set(snap)
+
+
 @health_bp.route("/healthz")
 def healthz():
     """Basic health check endpoint."""

@@ -25,6 +25,15 @@ def toggle_play_pause():
     result = spotify_service.toggle_playback_fast()
 
     if result.success:
+        # Reflect the new play/pause state in the cached snapshot right away so the
+        # dashboard's next poll flips the icon without waiting for a fresh Spotify fetch.
+        action = result.data.get("action") if isinstance(result.data, dict) else None
+        if action in ("playing", "paused"):
+            try:
+                from .health import reflect_playback_state
+                reflect_playback_state(action == "playing")
+            except Exception as reflect_err:
+                logger.debug("Playback snapshot reflect skipped: %s", reflect_err)
         return api_response(True, data=result.data, message=t_api("ok", request))
 
     error_code = result.error_code or "playback_toggle_failed"

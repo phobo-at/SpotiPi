@@ -19,6 +19,7 @@ interface UsePlaybackActionsOptions {
   setBusyAction: (action: string | null) => void;
   pushToast: (type: ToastItem["type"], message: string) => void;
   refreshDashboard: (force?: boolean) => Promise<boolean>;
+  setDashboard: (update: DashboardData | ((current: DashboardData) => DashboardData)) => void;
 }
 
 interface UsePlaybackActionsResult {
@@ -73,7 +74,8 @@ export function usePlaybackActions({
   t,
   setBusyAction,
   pushToast,
-  refreshDashboard
+  refreshDashboard,
+  setDashboard
 }: UsePlaybackActionsOptions): UsePlaybackActionsResult {
   const [playerVolume, setPlayerVolume] = useState<number>(() => currentVolume(dashboard, settings));
   const volumeTimerRef = useRef<number | null>(null);
@@ -83,22 +85,51 @@ export function usePlaybackActions({
     setPlayerVolume(currentVolume(dashboard, settings));
   }, [dashboard, settings]);
 
+  const setIsPlaying = useCallback((isPlaying: boolean) => {
+    setDashboard((current) => ({
+      ...current,
+      playback: { ...current.playback, is_playing: isPlaying }
+    }));
+  }, [setDashboard]);
+
   const handlePlaybackCommand = useCallback(async (endpoint: string, actionName: string) => {
     if (!isPlaybackReady(dashboard, networkStatus)) {
       return;
     }
 
+    // Play/pause is the only command whose result we can predict, so flip the icon
+    // optimistically for instant feedback and reconcile (or revert) from the response.
+    const isToggle = endpoint === "/toggle_play_pause";
+    const previousIsPlaying = Boolean(dashboard.playback.is_playing);
+    if (isToggle) {
+      setIsPlaying(!previousIsPlaying);
+    }
+
     setBusyAction(actionName);
     try {
-      const result = await postForm<Record<string, unknown>>(endpoint, new URLSearchParams());
+      const result = await postForm<{ action?: string }>(endpoint, new URLSearchParams());
       if (result.body?.success) {
+        if (isToggle) {
+          const action = result.body.data?.action;
+          if (action === "playing" || action === "paused") {
+            setIsPlaying(action === "playing");
+          }
+        }
         window.setTimeout(() => {
           void refreshDashboard(true);
         }, 350);
-      } else if (result.body?.message) {
-        pushToast("error", result.body.message);
+      } else {
+        if (isToggle) {
+          setIsPlaying(previousIsPlaying);
+        }
+        if (result.body?.message) {
+          pushToast("error", result.body.message);
+        }
       }
     } catch (error) {
+      if (isToggle) {
+        setIsPlaying(previousIsPlaying);
+      }
       pushToast(
         "error",
         error instanceof Error ? error.message : localized(language, "Playback failed", "Wiedergabe fehlgeschlagen")
@@ -106,7 +137,7 @@ export function usePlaybackActions({
     } finally {
       setBusyAction(null);
     }
-  }, [dashboard, language, networkStatus, pushToast, refreshDashboard, setBusyAction]);
+  }, [dashboard, language, networkStatus, pushToast, refreshDashboard, setBusyAction, setIsPlaying]);
 
   const handleVolumeInput = useCallback((value: number) => {
     const nextValue = clamp(value, 0, 100);

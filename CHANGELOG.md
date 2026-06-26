@@ -5,6 +5,11 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.2] - 2026-06-26
+
+### ⚡ Performance
+- **The dashboard play/pause icon now flips instantly instead of lagging several seconds.** The icon is driven by `dashboard.playback.is_playing`, which only changed once a poll returned a refreshed snapshot — and since the post-toggle `refresh` returns the still-stale snapshot (the refresh runs in the background) and the response status stays `ok` (so no fast-retry fires), the new state only showed up on the next regular poll (~4–6s). Now the toggle endpoint reflects the resulting state (`playing`/`paused`) straight into the cached playback snapshot (an in-memory patch, no extra Spotify call), so the next poll already carries it; and the frontend flips the icon optimistically on tap, reconciling from the response (and reverting on failure). No change to the `/api/dashboard/status` 202-while-pending contract.
+
 ## [1.12.1] - 2026-06-26
 
 ### ⚡ Performance
