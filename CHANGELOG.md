@@ -5,6 +5,11 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.3] - 2026-06-26
+
+### 🐛 Fixes
+- **Toast notifications (e.g. the "the alarm will ring tomorrow" confirmation) are now clearly visible on mobile.** Two problems: (1) `.toast-stack` was offset a fixed `12px` from the top on phones, so with `viewport-fit=cover` + a translucent status bar the toast was tucked under the status bar / notch and clipped — it now respects `env(safe-area-inset-*)` (top/left/right), the same pattern the sheets already use, sitting full-width just below the status bar; (2) toasts used very low-opacity translucent backgrounds (info was `rgba(255,255,255,0.08)`) that read as dark-on-dark — they now use a solid, legible surface with a per-type colored left accent (blue = info, green = success, red = error) via `color-mix`, with a graceful fallback to the solid surface on older browsers.
+
 ## [1.12.2] - 2026-06-26
 
 ### ⚡ Performance

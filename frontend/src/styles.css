@@ -1090,8 +1090,10 @@ input[type="range"] {
 
 .toast-stack {
   position: fixed;
-  top: 24px;
-  right: 24px;
+  /* Keep clear of the status bar / notch on devices with display cutouts
+     (viewport-fit=cover + translucent status bar) so toasts aren't clipped. */
+  top: calc(env(safe-area-inset-top, 0px) + 24px);
+  right: calc(env(safe-area-inset-right, 0px) + 24px);
   z-index: 50;
   display: grid;
   gap: 10px;
@@ -1105,20 +1107,28 @@ input[type="range"] {
   gap: 12px;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* Solid, legible base so the message reads clearly on any background; the
+     type is signalled by the left accent bar and a subtle tint (below). */
+  background: var(--surface-strong);
+  border: 1px solid var(--surface-outline);
+  border-left: 4px solid var(--text-muted);
+  color: var(--text);
   box-shadow: var(--shadow-lg);
 }
 
 .toast-success {
-  background: rgba(76, 217, 100, 0.18);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-strong));
+  border-left-color: var(--accent);
 }
 
 .toast-error {
-  background: rgba(255, 107, 107, 0.18);
+  background: color-mix(in srgb, var(--danger) 20%, var(--surface-strong));
+  border-left-color: var(--danger);
 }
 
 .toast-info {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, #5cb3ff 16%, var(--surface-strong));
+  border-left-color: #5cb3ff;
 }
 
 .sheet-backdrop {
@@ -1800,9 +1810,9 @@ input[type="range"] {
   }
 
   .toast-stack {
-    top: 12px;
-    right: 9px;
-    left: 9px;
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    right: calc(env(safe-area-inset-right, 0px) + 9px);
+    left: calc(env(safe-area-inset-left, 0px) + 9px);
     width: auto;
   }
 }
