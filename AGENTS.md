@@ -61,6 +61,7 @@ This file is the canonical source of AI coding instructions for this repository.
 - Treat `~/.spotipi/.env` as the canonical runtime secret path; repo-root `.env` is only a local dev override. `get_spotify_credentials()` falls back to `os.environ` so values loaded via `load_dotenv()` from a repo-level `.env` remain visible until migrated to the runtime file.
 - Escape user-controlled strings in JS template literals.
 - Preserve input sanitization rules, including device-name validation constraints.
+- **LAN-trust is intentional, not a bug.** `SPOTIPI_TRUST_PRIVATE_NETWORK` defaults to `True`, so loopback/private/link-local clients reach state-changing and PII endpoints without admin auth; admin auth (`SPOTIPI_ADMIN_PASSWORD`) is opt-in and only enforced for non-local clients. This is a deliberate usability choice for a single-user home appliance — do NOT "harden" it by flipping the default. A review may note the posture, but treat it as by design.
 
 ## Frontend and UX Baseline
 
