@@ -217,10 +217,10 @@ npm run test:e2e
 
 Performance budget details: [`docs/FRONTEND_PERFORMANCE_BUDGET.md`](docs/FRONTEND_PERFORMANCE_BUDGET.md)
 
-Current baseline as of 2026-05-31:
+Current baseline as of 2026-06-27:
 
-- `pytest`: `186 passed, 2 skipped`
-- `npm run test:e2e`: `57 passed`
+- `pytest`: `228 passed, 2 skipped`
+- `npm run test:e2e`: `69 passed`
 
 Optional local quality checks:
 
