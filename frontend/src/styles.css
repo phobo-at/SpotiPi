@@ -377,7 +377,10 @@ button:disabled {
   width: 6px;
   border-radius: 999px;
   background: linear-gradient(180deg, rgba(76, 217, 100, 0.95), rgba(76, 217, 100, 0.35));
-  animation: fallback-eq 1200ms ease-in-out infinite;
+  /* Finite run: a brief entrance flourish, then quiesce. The idle "DJ off duty"
+     fallback is the most-shown state on an always-on wall display; an infinite
+     loop kept the Pi Zero W compositor repainting forever. */
+  animation: fallback-eq 1200ms ease-in-out 6;
 }
 
 .player-artwork-fallback-bars span:nth-child(1) {
@@ -529,6 +532,22 @@ button:disabled {
 .library-row-action:hover,
 .secondary-button:hover {
   transform: translateY(-1px);
+}
+
+/* Instant press feedback for touch — there is no :hover on touch devices, so a
+   sub-frame scale-down is the only acknowledgement a tap gets before the
+   (often Pi-latency-delayed) state change lands. prefers-reduced-motion below
+   neutralizes the transition globally. */
+.control-button:active,
+.icon-button:active,
+.ghost-button:active,
+.choice-chip:active,
+.section-tab:active,
+.library-row:active,
+.library-row-action:active,
+.secondary-button:active,
+.primary-button:active {
+  transform: scale(0.97);
 }
 
 .control-button-primary,
@@ -1239,6 +1258,9 @@ input[type="range"] {
 .weekday-chip {
   flex: 1;
   min-width: 0;
+  display: grid;
+  place-items: center;
+  min-height: 44px;
   padding: 8px 0;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1263,6 +1285,9 @@ input[type="range"] {
 
 .weekday-preset {
   flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 44px;
   padding: 8px 0;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1691,6 +1716,40 @@ input[type="range"] {
     border-radius: 24px;
   }
 
+  /* Mobile gutter: collapse the desktop double-padding (outer card 28-30px +
+     inner box 16-18px). On phones the card becomes a thin frame and the inner
+     boxes own the single content gutter — reclaims ~15% of text width. */
+  .dashboard-grid {
+    gap: 16px;
+  }
+
+  .player-card,
+  .snapshot-card {
+    padding: 14px;
+    gap: 16px;
+  }
+
+  .alarm-hero-open,
+  .snapshot-item,
+  .range-field,
+  .player-queue {
+    padding: 14px;
+  }
+
+  /* Cap the now-playing artwork so transport/queue/volume stay above the fold
+     instead of being shoved down by a full-width square. Stays 1:1. */
+  .player-artwork {
+    width: 100%;
+    max-width: 240px;
+    margin-inline: auto;
+  }
+
+  /* Drop the duplicated in-card status pill on phones; the header pill is the
+     single global status signal. */
+  .player-heading {
+    display: none;
+  }
+
   .app-header {
     flex-direction: column;
     align-items: stretch;
@@ -1702,7 +1761,7 @@ input[type="range"] {
     top: 18px;
     right: 18px;
     width: auto;
-    min-height: auto;
+    min-height: 44px;
     align-self: flex-start;
   }
 
