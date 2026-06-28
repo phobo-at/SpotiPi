@@ -1,10 +1,12 @@
 {
   "enabled": true,
-  "time": "07:00",
+  "time": "07:30",
   "playlist_uri": "",
+  "playlist_name": "",
   "device_name": "",
-  "alarm_volume": 50,
+  "alarm_volume": 40,
   "weekdays": null,
+  "snooze_enabled": false,
   "sleep_volume": 25,
   "sleep_default_duration": 15,
   "sleep_device_name": "phobo",
@@ -17,6 +19,12 @@
       "name": "Forte",
       "requested_name": "Forte",
       "updated_at": 1760551200.527403
+    },
+    "schlafzimmer": {
+      "id": "bca8d295324157829b79dd17c53ddcc491a4a4dd",
+      "name": "Schlafzimmer",
+      "requested_name": "Schlafzimmer",
+      "updated_at": 1782685508.495441
     }
   },
   "language": "en",

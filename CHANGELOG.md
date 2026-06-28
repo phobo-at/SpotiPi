@@ -5,6 +5,21 @@ All notable changes to SpotiPi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.6] - 2026-06-29
+
+Mobile-focused UI polish from Phase 1 of the UX/frontend review — CSS-only, no behavior changes.
+
+### 📱 Mobile / UI
+- **Mobile gutter:** collapsed the double-padding (outer card 28–30px + inner box 16–18px) to a single ~14px gutter on phones, reclaiming ~15% of content width.
+- **Artwork cap:** the now-playing artwork is capped at 240px on phones so transport, queue and volume stay above the fold instead of being pushed down by a full-width square.
+- **Duplicate status pill** removed on phones (the header pill remains the single global status signal).
+- **Touch press feedback:** added an `:active` scale-down so taps are acknowledged instantly on the touch-first PWA (there is no `:hover` on touch).
+- **Idle quiesce:** the "DJ off duty" equalizer now runs a finite 6 cycles then stops, so an always-on wall display lets the Pi Zero W compositor sleep instead of repainting forever.
+- **Touch targets:** weekday chips/presets and the mobile settings gear restored to ≥44px.
+
+### 📝 Docs
+- Added `docs/UX_FRONTEND_REVIEW.md` — an 8-lens UX + frontend review (63 verified findings), a 3-phase roadmap, and the mobile layout concept (Anhang A).
+
 ## [1.12.5] - 2026-06-27
 
 This release works through the remaining medium/low findings from the UI/performance/security review (the high-priority ones shipped in v1.12.4).
